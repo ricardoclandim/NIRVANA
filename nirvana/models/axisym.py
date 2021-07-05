@@ -864,6 +864,109 @@ class AxisymmetricDisk:
                                              sig=sig, dsig=dsig, cnvfftw=self.cnvfftw)
         return v, sig, dv, dsig
 
+    def mock_observation(self, par=None, kin=None, x=None, y=None, sb=None, binid=None,
+                         vel_ivar=None, vel_covar=None, vel_mask=None, sig_ivar=None,
+                         sig_covar=None, sig_mask=None, beam=None, is_fft=False, cnvfftw=None,
+                         ignore_beam=False):
+        r"""
+        Construct a mock observation.
+
+        The method always returns a :class:`~nirvana.data.kinematics.Kinematics`
+        object, which can either be constructed to mimic and existing object
+        (see the ``kin`` keyword argument) or to create a new 
+        :class:`~nirvana.data.kinematics.Kinematics` object using the other
+        keyword arguments provided.
+
+        The mock observation is constructed by sampling the model exactly as
+        done when fitting real observations.  If errors are provided, Gaussian
+        error is added to the model values.
+
+        Args:
+            par (`numpy.ndarray`_, optional):
+                The list of parameters to use. If None, the internal
+                :attr:`par` is used. Length should be either :attr:`np` or
+                :attr:`nfree`. If the latter, the values of the fixed
+                parameters in :attr:`par` are used.
+            kin (:class:`~nirvana.data.kinematics.Kinematics`, optional):
+                Object with the kinematic data to mimic.
+            x (`numpy.ndarray`_, optional):
+                The 2D x-coordinates at which to evaluate the model. If not
+                provided, the internal :attr:`x` is used.
+            y (`numpy.ndarray`_, optional):
+                The 2D y-coordinates at which to evaluate the model. If not
+                provided, the internal :attr:`y` is used.
+            sb (`numpy.ndarray`_, optional):
+                2D array with the surface brightness of the object. This is used
+                to weight the convolution of the kinematic fields according to
+                the luminosity distribution of the object.  Must have the same
+                shape as ``x``. If None, the convolution is unweighted.  If a
+                convolution is not performed (either ``beam`` or
+                :attr:`beam_fft` are not available, or ``ignore_beam`` is True),
+                this array is ignored.
+            binid (`numpy.ndarray`_, optional):
+                2D integer array associating each measurement with a unique
+                bin number. Measurements not associated with any bin
+                should have a value of -1 in this array. If None, all
+                (unmasked) measurements are considered unique.
+
+
+            vel_ivar (`numpy.ndarray`_, `numpy.ma.MaskedArray`_, optional):
+                Inverse variance of the velocity measurements. If None,
+                all values are set to 1.
+            vel_covar (`numpy.ndarray`_, `scipy.sparse.csr_matrix`_):
+                Covariance matrix. It's shape must match the input map shape.
+                If None, the returned value is also None.
+            vel_mask (`numpy.ndarray`_, optional):
+                A boolean array with the bad-pixel mask (pixels to ignore
+                have ``mask==True``) for the velocity measurements. If
+                None, all pixels are considered valid. If ``vel`` is
+                provided as a masked array, this mask is combined with
+                ``vel.mask``.
+            sig_ivar (`numpy.ndarray`_, `numpy.ma.MaskedArray`_, optional):
+                Inverse variance of the velocity dispersion measurements.
+                If None and ``sig`` is provided, all values are set to 1.
+            sig_mask (`numpy.ndarray`_, optional):
+                A boolean array with the bad-pixel mask (pixels to ignore
+                have ``mask==True``) for the velocity-dispersion
+                measurements. If None, all measurements are considered
+                valid.
+
+    def mock_observation(self, par=None, kin=None, x=None, y=None, sb=None, binid=None,
+                         vel_err=None, vel_covar=None, vel_mask=None, sig_err=None, sig_covar=None,
+                         sig_mask=None, beam=None, is_fft=False, cnvfftw=None, ignore_beam=False):
+
+            beam (`numpy.ndarray`_, optional):
+                The 2D rendering of the beam-smearing kernel, or its Fast
+                Fourier Transform (FFT). If not provided, the internal
+                :attr:`beam_fft` is used.
+            is_fft (:obj:`bool`, optional):
+                The provided ``beam`` object is already the FFT of the
+                beam-smearing kernel.  Ignored if ``beam`` is not provided.
+            cnvfftw (:class:`~nirvana.models.beam.ConvolveFFTW`, optional):
+                An object that expedites the convolutions using
+                FFTW/pyFFTW. If None, the convolution is done using numpy
+                FFT routines.
+            ignore_beam (:obj:`bool`, optional):
+                Ignore the beam-smearing when constructing the model. I.e.,
+                construct the *intrinsic* model.
+
+
+            par ()
+
+        The returned :class:`~nirvana.data.kinematics.Kinematics` object can be
+        fit identically to real observations.
+
+
+
+
+
+
+        """
+
+
+
+
+
     def _v_resid(self, vel):
         return self.kin.vel[self.vel_gpm] - vel[self.vel_gpm]
     def _deriv_v_resid(self, dvel):
@@ -931,10 +1034,10 @@ class AxisymmetricDisk:
                 residual derivatives, instead of appending them.
 
         Returns:
-            :obj:`tuple`, `numpy.ndarray`_: Dervatives in the difference between
-            the data and the model for all measurements, either returned as a
-            single array for all data or as separate arrays for the velocity and
-            velocity dispersion data (based on ``sep``).
+            :obj:`tuple`, `numpy.ndarray`_: Derivatives in the difference
+            between the data and the model for all measurements, either returned
+            as a single array for all data or as separate arrays for the
+            velocity and velocity dispersion data (based on ``sep``).
         """
         self._set_par(par)
         if self.dc is None:

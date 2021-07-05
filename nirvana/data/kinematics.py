@@ -26,6 +26,7 @@ from ..models.beam import construct_beam, ConvolveFFTW, smear
 from ..models.geometry import projected_polar
 from ..models import oned, axisym
 
+
 # TODO: We should separate the needs of the model from the needs of the
 # data. I.e., I don't think that Kinematics should inherit from
 # FitArgs.
@@ -175,6 +176,7 @@ class Kinematics(FitArgs):
             neither, or if ``binid`` is provided but ``grid_x`` or
             ``grid_y`` is None.
     """
+    # TODO: Update the doc string to reflect changes in the calling sequence!
     def __init__(self, vel, vel_ivar=None, vel_mask=None, vel_covar=None, x=None, y=None, sb=None,
                  sb_ivar=None, sb_mask=None, sb_covar=None, sb_anr=None, sig=None, sig_ivar=None,
                  sig_mask=None, sig_covar=None, sig_corr=None, psf_name=None, psf=None,
