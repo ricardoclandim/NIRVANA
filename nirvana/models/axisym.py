@@ -864,107 +864,134 @@ class AxisymmetricDisk:
                                              sig=sig, dsig=dsig, cnvfftw=self.cnvfftw)
         return v, sig, dv, dsig
 
-    def mock_observation(self, par=None, kin=None, x=None, y=None, sb=None, binid=None,
+    def mock_observation(self, par, kin=None, x=None, y=None, sb=None, binid=None,
                          vel_ivar=None, vel_covar=None, vel_mask=None, sig_ivar=None,
                          sig_covar=None, sig_mask=None, beam=None, is_fft=False, cnvfftw=None,
                          ignore_beam=False):
         r"""
         Construct a mock observation.
 
-        The method always returns a :class:`~nirvana.data.kinematics.Kinematics`
-        object, which can either be constructed to mimic and existing object
-        (see the ``kin`` keyword argument) or to create a new 
-        :class:`~nirvana.data.kinematics.Kinematics` object using the other
-        keyword arguments provided.
+        The mock data can be defined in one of two ways:
+
+            #. If a :class:`~nirvana.data.kinematics.Kinematics` object is
+               provided using the ``kin`` keyword, all other keyword arguments
+               are ignored (except for ``par``) and the mock data are meant to
+               explicitly mimic the real observations.
+
+            #. Otherwise, most of the other keywords are used to instantiate a
+               mock set of kinematics that are used to instantiate the returned 
+               :class:`~nirvana.data.kinematics.Kinematics` object.
 
         The mock observation is constructed by sampling the model exactly as
         done when fitting real observations.  If errors are provided, Gaussian
         error is added to the model values.
 
         Args:
-            par (`numpy.ndarray`_, optional):
-                The list of parameters to use. If None, the internal
-                :attr:`par` is used. Length should be either :attr:`np` or
-                :attr:`nfree`. If the latter, the values of the fixed
-                parameters in :attr:`par` are used.
+            par (array-like):
+                The list of model parameters to use. Length must be :attr:`np`.
             kin (:class:`~nirvana.data.kinematics.Kinematics`, optional):
-                Object with the kinematic data to mimic.
+                Object with the kinematic data to mimic.  If None, must provide
+                at least ``x``, ``y``, and ``vel_ivar``.
             x (`numpy.ndarray`_, optional):
-                The 2D x-coordinates at which to evaluate the model. If not
-                provided, the internal :attr:`x` is used.
+                The 2D x-coordinates at which to evaluate the model. Ignored if
+                ``kin`` is provided.
             y (`numpy.ndarray`_, optional):
-                The 2D y-coordinates at which to evaluate the model. If not
-                provided, the internal :attr:`y` is used.
+                The 2D y-coordinates at which to evaluate the model.  Shape must
+                match ``x``.  Ignored if ``kin`` is provided.  
             sb (`numpy.ndarray`_, optional):
-                2D array with the surface brightness of the object. This is used
-                to weight the convolution of the kinematic fields according to
-                the luminosity distribution of the object.  Must have the same
-                shape as ``x``. If None, the convolution is unweighted.  If a
-                convolution is not performed (either ``beam`` or
-                :attr:`beam_fft` are not available, or ``ignore_beam`` is True),
-                this array is ignored.
+                2D array with the (nominally unbinned) surface brightness of the
+                object. This is used to weight the convolution of the kinematic
+                fields according to the luminosity distribution of the object.
+                Must have the same shape as ``x``. If None, the convolution is
+                unweighted.  If a convolution is not performed (``beam`` is None
+                or ``ignore_beam`` is True) or if ``kin`` is provided, this
+                array is ignored.
             binid (`numpy.ndarray`_, optional):
-                2D integer array associating each measurement with a unique
-                bin number. Measurements not associated with any bin
-                should have a value of -1 in this array. If None, all
-                (unmasked) measurements are considered unique.
-
-
+                2D integer array associating each measurement with a unique bin
+                ID number. Measurements not associated with any bin should have
+                a value of -1 in this array. If None, all unmasked measurements
+                (see ``vel_mask`` and ``sig_mask``) are considered unique.
+                Shape must match ``x``.  Ignored if ``kin`` is provided.
             vel_ivar (`numpy.ndarray`_, `numpy.ma.MaskedArray`_, optional):
-                Inverse variance of the velocity measurements. If None,
-                all values are set to 1.
+                2D array with the inverse variance of the velocity measurements.
+                If both this and ``vel_covar`` are None, no errors are added to
+                the model data.  Shape must match ``x``, and all array elements
+                with the same bin ID should have the same value.  If both
+                ``vel_ivar`` and ``vel_covar`` are provided, the latter takes
+                precedence.  Ignored if ``kin`` is provided.
             vel_covar (`numpy.ndarray`_, `scipy.sparse.csr_matrix`_):
-                Covariance matrix. It's shape must match the input map shape.
-                If None, the returned value is also None.
+                Covariance matrix for the velocity measurements.  If both this
+                and ``vel_ivar`` are None, no errors are added to the model
+                data.  The array must be square, where the length along one side
+                matches the number elements in ``x``.  If both ``vel_ivar`` and
+                ``vel_covar`` are provided, the latter takes precedence.
+                Ignored if ``kin`` is provided.
             vel_mask (`numpy.ndarray`_, optional):
-                A boolean array with the bad-pixel mask (pixels to ignore
-                have ``mask==True``) for the velocity measurements. If
-                None, all pixels are considered valid. If ``vel`` is
-                provided as a masked array, this mask is combined with
-                ``vel.mask``.
+                2D boolean array with a bad-pixel mask for the velocity
+                measurements (a mask value of True is ignored).  If None, all
+                velocity values are considered valid.  Shape must match ``x``.
+                If ``vel_ivar`` is a `numpy.ma.MaskedArray`_, this mask is
+                *combined* with ``vel_ivar.mask``.  Ignored if ``kin`` is
+                provided.
             sig_ivar (`numpy.ndarray`_, `numpy.ma.MaskedArray`_, optional):
-                Inverse variance of the velocity dispersion measurements.
-                If None and ``sig`` is provided, all values are set to 1.
+                2D array with the inverse variance of the velocity dispersion
+                measurements.  If ``kin`` is provided or no velocity dispersion
+                parameterization is defined (i.e., :attr:`dc` is None), this is
+                ignored.  If both this and ``sig_covar`` are None, no errors are
+                added to the model data.  Shape must match ``x``, and all array
+                elements with the same bin ID should have the same value.  If
+                both ``sig_ivar`` and ``sig_covar`` are provided, the latter
+                takes precedence.
+            sig_covar (`numpy.ndarray`_, `scipy.sparse.csr_matrix`_):
+                Covariance matrix for the velocity dispersion measurements.  If
+                ``kin`` is provided or no velocity dispersion parameterization
+                is defined (i.e., :attr:`dc` is None), this is ignored.  If both
+                this and ``sig_ivar`` are None, no errors are added to the model
+                data.  The array must be square, where the length along one side
+                matches the number elements in ``x``.  If both ``sig_ivar`` and
+                ``sig_covar`` are provided, the latter takes precedence.
             sig_mask (`numpy.ndarray`_, optional):
-                A boolean array with the bad-pixel mask (pixels to ignore
-                have ``mask==True``) for the velocity-dispersion
-                measurements. If None, all measurements are considered
-                valid.
-
-    def mock_observation(self, par=None, kin=None, x=None, y=None, sb=None, binid=None,
-                         vel_err=None, vel_covar=None, vel_mask=None, sig_err=None, sig_covar=None,
-                         sig_mask=None, beam=None, is_fft=False, cnvfftw=None, ignore_beam=False):
-
+                2D boolean array with a bad-pixel mask for the velocity
+                dispersion measurements (a mask value of True is ignored).  If
+                ``kin`` is provided or no velocity dispersion parameterization
+                is defined (i.e., :attr:`dc` is None), this is ignored.  If
+                None, all velocity dispersion values are considered valid.
+                Shape must match ``x``.  If ``sig_ivar`` is a
+                `numpy.ma.MaskedArray`_, this mask is *combined* with
+                ``sig_ivar.mask``.
             beam (`numpy.ndarray`_, optional):
                 The 2D rendering of the beam-smearing kernel, or its Fast
-                Fourier Transform (FFT). If not provided, the internal
-                :attr:`beam_fft` is used.
+                Fourier Transform (FFT).  If ``kin`` is provided, this is
+                ignored.  If not provided, no beam convolution is performed when
+                constructing the mock observations.
             is_fft (:obj:`bool`, optional):
                 The provided ``beam`` object is already the FFT of the
-                beam-smearing kernel.  Ignored if ``beam`` is not provided.
+                beam-smearing kernel.  Ignored if ``kin`` is provided or
+                ``beam`` is not provided.
             cnvfftw (:class:`~nirvana.models.beam.ConvolveFFTW`, optional):
                 An object that expedites the convolutions using
                 FFTW/pyFFTW. If None, the convolution is done using numpy
                 FFT routines.
             ignore_beam (:obj:`bool`, optional):
-                Ignore the beam-smearing when constructing the model. I.e.,
-                construct the *intrinsic* model.
+                Regardless of the availability of the beam profile, ignore it
+                and do not include it in the returned object.
 
-
-            par ()
-
-        The returned :class:`~nirvana.data.kinematics.Kinematics` object can be
-        fit identically to real observations.
-
-
-
-
-
-
+        Returns:
+            :class:`~nirvana.data.kinematics.Kinematics`:  Object providing the
+            mock observations.  This object can be fit, e.g., with
+            :func:`lsq_fit`, as would be done with real observations.
         """
 
+    def __init__(self, vel, vel_ivar=None, vel_mask=None, vel_covar=None, x=None, y=None, sb=None,
+                 sb_ivar=None, sb_mask=None, sb_covar=None, sb_anr=None, sig=None, sig_ivar=None,
+                 sig_mask=None, sig_covar=None, sig_corr=None, psf_name=None, psf=None,
+                 aperture=None, binid=None, grid_x=None, grid_y=None, grid_sb=None, grid_wcs=None,
+                 reff=None, fwhm=None, bordermask=None, image=None, phot_inc=None, maxr=None,
+                 positive_definite=False, quiet=False):
 
-
+        self.binid, self.nspax, self.bin_indx, self.grid_indx, self.bin_inverse, \
+            self.bin_transform \
+        get_map_bin_transformations(spatial_shape=None, binid=None):
 
 
     def _v_resid(self, vel):

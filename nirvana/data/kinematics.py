@@ -14,23 +14,23 @@ from scipy import linalg
 from astropy.stats import sigma_clip
 import matplotlib.pyplot as plt
 
-try:
-    import theano.tensor as tt
-except:
-    tt = None
+#try:
+#    import theano.tensor as tt
+#except:
+#    tt = None
 
-from .fitargs import FitArgs
 from .util import get_map_bin_transformations, impose_positive_definite
 
 from ..models.beam import construct_beam, ConvolveFFTW, smear
 from ..models.geometry import projected_polar
-from ..models import oned, axisym
+#from .fitargs import FitArgs
+#from ..models import oned, axisym
 
 
 # TODO: We should separate the needs of the model from the needs of the
 # data. I.e., I don't think that Kinematics should inherit from
 # FitArgs.
-class Kinematics(FitArgs):
+class Kinematics: #(FitArgs):
     r"""
     Base class to hold data fit by the kinematic model.
 
@@ -519,7 +519,7 @@ class Kinematics(FitArgs):
             m = mask
 
         # Check the shapes (overkill if the user selected an attribute...)    
-        if d.shape != self.vel.shape and tt is not None and type(d) is not tt.TensorVariable:
+        if d.shape != self.vel.shape: # and tt is not None and type(d) is not tt.TensorVariable:
             raise ValueError('To remap, data must have the same shape as the internal data '
                              'attributes: {0}'.format(self.vel.shape))
         if m is not None and m.shape != self.vel.shape:
@@ -656,130 +656,130 @@ class Kinematics(FitArgs):
         maxy = np.amax(self.y)
         return np.sqrt(max(abs(minx), maxx)**2 + max(abs(miny), maxy)**2)
 
-    # TODO: This should be in a different method/class
-    @classmethod
-    def mock(cls, size, inc, pa, pab, vsys, vt, v2t, v2r, sig, xc=0, yc=0, reff=10, maxr=15, psf=None, border=3, fwhm=2.44):
-        """
-        Makes a :class:`nirvana.data.kinematics.Kinematics` object with a
-        mock velocity field with input parameters using similar code to
-        :func:`nirvana.fiting.bisym_model`.
-
-        Args:
-            size (:obj:`int`):
-                length of each side of the output arrays.
-            inc (:obj:`float`):
-                Inclination in degrees.
-            pa (:obj:`float`):
-                Position angle in degrees.
-            pab (:obj:`float`):
-                Relative position angle of bisymmetric features.
-            vsys (:obj:`float`):
-                Systemic velocity.
-            vt (`numpy.ndarray`_):
-                First order tangential velocities. Must have same length as
-                :attr:`v2t` and :attr:`v2r`.
-            v2t (`numpy.ndarray`_):
-                Second order tangential velocities. Must have same length as
-                :attr:`vt` and :attr:`v2r`.
-            v2r (`numpy.ndarray`_):
-                Second order radial velocities. Must have same length as
-                :attr:`vt` and :attr:`v2t`.
-            sig (`numpy.ndarray`_):
-                Velocity dispersion values for each radial bin. Must have same
-                length as other velocity arrays. 
-            xc (:obj:`float`, optional):
-                Offset of center on x axis. Optional, defaults to 0.
-            yc (:obj:`float`, optional):
-                Offset of center on y axis. Optional, defaults to 0.
-            reff (:obj:`float`, optional):
-                Effective radius of the mock galaxy. Units are arbitrary
-                but must be the same as :attr:`r`. Defaults to 10.
-            maxr (:obj:`float`, optional):
-                Maximum absolute value for the x and y arrays. Defaults to 15.
-            psf (`numpy.ndarray`_, optional):
-                2D array of the point-spread function of the simulated galaxy.
-                Must have dimensions of `size` by `size`. If not given, it will
-                load a default PSF taken from a MaNGA observation that is 55 by
-                55.
-            border (:obj:`float`, optional):
-                How many FWHM widths of a border to make around the central
-                part of the galaxy you actually care about. This is to mitigate
-                the edge effects of the PSF convolution that create erroneous
-                values. Bigger borders will lead to smaller edge effects but
-                will cost computational time in model fitting. Defaults to 3. 
-            fwhm (:obj:`float`, optional):
-                FWHM of PSF in same units as :attr:`size`. Defaults to 2.44 for
-                example MaNGA PSF.
-
-        Returns:
-            :class:`nirvana.data.kinematics.Kinematics`: Object with the
-            velocity field and x and y coordinates of the mock galaxy.
-
-        Raises:
-            ValueError:
-                Raises if input velocity arrays are not the same length.
-                
-        """
-
-        #check that velocities are compatible
-        if len(vt) != len(v2t) or len(vt) != len(v2r) or len(vt) != len(sig):
-            raise ValueError('Velocity arrays must be the same length.')
-
-        #if the border needs to be masked, increase the size of the array to
-        #make up for it so it ends up the right size in the end 
-        if border: 
-            _r = maxr + border * fwhm
-            _size = int(_r/maxr * size)+1
-            _bsize = (_size - size)//2
-        else: _r,_size = (maxr,size)
-
-        #make grid of x and y and define edges
-        a = np.linspace(-_r,_r,_size)
-        x,y = np.meshgrid(a,a)
-        edges = np.linspace(0, maxr, len(vt)+1)
-
-        #convert angles to polar
-        _inc,_pa,_pab = np.radians([inc, pa, pab])
-        r, th = projected_polar(x - xc, y - yc, _pa, _inc)
-
-        #interpolate velocity values for all r 
-        bincents = (edges[:-1] + edges[1:])/2
-        vtvals  = np.interp(r, bincents, vt)
-        v2tvals = np.interp(r, bincents, v2t)
-        v2rvals = np.interp(r, bincents, v2r)
-        sig = np.interp(r, bincents, sig)
-        sb = oned.Sersic1D([1,10,1]).sample(r) #sersic profile for flux
-
-        #spekkens and sellwood 2nd order vf model (from andrew's thesis)
-        vel = vsys + np.sin(_inc) * (vtvals * np.cos(th) - 
-              v2tvals * np.cos(2*(th - _pab)) * np.cos(th) -
-              v2rvals * np.sin(2*(th - _pab)) * np.sin(th))
-
-        #load example MaNGA PSF if none is provided
-        #TODO: construct a general PSF instead
-        if psf is None: psf = np.load('psfexample56.npy')
-
-        #make border around PSF if necessary
-        if border:
-            #make the mask for the border
-            bordermask = np.ones((_size, _size))
-            bordermask[_bsize:-_bsize, _bsize:-_bsize] = 0
-
-            #define masked versions of all the arrays
-            _vel = np.ma.array(vel, mask=bordermask)
-            _x   = np.ma.array(x,   mask=bordermask)
-            _y   = np.ma.array(y,   mask=bordermask)
-            _sig = np.ma.array(sig, mask=bordermask)
-            _sb  = np.ma.array(sb,  mask=bordermask)
-
-            #make bigger masked psf
-            _psf = np.zeros((_size, _size))
-            _psf[_bsize:-_bsize, _bsize:-_bsize] = psf
-           
-        else: _vel, _x, _y, _sig, _sb = [vel, x, y, sig, sb]
-
-        binid = np.arange(np.product(_vel.shape)).reshape(_vel.shape)
-        return cls(_vel, x=_x, y=_y, grid_x=_x, grid_y=_y, reff=reff, binid=binid, sig=_sig, psf=_psf, sb=_sb, bordermask=bordermask)
+#    # TODO: This should be in a different method/class
+#    @classmethod
+#    def mock(cls, size, inc, pa, pab, vsys, vt, v2t, v2r, sig, xc=0, yc=0, reff=10, maxr=15, psf=None, border=3, fwhm=2.44):
+#        """
+#        Makes a :class:`nirvana.data.kinematics.Kinematics` object with a
+#        mock velocity field with input parameters using similar code to
+#        :func:`nirvana.fiting.bisym_model`.
+#
+#        Args:
+#            size (:obj:`int`):
+#                length of each side of the output arrays.
+#            inc (:obj:`float`):
+#                Inclination in degrees.
+#            pa (:obj:`float`):
+#                Position angle in degrees.
+#            pab (:obj:`float`):
+#                Relative position angle of bisymmetric features.
+#            vsys (:obj:`float`):
+#                Systemic velocity.
+#            vt (`numpy.ndarray`_):
+#                First order tangential velocities. Must have same length as
+#                :attr:`v2t` and :attr:`v2r`.
+#            v2t (`numpy.ndarray`_):
+#                Second order tangential velocities. Must have same length as
+#                :attr:`vt` and :attr:`v2r`.
+#            v2r (`numpy.ndarray`_):
+#                Second order radial velocities. Must have same length as
+#                :attr:`vt` and :attr:`v2t`.
+#            sig (`numpy.ndarray`_):
+#                Velocity dispersion values for each radial bin. Must have same
+#                length as other velocity arrays. 
+#            xc (:obj:`float`, optional):
+#                Offset of center on x axis. Optional, defaults to 0.
+#            yc (:obj:`float`, optional):
+#                Offset of center on y axis. Optional, defaults to 0.
+#            reff (:obj:`float`, optional):
+#                Effective radius of the mock galaxy. Units are arbitrary
+#                but must be the same as :attr:`r`. Defaults to 10.
+#            maxr (:obj:`float`, optional):
+#                Maximum absolute value for the x and y arrays. Defaults to 15.
+#            psf (`numpy.ndarray`_, optional):
+#                2D array of the point-spread function of the simulated galaxy.
+#                Must have dimensions of `size` by `size`. If not given, it will
+#                load a default PSF taken from a MaNGA observation that is 55 by
+#                55.
+#            border (:obj:`float`, optional):
+#                How many FWHM widths of a border to make around the central
+#                part of the galaxy you actually care about. This is to mitigate
+#                the edge effects of the PSF convolution that create erroneous
+#                values. Bigger borders will lead to smaller edge effects but
+#                will cost computational time in model fitting. Defaults to 3. 
+#            fwhm (:obj:`float`, optional):
+#                FWHM of PSF in same units as :attr:`size`. Defaults to 2.44 for
+#                example MaNGA PSF.
+#
+#        Returns:
+#            :class:`nirvana.data.kinematics.Kinematics`: Object with the
+#            velocity field and x and y coordinates of the mock galaxy.
+#
+#        Raises:
+#            ValueError:
+#                Raises if input velocity arrays are not the same length.
+#                
+#        """
+#
+#        #check that velocities are compatible
+#        if len(vt) != len(v2t) or len(vt) != len(v2r) or len(vt) != len(sig):
+#            raise ValueError('Velocity arrays must be the same length.')
+#
+#        #if the border needs to be masked, increase the size of the array to
+#        #make up for it so it ends up the right size in the end 
+#        if border: 
+#            _r = maxr + border * fwhm
+#            _size = int(_r/maxr * size)+1
+#            _bsize = (_size - size)//2
+#        else: _r,_size = (maxr,size)
+#
+#        #make grid of x and y and define edges
+#        a = np.linspace(-_r,_r,_size)
+#        x,y = np.meshgrid(a,a)
+#        edges = np.linspace(0, maxr, len(vt)+1)
+#
+#        #convert angles to polar
+#        _inc,_pa,_pab = np.radians([inc, pa, pab])
+#        r, th = projected_polar(x - xc, y - yc, _pa, _inc)
+#
+#        #interpolate velocity values for all r 
+#        bincents = (edges[:-1] + edges[1:])/2
+#        vtvals  = np.interp(r, bincents, vt)
+#        v2tvals = np.interp(r, bincents, v2t)
+#        v2rvals = np.interp(r, bincents, v2r)
+#        sig = np.interp(r, bincents, sig)
+#        sb = oned.Sersic1D([1,10,1]).sample(r) #sersic profile for flux
+#
+#        #spekkens and sellwood 2nd order vf model (from andrew's thesis)
+#        vel = vsys + np.sin(_inc) * (vtvals * np.cos(th) - 
+#              v2tvals * np.cos(2*(th - _pab)) * np.cos(th) -
+#              v2rvals * np.sin(2*(th - _pab)) * np.sin(th))
+#
+#        #load example MaNGA PSF if none is provided
+#        #TODO: construct a general PSF instead
+#        if psf is None: psf = np.load('psfexample56.npy')
+#
+#        #make border around PSF if necessary
+#        if border:
+#            #make the mask for the border
+#            bordermask = np.ones((_size, _size))
+#            bordermask[_bsize:-_bsize, _bsize:-_bsize] = 0
+#
+#            #define masked versions of all the arrays
+#            _vel = np.ma.array(vel, mask=bordermask)
+#            _x   = np.ma.array(x,   mask=bordermask)
+#            _y   = np.ma.array(y,   mask=bordermask)
+#            _sig = np.ma.array(sig, mask=bordermask)
+#            _sb  = np.ma.array(sb,  mask=bordermask)
+#
+#            #make bigger masked psf
+#            _psf = np.zeros((_size, _size))
+#            _psf[_bsize:-_bsize, _bsize:-_bsize] = psf
+#           
+#        else: _vel, _x, _y, _sig, _sb = [vel, x, y, sig, sb]
+#
+#        binid = np.arange(np.product(_vel.shape)).reshape(_vel.shape)
+#        return cls(_vel, x=_x, y=_y, grid_x=_x, grid_y=_y, reff=reff, binid=binid, sig=_sig, psf=_psf, sb=_sb, bordermask=bordermask)
 
     def reject(self, vel_rej=None, sig_rej=None):
         r"""
@@ -872,143 +872,143 @@ class Kinematics(FitArgs):
         self.reject(vel_rej=vel_rej, sig_rej=sig_rej)
         return vel_rej, sig_rej
 
-    def clip(self, sigma=10, sbf=.03, anr=5, maxiter=10, smear_dv=50, smear_dsig=50, clip_thresh=.95, verbose=False):
-        '''
-        Filter out bad spaxels in kinematic data.
-        
-        Looks for features smaller than PSF by reconvolving PSF and looking for
-        outlier points. Iteratively fits axisymmetric velocity field models and
-        sigma clips residuals and chisq to get rid of outliers. Also clips
-        based on surface brightness flux and ANR ratios. Applies new mask to
-        galaxy.
-
-        Args: 
-            sigma (:obj:`float`, optional): 
-                Significance threshold to be passed to
-                `astropy.stats.sigma_clip` for sigma clipping the residuals
-                and chi squared. Can't be too low or it will cut out
-                nonaxisymmetric features. 
-            sbf (:obj:`float`, optional): 
-                Flux threshold below which spaxels are masked.
-            anr (:obj:`float`, optional): 
-                Surface brightness amplitude/noise ratio threshold below which
-                spaxels are masked.
-            maxiter (:obj:`int`, optional):
-                Maximum number of iterations to allow clipping process to go
-                through.
-            smear_dv (:obj:`float`, optional):
-                Threshold for clipping residuals of resmeared velocity data
-            smear_dsig (:obj:`float`, optional):
-                Threshold for clipping residuals of resmeared velocity
-                dispersion data.
-            clip_thresh (:obj:`float`, optional):
-                Maximum fraction of the bins that can be clipped in order for
-                the data to still be considered good. Will throw an error if
-                it exceeds this level.
-            verbose (:obj:`bool`, optional):
-                Flag for printing out information on iterations.
-        '''
-
-        #count spaxels in each bin and make 2d maps excluding large bins
-        nspax = np.array([(self.remap('binid') == self.binid[i]).sum() for i in range(len(self.binid))])
-        binmask = self.remap(nspax) > 10
-        #binmask = self.remap(self.nspax) > 10
-        ngood = self.vel_mask.sum()
-        nmasked0 = (~self.vel_mask).sum()
-
-        sb  = np.ma.array(self.remap('sb'), mask=binmask) if self.sb is not None else None
-        vel = np.ma.array(self.remap('vel'), mask=binmask)
-        sig = np.ma.array(self.remap('sig'), mask=binmask) if self.sig is not None  else None
-
-        #reconvolve psf on top of velocity and dispersion
-        cnvfftw = ConvolveFFTW(self.spatial_shape)
-        smeared = smear(vel, self.beam_fft, beam_fft=True, sig=sig, sb=sb, cnvfftw=cnvfftw)
-
-        #cut out spaxels with too high residual because they're probably bad
-        dvmask = self.bin(np.abs(vel - smeared[1]) > smear_dv) 
-        masks = [dvmask]
-        labels = ['dv']
-        if self.sig is not None: 
-            dsigmask = self.bin(np.abs(sig - smeared[2]) > smear_dsig)
-            masks += [dsigmask]
-            labels += ['dsig']
-
-        #clip on surface brightness and ANR
-        if self.sb is not None: 
-            sbmask = self.sb < sbf
-            masks += [sbmask]
-            labels += ['sb']
-
-        if self.sb_anr is not None:
-            anrmask = self.sb_anr < anr
-            masks += [anrmask]
-            labels += ['anr']
-
-        #combine all masks and apply to data
-        mask = np.zeros(dvmask.shape)
-        for m in masks: mask += m
-        mask = mask.astype(bool)
-        self.remask(mask)
-
-        #iterate through rest of clips until mask converges
-        nmaskedold = -1
-        nmasked = np.sum(mask)
-        niter = 0
-        err = False
-        while nmaskedold != nmasked and sigma:
-            #quick axisymmetric least squares fit
-            fit = axisym.AxisymmetricDisk()
-            fit.lsq_fit(self)
-
-            #quick axisymmetric fit
-            model = self.bin(fit.model())
-            resid = self.vel - model
-
-            #clean up the data by sigma clipping residuals and chisq
-            chisq = resid**2 * self.vel_ivar if self.vel_ivar is not None else resid**2
-            residmask = sigma_clip(resid, sigma=sigma, masked=True).mask
-            chisqmask = sigma_clip(chisq, sigma=sigma, masked=True).mask
-            clipmask = (mask + residmask + chisqmask).astype(bool)
-
-            #iterate
-            nmaskedold = nmasked
-            nmasked = np.sum(clipmask)
-            niter += 1
-            if verbose: print(f'Performed {niter} clipping iterations...')
-
-            #break if too many iterations
-            if niter > maxiter: 
-                if verbose: print(f'Reached maximum clipping iterations: {niter}')
-                break
-
-            #break if too much data has been clipped
-            maskfrac = (nmasked - nmasked0)/ngood
-            if maskfrac > clip_thresh:
-                err = True
-                break
-
-            #apply mask to data
-            self.remask(clipmask)
-
-        #make a plot of all of the masks if desired
-        if verbose: 
-            print(f'{round(maskfrac * 100, 1)}% of data clipped')
-            if sigma:
-                masks += [residmask, chisqmask]
-                labels += ['resid', 'chisq']
-                print(f'Clipping converged after {niter} iterations')
-
-            plt.figure(figsize = (12,8))
-            for i in range(len(masks)):
-                plt.subplot(231+i)
-                plt.axis('off')
-                plt.imshow(self.remap(masks[i]), origin='lower')
-                plt.title(labels[i])
-            plt.tight_layout()
-            plt.show()
-
-        if err:
-            raise ValueError(f'Bad velocity field: {round(maskfrac * 100, 1)}% of data clipped after {niter} iterations')
+#    def clip(self, sigma=10, sbf=.03, anr=5, maxiter=10, smear_dv=50, smear_dsig=50, clip_thresh=.95, verbose=False):
+#        '''
+#        Filter out bad spaxels in kinematic data.
+#        
+#        Looks for features smaller than PSF by reconvolving PSF and looking for
+#        outlier points. Iteratively fits axisymmetric velocity field models and
+#        sigma clips residuals and chisq to get rid of outliers. Also clips
+#        based on surface brightness flux and ANR ratios. Applies new mask to
+#        galaxy.
+#
+#        Args: 
+#            sigma (:obj:`float`, optional): 
+#                Significance threshold to be passed to
+#                `astropy.stats.sigma_clip` for sigma clipping the residuals
+#                and chi squared. Can't be too low or it will cut out
+#                nonaxisymmetric features. 
+#            sbf (:obj:`float`, optional): 
+#                Flux threshold below which spaxels are masked.
+#            anr (:obj:`float`, optional): 
+#                Surface brightness amplitude/noise ratio threshold below which
+#                spaxels are masked.
+#            maxiter (:obj:`int`, optional):
+#                Maximum number of iterations to allow clipping process to go
+#                through.
+#            smear_dv (:obj:`float`, optional):
+#                Threshold for clipping residuals of resmeared velocity data
+#            smear_dsig (:obj:`float`, optional):
+#                Threshold for clipping residuals of resmeared velocity
+#                dispersion data.
+#            clip_thresh (:obj:`float`, optional):
+#                Maximum fraction of the bins that can be clipped in order for
+#                the data to still be considered good. Will throw an error if
+#                it exceeds this level.
+#            verbose (:obj:`bool`, optional):
+#                Flag for printing out information on iterations.
+#        '''
+#
+#        #count spaxels in each bin and make 2d maps excluding large bins
+#        nspax = np.array([(self.remap('binid') == self.binid[i]).sum() for i in range(len(self.binid))])
+#        binmask = self.remap(nspax) > 10
+#        #binmask = self.remap(self.nspax) > 10
+#        ngood = self.vel_mask.sum()
+#        nmasked0 = (~self.vel_mask).sum()
+#
+#        sb  = np.ma.array(self.remap('sb'), mask=binmask) if self.sb is not None else None
+#        vel = np.ma.array(self.remap('vel'), mask=binmask)
+#        sig = np.ma.array(self.remap('sig'), mask=binmask) if self.sig is not None  else None
+#
+#        #reconvolve psf on top of velocity and dispersion
+#        cnvfftw = ConvolveFFTW(self.spatial_shape)
+#        smeared = smear(vel, self.beam_fft, beam_fft=True, sig=sig, sb=sb, cnvfftw=cnvfftw)
+#
+#        #cut out spaxels with too high residual because they're probably bad
+#        dvmask = self.bin(np.abs(vel - smeared[1]) > smear_dv) 
+#        masks = [dvmask]
+#        labels = ['dv']
+#        if self.sig is not None: 
+#            dsigmask = self.bin(np.abs(sig - smeared[2]) > smear_dsig)
+#            masks += [dsigmask]
+#            labels += ['dsig']
+#
+#        #clip on surface brightness and ANR
+#        if self.sb is not None: 
+#            sbmask = self.sb < sbf
+#            masks += [sbmask]
+#            labels += ['sb']
+#
+#        if self.sb_anr is not None:
+#            anrmask = self.sb_anr < anr
+#            masks += [anrmask]
+#            labels += ['anr']
+#
+#        #combine all masks and apply to data
+#        mask = np.zeros(dvmask.shape)
+#        for m in masks: mask += m
+#        mask = mask.astype(bool)
+#        self.remask(mask)
+#
+#        #iterate through rest of clips until mask converges
+#        nmaskedold = -1
+#        nmasked = np.sum(mask)
+#        niter = 0
+#        err = False
+#        while nmaskedold != nmasked and sigma:
+#            #quick axisymmetric least squares fit
+#            fit = axisym.AxisymmetricDisk()
+#            fit.lsq_fit(self)
+#
+#            #quick axisymmetric fit
+#            model = self.bin(fit.model())
+#            resid = self.vel - model
+#
+#            #clean up the data by sigma clipping residuals and chisq
+#            chisq = resid**2 * self.vel_ivar if self.vel_ivar is not None else resid**2
+#            residmask = sigma_clip(resid, sigma=sigma, masked=True).mask
+#            chisqmask = sigma_clip(chisq, sigma=sigma, masked=True).mask
+#            clipmask = (mask + residmask + chisqmask).astype(bool)
+#
+#            #iterate
+#            nmaskedold = nmasked
+#            nmasked = np.sum(clipmask)
+#            niter += 1
+#            if verbose: print(f'Performed {niter} clipping iterations...')
+#
+#            #break if too many iterations
+#            if niter > maxiter: 
+#                if verbose: print(f'Reached maximum clipping iterations: {niter}')
+#                break
+#
+#            #break if too much data has been clipped
+#            maskfrac = (nmasked - nmasked0)/ngood
+#            if maskfrac > clip_thresh:
+#                err = True
+#                break
+#
+#            #apply mask to data
+#            self.remask(clipmask)
+#
+#        #make a plot of all of the masks if desired
+#        if verbose: 
+#            print(f'{round(maskfrac * 100, 1)}% of data clipped')
+#            if sigma:
+#                masks += [residmask, chisqmask]
+#                labels += ['resid', 'chisq']
+#                print(f'Clipping converged after {niter} iterations')
+#
+#            plt.figure(figsize = (12,8))
+#            for i in range(len(masks)):
+#                plt.subplot(231+i)
+#                plt.axis('off')
+#                plt.imshow(self.remap(masks[i]), origin='lower')
+#                plt.title(labels[i])
+#            plt.tight_layout()
+#            plt.show()
+#
+#        if err:
+#            raise ValueError(f'Bad velocity field: {round(maskfrac * 100, 1)}% of data clipped after {niter} iterations')
 
 
     def remask(self, mask):
