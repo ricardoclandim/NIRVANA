@@ -20,6 +20,7 @@ from .oned import HyperbolicTangent, Exponential, ExpBase, Const, PolyEx
 from .geometry import projected_polar, deriv_projected_polar
 from .beam import ConvolveFFTW, smear, deriv_smear
 from .util import cov_err
+from ..data.kinematics import Kinematics
 from ..data.scatter import IntrinsicScatter
 from ..data.util import impose_positive_definite, cinv, inverse, find_largest_coherent_region
 from ..data.util import select_major_axis, bin_stats, growth_lim, atleast_one_decade
@@ -29,6 +30,7 @@ from ..util import fileio
 
 #warnings.simplefilter('error', RuntimeWarning)
 
+# TODO: Make this a member function of AxisymmetricDisk?
 def disk_fit_reject(kin, disk, disp=None, ignore_covar=True, vel_mask=None, vel_sigma_rej=5,
                     show_vel=False, vel_plot=None, sig_mask=None, sig_sigma_rej=5, show_sig=False,
                     sig_plot=None, rej_flag='REJ_RESID', verbose=False):
@@ -951,10 +953,11 @@ class AxisymmetricDisk:
                                              sig=sig, dsig=dsig, cnvfftw=self.cnvfftw)
         return v, sig, dv, dsig
 
+    # TODO: Include sig_corr?
     def mock_observation(self, par, kin=None, x=None, y=None, sb=None, binid=None,
                          vel_ivar=None, vel_covar=None, vel_mask=None, sig_ivar=None,
                          sig_covar=None, sig_mask=None, beam=None, is_fft=False, cnvfftw=None,
-                         ignore_beam=False):
+                         ignore_beam=False, ignore_err=False):
         r"""
         Construct a mock observation.
 
@@ -971,7 +974,23 @@ class AxisymmetricDisk:
 
         The mock observation is constructed by sampling the model exactly as
         done when fitting real observations.  If errors are provided, Gaussian
-        error is added to the model values.
+        error is added to the model values, unless ``ignore_err`` is True.
+
+
+        EXPLAIN COMPLEXITY OF BINNING DATA
+
+        .. warning::
+
+            - Unlike :func:`model`, this method does *not* use any pre-existing
+              attributes in place of keyword arguments that are not directly
+              provided.  For example, if ``beam`` is None on input,
+              :attr:`beam_fft` will *not* be used even if available.  Instead,
+              this method calls :func:`reinit` to reinitialize the object such
+              that the mock observation is built from the provided arguments
+              only.
+
+            - Covariance matrices are expected to be positive-definite on input!
+
 
         Args:
             par (array-like):
@@ -1062,13 +1081,158 @@ class AxisymmetricDisk:
             ignore_beam (:obj:`bool`, optional):
                 Regardless of the availability of the beam profile, ignore it
                 and do not include it in the returned object.
+            ignore_err (:obj:`bool`, optional):
+                If provided by either ``kin`` or the method keyword arguments,
+                ignore the error when generating the mock observation.
 
         Returns:
             :class:`~nirvana.data.kinematics.Kinematics`:  Object providing the
             mock observations.  This object can be fit, e.g., with
             :func:`lsq_fit`, as would be done with real observations.
         """
+        # Check: Dispersion model not defined but error and mask provided
+        if self.dc is None and any([s is not None for s in [sig_ivar, sig_covar, sig_mask]]):
+            warnings.warn('AxisymmetricDisk instance does not include dispersion profile model.  '
+                          'Ignoring provided dispersion errors and mask.')
+        # Check: Dispersion model available and mismatch between availability of errors
+        if self.dc is not None and (vel_ivar is not None and sig_ivar is None \
+                                    or vel_ivar is None and sig_ivar is not None \
+                                    or vel_covar is not None and sig_covar is None \
+                                    or vel_covar is None and sig_covar is not None):
+            raise ValueError('When adding error, must add error to both vel and sigma.')
+        # Check: Both covar and ivar are provided
+        if vel_ivar is not None and vel_covar is not None:
+            warnings.warn('Provided both velocity ivar and covar; the latter takes precedence.')
+        if self.dc is not None and sig_ivar is not None and sig_covar is not None:
+            warnings.warn('Provided both dispersion ivar and covar; the latter takes precedence.')
 
+        # Set whether or not to add Gaussian noise
+        add_noise = vel_ivar is not None or vel_covar is not None
+        rng = np.random.default_rng() if add_noise else None
+
+
+        # Reinitialize
+        self.reinit()
+
+
+        if kin is None:
+            # At minimum, the x and y grid on which to compute the model must
+            # have been provided.
+            if x is None or y is None:
+                raise ValueError('If a Kinematics object is not provided, must provide x and y '
+                                 'grids for model computation.')
+
+            spatial_shape = _x.shape
+            _x = x
+            _y = y
+            _sb = sb
+            _beam = None if beam is None else np.fft.fftshift(np.fft.ifftn(beam).real)
+
+            # Get the models
+            models = self.model(par=par, x=x, y=y, sb=sb, beam=beam, is_fft=is_fft,
+                                cnvfftw=cnvfftw, ignore_beam=ignore_beam)
+
+            # Get the bin mapping
+            _, _, bin_indx, grid_indx, bin_inverse, bin_transform \
+                = get_map_bin_transformations(spatial_shape=spatial_shape, binid=binid)
+
+        else:
+
+            spatial_shape = kin.spatial_shape
+            _x = kin.grid_x
+            _y = kin.grid_y
+            _sb = kin.grid_sb
+            _beam = kin.beam
+
+            models = self.model(par=par, x=kin.grid_x, y=kin.grid_y, sb=kin.grid_sb,
+                                beam=kin.beam_fft, is_fft=True, cnvfftw=cnvfftw,
+                                ignore_beam=ignore_beam)
+
+            bin_indx = kin.bin_indx
+            grid_indx = kin.grid_indx
+            bin_inverse = kin.bin_inverse
+            bin_transform = kin.bin_transform
+
+        # Get the model data
+        if self.dc is None:
+            vmod, smod = models, None
+        else:
+            vmod, smod = models
+
+        # Perform the binning, if necessary
+        if binid is not None:
+            vmod = bin_transform.dot(vmod.ravel())
+            if smod is not None:
+                smod = bin_transform.dot(smod.ravel())
+
+        # Draw the error realization
+
+        
+
+            if vel_ivar is not None:
+                _vel_ivar = vel_ivar.ravel()[bin_indx]
+            if sig_ivar is not None:
+                _sig_ivar = sig_ivar.ravel()[bin_indx]
+
+            if vel_covar is not None:
+                _vel_covar = vel_covar.copy() if isinstance(vel_covar, sparse.csr.csr_matrix) \
+                        else sparse.csr_matrix(vel_covar)
+                _vel_covar = _bin_transform.dot(_vel_covar.dot(_bin_transform.T))
+                _vel_covar[_vel_covar < 0] = 0.
+                _vel_covar = (_vel_covar + _vel_covar.T)/2
+            if sig_covar is not None:
+                _sig_covar = sig_covar.copy() if isinstance(sig_covar, sparse.csr.csr_matrix) \
+                        else sparse.csr_matrix(sig_covar)
+                _sig_covar = _bin_transform.dot(_sig_covar.dot(_bin_transform.T))
+                _sig_covar[_sig_covar < 0] = 0.
+                _sig_covar = (_sig_covar + _sig_covar.T)/2
+
+        # Add error
+
+
+        if binid is not None:
+            vmod = np.ma.MaskedArray(np.zeros(spatial_shape, dtype=float), mask=True)
+            vmod[np.unravel_index(grid_indx, spatial_shape)] = _vmod[bin_inverse]
+            if smod is not None:
+                smod = np.ma.MaskedArray(np.zeros(spatial_shape, dtype=float), mask=True)
+                smod[np.unravel_index(grid_indx, spatial_shape)] = _smod[bin_inverse]
+
+    # Get the good pixel mask and covariance matrix for an example gas
+    # velocity field error
+    gas_gpm, gas_covar = manga_covar(hdu['EMLINE_GVEL_IVAR'].data[el['Ha-6564']])
+    # Number of good spaxels
+    nspax = numpy.sum(gas_gpm)
+    # Map to use for the random draw from the covariance matrix
+    draw = numpy.ma.masked_all(map_shape, dtype=float)
+    # Construct a noise-only field for the good pixels
+    draw[gas_gpm] = rng.multivariate_normal(numpy.zeros(nspax, dtype=float), gas_covar.toarray())
+
+
+
+                # Construct the output map
+#        _data = np.ma.masked_all(self.spatial_shape, dtype=d.dtype)
+        # NOTE: np.ma.masked_all sets the initial data array to
+        # 2.17506892e-314, which just leads to trouble. I've replaced this with
+        # the line below to make sure that the initial value is just 0.
+        _data = np.ma.MaskedArray(np.zeros(self.spatial_shape, dtype=d.dtype), mask=True)
+        _data[np.unravel_index(self.grid_indx, self.spatial_shape)] = d[self.bin_inverse]
+        if m is not None:
+            np.ma.getmaskarray(_data)[np.unravel_index(self.grid_indx, self.spatial_shape)] \
+                    = m[self.bin_inverse]
+        # Return a masked array if requested; otherwise, fill the masked values
+        # with the equivalent of 0. WARNING: this will be False for a boolean
+        # array...
+        return _data if masked else _data.filled(d.dtype.type(fill_value))
+
+
+    def mock_observation(self, par, kin=None, x=None, y=None, sb=None, binid=None,
+                         vel_ivar=None, vel_covar=None, vel_mask=None, sig_ivar=None,
+                         sig_covar=None, sig_mask=None, beam=None, is_fft=False, cnvfftw=None,
+                         ignore_beam=False, ignore_err=False):
+
+
+        # If
+    # Kinematics
     def __init__(self, vel, vel_ivar=None, vel_mask=None, vel_covar=None, x=None, y=None, sb=None,
                  sb_ivar=None, sb_mask=None, sb_covar=None, sb_anr=None, sig=None, sig_ivar=None,
                  sig_mask=None, sig_covar=None, sig_corr=None, psf_name=None, psf=None,
@@ -1076,9 +1240,9 @@ class AxisymmetricDisk:
                  reff=None, fwhm=None, bordermask=None, image=None, phot_inc=None, maxr=None,
                  positive_definite=False, quiet=False):
 
-        self.binid, self.nspax, self.bin_indx, self.grid_indx, self.bin_inverse, \
-            self.bin_transform \
-        get_map_bin_transformations(spatial_shape=None, binid=None):
+    def model(self, par=None, x=None, y=None, sb=None, beam=None, is_fft=False, cnvfftw=None,
+              ignore_beam=False):
+
 
 
     def _v_resid(self, vel):
