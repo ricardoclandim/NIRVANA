@@ -164,3 +164,49 @@ def test_sbholes():
     assert numpy.sum(_sb - sb.filled(0.0) > 0) > 250, 'Number of fixed spaxels changed.'
 
 
+@requires_remote
+def test_remap_covar():
+    maps_file = remote_data_file('manga-8138-12704-MAPS-{0}.fits.gz'.format(dap_test_daptype))
+
+    # Read the data directly
+    with fits.open(maps_file) as hdu:
+        binid = hdu['BINID'].data[1]
+        ivar = numpy.ma.MaskedArray(hdu['STELLAR_VEL_IVAR'].data,
+                                    mask=hdu['STELLAR_VEL_MASK'].data>0)
+
+    # And setup the covariance
+    _, covar = manga.manga_map_covar(ivar, binid=binid, positive_definite=False, fill=True)
+
+    # Get the covariance in the binned data
+    bin_transform = util.get_map_bin_transformations(binid=binid)[-1]
+    bin_covar = bin_transform.dot(covar.dot(bin_transform.T))
+
+    # Reconstruct the input full map covariance
+    gpm = binid > -1
+    _bt = bin_transform[:,gpm.ravel()].T
+    _bt[_bt > 0] = 1.
+    _covar = util.fill_matrix(_bt.dot(bin_covar.dot(_bt.T)), gpm.ravel())
+
+    assert numpy.allclose(_covar.toarray(), covar.toarray()), \
+            'Bad covariance reconstruction'
+
+    # Do the same thing using the Kinematics class
+    kin = manga.MaNGAStellarKinematics(maps_file, covar=True)
+    vel_covar = kin.remap_covar('vel_covar')
+
+    assert numpy.allclose(covar.toarray(), vel_covar.toarray()), \
+            'Bad Kinematics covariance reconstruction'
+
+
+@requires_remote
+def test_copy():
+    maps_file = remote_data_file('manga-8138-12704-MAPS-{0}.fits.gz'.format(dap_test_daptype))
+
+    kin = manga.MaNGAGasKinematics(maps_file)
+    _kin = kin.copy()
+
+    assert kin.vel is not _kin.vel, 'Velocity array points to the same object'
+    assert numpy.array_equal(kin.vel, _kin.vel), 'Velocity data should be identical'
+    assert kin.nbin == _kin.nbin, 'Number of bins is not the same'
+
+

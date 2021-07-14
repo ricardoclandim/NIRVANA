@@ -370,3 +370,117 @@ def test_lsq_with_covar():
     assert 249. < disk.par[5] < 252., 'Projected rotation changed'
 
 
+@requires_remote
+def test_mock_noerr():
+
+    data_root = remote_data_file()
+    kin = manga.MaNGAStellarKinematics.from_plateifu(8138, 12704, cube_path=data_root,
+                                                     maps_path=data_root)
+
+    # Set the parameters close to the best-fitting parameters from a previous
+    # run
+    p0 = numpy.array([-0.2, -0.08, 166.3, 53.0, 25.6, 217.0, 2.82, 189.7, 16.2])
+
+    disk = AxisymmetricDisk(rc=HyperbolicTangent(), dc=Exponential())
+    v, s = disk.model(p0, x=kin.grid_x, y=kin.grid_y, sb=kin.grid_sb, beam=kin.beam_fft,
+                      is_fft=True)
+    vremap = kin.remap(kin.bin(v), mask=kin.vel_mask)
+    sremap = kin.remap(kin.bin(s), mask=kin.sig_mask)
+
+    mock_kin = disk.mock_observation(p0, kin=kin)
+    mock_vremap = mock_kin.remap('vel')
+    mock_sremap = mock_kin.remap(numpy.sqrt(mock_kin.sig_phys2), mask=kin.sig_mask)
+
+    assert numpy.ma.allclose(mock_vremap, vremap), 'Bad mock velocity'
+    assert numpy.ma.allclose(mock_sremap, sremap), 'Bad mock dispersion'
+
+
+@requires_remote
+def test_mock_err():
+
+    data_root = remote_data_file()
+    kin = manga.MaNGAStellarKinematics.from_plateifu(8138, 12704, cube_path=data_root,
+                                                     maps_path=data_root)
+
+    # Set the parameters close to the best-fitting parameters from a previous
+    # run
+    p0 = numpy.array([-0.2, -0.08, 166.3, 53.0, 25.6, 217.0, 2.82, 189.7, 16.2])
+
+    disk = AxisymmetricDisk(rc=HyperbolicTangent(), dc=Exponential())
+    v, s = disk.model(p0, x=kin.grid_x, y=kin.grid_y, sb=kin.grid_sb, beam=kin.beam_fft,
+                      is_fft=True)
+    vremap = kin.remap(kin.bin(v), mask=kin.vel_mask)
+    sremap = kin.remap(kin.bin(s), mask=kin.sig_mask)
+
+    mock_kin = disk.mock_observation(p0, kin=kin, add_err=True)
+    mock_vremap = mock_kin.remap('vel')
+    mock_sremap = mock_kin.remap(numpy.sqrt(mock_kin.sig_phys2), mask=kin.sig_mask)
+
+    assert numpy.ma.std(mock_vremap-vremap) > 5, 'Velocity error changed'
+    assert numpy.ma.std(mock_sremap-sremap) > 7, 'Dispersion error changed'
+
+
+@requires_remote
+def test_mock_covar():
+
+    data_root = remote_data_file()
+    kin = manga.MaNGAStellarKinematics.from_plateifu(8138, 12704, cube_path=data_root,
+                                                     maps_path=data_root, covar=True)
+
+    # Set the parameters close to the best-fitting parameters from a previous
+    # run
+    p0 = numpy.array([-0.2, -0.08, 166.3, 53.0, 25.6, 217.0, 2.82, 189.7, 16.2])
+
+    disk = AxisymmetricDisk(rc=HyperbolicTangent(), dc=Exponential())
+    v, s = disk.model(p0, x=kin.grid_x, y=kin.grid_y, sb=kin.grid_sb, beam=kin.beam_fft,
+                      is_fft=True)
+    vremap = kin.remap(kin.bin(v), mask=kin.vel_mask)
+    sremap = kin.remap(kin.bin(s), mask=kin.sig_mask)
+
+    mock_kin = disk.mock_observation(p0, kin=kin, add_err=True)
+    mock_vremap = mock_kin.remap('vel')
+    mock_sremap = mock_kin.remap(numpy.sqrt(mock_kin.sig_phys2), mask=kin.sig_mask)
+
+    assert numpy.ma.std(mock_vremap-vremap) > 5, 'Velocity error changed'
+    assert numpy.ma.std(mock_sremap-sremap) > 7, 'Dispersion error changed'
+
+
+@requires_remote
+def test_fisher():
+
+    data_root = remote_data_file()
+    for use_covar in [False, True]:
+        kin = manga.MaNGAStellarKinematics.from_plateifu(8138, 12704, cube_path=data_root,
+                                                        maps_path=data_root, covar=use_covar)
+
+        # Set the parameters close to the best-fitting parameters from a previous
+        # run
+        p0 = numpy.array([-0.2, -0.08, 166.3, 53.0, 25.6, 217.0, 2.82, 189.7, 16.2])
+
+        # Get the Fisher Information Matrix
+        disk = AxisymmetricDisk(rc=HyperbolicTangent(), dc=Exponential())
+        fim = disk.fisher_matrix(p0, kin, sb_wgt=True)
+
+        # Use it to compute the correlation matrix
+        covar = util.cinv(fim)
+        var = numpy.diag(covar)
+        rho = covar / numpy.sqrt(var[:,None]*var[None,:])
+
+        # Get the upper triangle of the correlation matrix (without the main
+        # diagonal)
+        indx = numpy.triu_indices(rho.shape[0], k=1)
+
+        # Get the indices of the parameters with the 5 strongest correlation coefficients
+        srt = numpy.argsort(numpy.absolute(rho[indx]))[::-1][:5]
+
+        # Check the result.  The strongest correlations should be between:
+        #   (7,8) - The two sigma parameters
+        #   (1,4) - The y coordinate and the systemic velocity
+        #   (3,5) - The inclination and the asymptotic rotation speed
+        #   (5,6) - The two rotation curve parameters
+        #   (0,1) - The center coordinates
+        for correlated_pair in zip(indx[0][srt], indx[1][srt]):
+            assert correlated_pair in [(7,8), (1,4), (3,5), (5,6), (0,1)], \
+                'Unexpected pair with strong correlation'
+
+

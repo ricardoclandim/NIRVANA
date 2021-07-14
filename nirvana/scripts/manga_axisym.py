@@ -170,6 +170,9 @@ def main(args):
         # NOTE: Should never get here given the check above.
         raise ValueError(f'Unknown tracer: {args.tracer}')
 
+    embed()
+    exit()
+
     # Setup the metadata
     galmeta = manga.MaNGAGlobalPar(args.plate, args.ifu, redux_path=args.redux, dr=args.dr,
                                    drpall_path=args.root)
