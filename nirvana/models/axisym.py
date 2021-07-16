@@ -1321,6 +1321,11 @@ class AxisymmetricDisk:
             dispersion data (based on ``sep``).
         """
         self._set_par(par)
+        # TODO: This binning isn't exactly right...  Need to bin velocity and
+        # velocity dispersion in the same way that we do the beam-smearing.
+        # I.e., the binned velocity is sum_i w_i v_i / sum_i w_i, where w_i is
+        # the luminosity weighting.  And the binned velocity dispersion should
+        # be sqrt(sum_i w_i (v_i^2 + s_i^2) / sum_i w_i - bin_v^2)
         vel, sig = (self.kin.bin(self.model()), None) if self.dc is None \
                         else map(lambda x : self.kin.bin(x), self.model())
         vfom = self._v_resid(vel)

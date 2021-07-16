@@ -118,4 +118,16 @@ def test_deriv_projected_polar():
         'Azimuth derivative does not match finite difference'
 
 
+def test_hexagon():
+    v = geometry.hexagon_vertices()
+    _v = geometry.hexagon_vertices(incircle=True, orientation='vertical')
+
+    assert not numpy.any(geometry.point_inside_polygon(_v, v)), \
+                'Rotation should lead to all vertices of v being on the _v polygon.'
+
+    _v = geometry.hexagon_vertices(incircle=True)
+
+    assert numpy.all(geometry.point_inside_polygon(_v, v)), \
+            'Second hexagon should be larger than the first.'
+
 

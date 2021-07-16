@@ -21,6 +21,8 @@ from ..models import geometry
 # would make all the positive-definite + tracking easier.
 
 
+# TODO: Build a Bin2D class to handle all the binning methods.
+
 # TODO: Add a set of weights?
 def get_map_bin_transformations(spatial_shape=None, binid=None):
     r"""
@@ -263,6 +265,47 @@ def cinv(mat, check_finite=False, upper=False):
     cho = linalg.solve_triangular(cho, np.identity(cho.shape[0]), check_finite=check_finite)
     # TODO: Make it a sparse matrix if upper?
     return cho if upper else np.dot(cho, cho.T)
+
+
+def boxcar_average(arr, boxcar):
+    """
+    Boxcar average an array.
+
+    Args:
+        arr (`numpy.ndarray`_):
+            Array to average.  Currently cannot be masked.
+        boxcar (:obj:`int`, :obj:`tuple`):
+            Integer number of pixels to average.  If a single integer,
+            all axes are averaged with the same size box.  If a
+            :obj:`tuple`, the integer is defined separately for each
+            array axis; length of tuple must match the number of array
+            dimensions.
+
+    Returns:
+        `numpy.ndarray`_: The averaged array.  If boxcar is a single
+        integer, the returned array shape is::
+            
+            tuple([s//boxcar for s in arr.shape])
+
+        A similar operation gives the shape when boxcar has elements
+        defined for each array dimension.  If the input array is not an
+        integer number of boxcar pixels along a given dimension, the
+        remainder of the array elements along that dimension are ignored
+        (i.e., pixels within the modulus of the array shape and boxcar
+        of the end of the array dimension are ignored).
+    """
+    # Check and configure the input
+    _boxcar = (boxcar,)*arr.ndim if isinstance(boxcar, int) else boxcar
+    if not isinstance(_boxcar, tuple):
+        raise TypeError('Input `boxcar` must be an integer or a tuple.')
+    if len(_boxcar) != arr.ndim:
+        raise ValueError('Must provide an integer or tuple with one number per array dimension.')
+
+    # Perform the boxcar average over each axis and return the result
+    _arr = arr.copy()
+    for axis, box in zip(range(arr.ndim), _boxcar):
+        _arr = numpy.add.reduceat(_arr, numpy.arange(0, _arr.shape[axis], box), axis=axis)/box
+    return _arr
 
 
 def boxcar_replicate(arr, boxcar):
@@ -1137,7 +1180,7 @@ def gaussian_deviates(ivar=None, mask=None, covar=None, size=None, rng=None):
     if covar is None:
         # Return independent draws
         if size is not None and size > 1:
-            return gpm, rng.normal(size=tuple(size)+(np.sum(gpm),)) / np.sqrt(ivar[gpm])[None,:]
+            return gpm, rng.normal(size=(size, np.sum(gpm))) / np.sqrt(ivar[gpm])[None,:]
         return gpm, rng.normal(size=np.sum(gpm)) / np.sqrt(ivar[gpm])
 
     # Return draws from a multivariate Gaussian

@@ -250,7 +250,7 @@ class Kinematics: #(FitArgs):
         self.binid, self.nspax, self.bin_indx, self.grid_indx, self.bin_inverse, \
             self.bin_transform \
                 = get_map_bin_transformations(spatial_shape=self.spatial_shape, binid=binid)
-        self.nbin = self.binid.size
+        self.nbin = self.nspax.size
 
         # Unravel and select the valid values for all arrays
         for attr in ['x', 'y', 'sb', 'sb_ivar', 'sb_mask', 'vel', 'vel_ivar', 'vel_mask', 'sig', 

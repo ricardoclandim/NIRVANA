@@ -12,14 +12,6 @@ from ..data import manga
 from ..models import axisym
 
 # TODO: Setup a logger
-# TODO: Need to test different modes.
-#   Tested so far:
-#       - Fit Gas or stars
-#       - Fit with psf and velocity dispersion
-#   Need to test:
-#       - Fit without psf
-#       - Fit with covariance
-#       - Fit without velocity dispersion
 
 #import warnings
 #warnings.simplefilter('error', RuntimeWarning)
