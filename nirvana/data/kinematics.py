@@ -5,7 +5,7 @@ model.
 .. include common links, assuming primary doc root is up one directory
 .. include:: ../include/links.rst
 """
-
+import copy
 from IPython import embed
 
 import numpy as np
@@ -15,24 +15,13 @@ from astropy.stats import sigma_clip
 import matplotlib.pyplot as plt
 import warnings
 
-#try:
-#    import theano.tensor as tt
-#except:
-#    tt = None
-
 from .util import get_map_bin_transformations, impose_positive_definite, fill_matrix
 from .util import gaussian_deviates
-
 from ..models.beam import construct_beam, ConvolveFFTW, smear
 from ..models.geometry import projected_polar
-#from .fitargs import FitArgs
-#from ..models import oned, axisym
 
 
-# TODO: We should separate the needs of the model from the needs of the
-# data. I.e., I don't think that Kinematics should inherit from
-# FitArgs.
-class Kinematics: #(FitArgs):
+class Kinematics:
     r"""
     Base class to hold data fit by the kinematic model.
 
@@ -168,6 +157,11 @@ class Kinematics: #(FitArgs):
             Photometric inclination in degrees.
         maxr (:obj:`float`, optional):
             Maximum radius of useful data in effective radii.
+        positive_definite (:obj:`bool`, optional):
+            Use :func:`~nirvana.data.util.impose_positive_definite` to force
+            the provided covariance matrix to be positive definite.
+        quiet (:obj:`bool`, optional):
+            Suppress message output.
 
     Raises:
         ValueError:
@@ -215,6 +209,7 @@ class Kinematics: #(FitArgs):
         self.sb_anr = sb_anr
         self.phot_inc = phot_inc
         self.maxr = maxr
+        self.bordermask = bordermask        # TODO: Is this ever used?
 
         # Build coordinate arrays
         if x is None:
@@ -372,7 +367,7 @@ class Kinematics: #(FitArgs):
 
         return _data, _ivar, _mask
 
-    def _ingest_covar(self, covar, positive_definite=True, quiet=False):
+    def _ingest_covar(self, covar, mask=None, positive_definite=True, quiet=False):
         """
         Ingest an input covariance matrix for use when fitting the data.
 
@@ -438,30 +433,37 @@ class Kinematics: #(FitArgs):
         """
         Perform a deep copy of the instance.
 
-        In detail, this creates a new instance of the subclass and then
-        instantiates the base class with copies of all the relevant attributes
-        needed for its instantiation.
-
         .. warning::
             
             Use this with care...
 
         """
-        _copy = super().__new__(self.__class__)
-        Kinematics.__init__(_copy, self.remap('vel'), vel_ivar=self.remap('vel_ivar'),
-                            vel_covar=self.remap_covar('vel_covar'), x=self.remap('x'),
-                            y=self.remap('y'), sb=self.remap('sb'),
-                            sb_ivar=self.remap('sb_ivar'), sb_covar=self.remap_covar('sb_covar'),
-                            sb_anr=self.remap('sb_anr'), sig=self.remap('sig'),
-                            sig_ivar=self.remap('sig_ivar'),
-                            sig_covar=self.remap_covar('sig_covar'),
-                            sig_corr=self.remap('sig_corr'), psf_name=self.psf_name,
-                            psf=self.beam, binid=self.remap('binid', masked=False, fill_value=-1),
-                            grid_x=self.grid_x, grid_y=self.grid_y, grid_sb=self.grid_sb,
-                            grid_wcs=self.grid_wcs, reff=self.reff, fwhm=self.fwhm,
-                            bordermask=self.bordermask, image=self.image, phot_inc=self.phot_inc,
-                            maxr=self.maxr, quiet=True)
-        return _copy
+        # TODO: I'm really wary of deepcopy, but this is so much faster than
+        # trying to instantiate a new object, and avoids numerical error for the
+        # covariance matrix, which can lead to them not being positive
+        # definite....
+        return copy.deepcopy(self)
+
+        # TODO: Par of old doc string
+#        In detail, this creates a new instance of the subclass and then
+#        instantiates the base class with copies of all the relevant attributes
+#        needed for its instantiation.
+
+#        _copy = super().__new__(self.__class__)
+#        Kinematics.__init__(_copy, self.remap('vel'), vel_ivar=self.remap('vel_ivar'),
+#                            vel_covar=self.remap_covar('vel_covar'), x=self.remap('x'),
+#                            y=self.remap('y'), sb=self.remap('sb'),
+#                            sb_ivar=self.remap('sb_ivar'), sb_covar=self.remap_covar('sb_covar'),
+#                            sb_anr=self.remap('sb_anr'), sig=self.remap('sig'),
+#                            sig_ivar=self.remap('sig_ivar'),
+#                            sig_covar=self.remap_covar('sig_covar'),
+#                            sig_corr=self.remap('sig_corr'), psf_name=self.psf_name,
+#                            psf=self.beam, binid=self.remap('binid', masked=False, fill_value=-1),
+#                            grid_x=self.grid_x, grid_y=self.grid_y, grid_sb=self.grid_sb,
+#                            grid_wcs=self.grid_wcs, reff=self.reff, fwhm=self.fwhm,
+#                            bordermask=self.bordermask, image=self.image, phot_inc=self.phot_inc,
+#                            maxr=self.maxr, quiet=True)
+#        return _copy
 
 
     def update_sigma(self, sig=None, sig_ivar=None, sig_covar=None):
@@ -491,17 +493,23 @@ class Kinematics: #(FitArgs):
         if sig is not None:
             if sig.size != self.nbin:
                 raise ValueError('Provided velocity dispersion has incorrect shape!')
-            self.sig = sig.copy()
+            self.sig = sig.ravel().copy()
         if sig_ivar is not None:
             if sig_ivar.size != self.nbin:
                 raise ValueError('Provided dispersion inv. variance has incorrect shape!')
-            self.sig_ivar = sig_ivar.copy()
+            self.sig_ivar = sig_ivar.ravel().copy()
         if sig_covar is not None:
             if sig_covar.shape != (self.nbin,self.nbin):
                 raise ValueError('Provided dispersion covariance has incorrect shape!')
             if not isinstance(sig_covar, sparse.csr_matrix):
                 raise TypeError('Covariance matrix must have type scipy.sparse.csr_matrix')
             self.sig_covar = sig_covar.copy()
+
+        if self.sig is None:
+            self.sig_phys2 = None
+            self.sig_phys2_ivar = None
+            self.sig_phys2_covar = None
+            return
 
         # Calculate the square of the astrophysical velocity dispersion. This is
         # just the square of the velocity dispersion if no correction is
@@ -628,7 +636,8 @@ class Kinematics: #(FitArgs):
         _covar = getattr(self, covar) if isinstance(covar, str) else covar
         if _covar is None:
             return None
-        gpm = self.remap('binid', masked=False, fill_value=-1) > -1
+        gpm = np.ones(self.nbin, dtype=bool) if self.binid is None \
+                    else self.remap('binid', masked=False, fill_value=-1) > -1
         _bt = self.bin_transform[:,gpm.ravel()].T
         _bt[_bt > 0] = 1.
         return fill_matrix(_bt.dot(_covar.dot(_bt.T)), gpm.ravel())

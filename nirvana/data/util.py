@@ -166,8 +166,8 @@ def impose_positive_definite(mat, min_eigenvalue=1e-10, renormalize=True):
         - Impose a minimum eigenvalue (see ``min_eigenvalue``)
         - Reconstruct the input matrix using the eigenvectors and the
           adjusted eigenvalues
-        - Renormalize the reconstructed matrix such its diagonal is identical
-          to the input matrix, if requested.
+        - Renormalize the reconstructed matrix such that its diagonal is
+          identical to the input matrix, if requested.
 
     Args:
         mat (`scipy.sparse.csr_matrix`_):
@@ -206,7 +206,7 @@ def impose_positive_definite(mat, min_eigenvalue=1e-10, renormalize=True):
     return sparse.csr_matrix(_mat * np.outer(t,t) * np.sqrt(np.outer(d,d)))
 
 
-def is_positive_definite(mat, quiet=True):
+def is_positive_definite(mat, quiet=True, quick=True):
     r"""
     Check if a matrix is positive definite.
 
@@ -216,18 +216,35 @@ def is_positive_definite(mat, quiet=True):
     :func:`impose_positive_definite`.
 
     Args:
-        mat (`scipy.sparse.csr_matrix`_):
+        mat (`numpy.ndarray`_, `scipy.sparse.csr_matrix`_):
             The matrix to check.
         quiet (:obj:`bool`, optional):
             Suppress terminal output.
+        quick (:obj:`bool`, optional):
+            Use the quick method, which is to try to use Cholesky decomposition
+            and check if it throws a LinAlgError.  The slow way is to determine
+            the eigenvalues and check if they are all positive.  If True and
+            quiet is False, only the error reported by the Cholesky
+            decomposition is printed, instead of the full list of non-positive
+            eigenvalues.
 
     Returns:
         :obj:`bool`: Flag that matrix is positive definite.
     """
-    if not isinstance(mat, sparse.csr_matrix):
-        raise TypeError('Must provide a scipy.sparse.csr_matrix to is_positive_definite.')
+    _mat = mat.toarray() if isinstance(mat, sparse.csr.csr_matrix) else mat
+
+    if quick:
+        try:
+            cho = linalg.cholesky(_mat)
+        except linalg.LinAlgError as e:
+            if not quiet:
+                print(str(e))
+            return False
+        else:
+            return True
+
     # Get the eigenvalues/eigenvectors
-    w, v = map(lambda x : np.real(x), np.linalg.eig(mat.toarray()))
+    w, v = map(lambda x : np.real(x), np.linalg.eig(_mat))
     notpos = np.logical_not(w > 0)
     if not quiet:
         if np.any(notpos):
@@ -1184,7 +1201,7 @@ def gaussian_deviates(ivar=None, mask=None, covar=None, size=None, rng=None):
         return gpm, rng.normal(size=np.sum(gpm)) / np.sqrt(ivar[gpm])
 
     # Return draws from a multivariate Gaussian
-    return gpm, rng.multivariate_normal(np.zeros(n, dtype=float),
+    return gpm, rng.multivariate_normal(np.zeros(np.sum(gpm), dtype=float),
                                         covar[np.ix_(gpm, gpm)].toarray(),
                                         size=size if size is not None and size > 1 else None)
 

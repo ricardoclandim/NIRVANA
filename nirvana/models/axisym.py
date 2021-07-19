@@ -712,12 +712,12 @@ class AxisymmetricDisk:
         _p0 = np.atleast_1d(p0)
         if _p0.size != self.np:
             raise ValueError('Incorrect number of model parameters.')
-        self.par = _p0
+        self.par = _p0.copy()
         self.par_err = None
         _free = np.ones(self.np, dtype=bool) if fix is None else np.logical_not(fix)
         if _free.size != self.np:
             raise ValueError('Incorrect number of model parameter fitting flags.')
-        self.free = _free
+        self.free = _free.copy()
         self.nfree = np.sum(self.free)
 
     def model(self, par=None, x=None, y=None, sb=None, beam=None, is_fft=False, cnvfftw=None,
@@ -962,7 +962,7 @@ class AxisymmetricDisk:
     def mock_observation(self, par, kin=None, x=None, y=None, sb=None, binid=None,
                          vel_ivar=None, vel_covar=None, vel_mask=None, sig_ivar=None,
                          sig_covar=None, sig_mask=None, sig_corr=None, beam=None, is_fft=False,
-                         cnvfftw=None, ignore_beam=False, add_err=False):
+                         cnvfftw=None, ignore_beam=False, add_err=False, positive_definite=False):
         r"""
         Construct a mock observation.
 
@@ -1151,7 +1151,7 @@ class AxisymmetricDisk:
             _kin = Kinematics(vel, vel_ivar=_vel_ivar, vel_mask=vel_mask, vel_covar=_vel_covar,
                               x=x, y=y, sb=sb, sig=sig, sig_ivar=_sig_ivar, sig_mask=sig_mask,
                               sig_covar=_sig_covar, sig_corr=sig_corr, psf=_beam, binid=binid,
-                              grid_x=x, grid_y=y, grid_sb=sb)
+                              grid_x=x, grid_y=y, grid_sb=sb, positive_definite=positive_definite)
         else:
             _kin = kin.copy()
 
