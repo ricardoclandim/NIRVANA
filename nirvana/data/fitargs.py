@@ -104,7 +104,9 @@ class FitArgs:
             
             #cut bins where too many spaxels are masked
             bad = (maskfrac > .75)
+            print(self.edges)
             self.edges = [self.edges[0], *self.edges[1:][~bad]]
+            print(self.edges)
 
             #mask spaxels outside last bin edge
             self.kin.vel_mask[r > self.edges[-1]] = True
@@ -203,7 +205,7 @@ class FitArgs:
         self.guess = guess
         return self.guess
 
-    def clip(self, galmeta=None, sigma=10, sbf=.03, anr=5, maxiter=10, smear_dv=50, smear_dsig=50, clip_thresh=.95, verbose=False):
+    def clip(self, galmeta=None, sigma=10, sbf=.03, anr=5, maxiter=10, smear_dv=50, smear_dsig=50, clip_thresh=.80, verbose=False):
         '''
         Filter out bad spaxels in kinematic data.
         
@@ -242,12 +244,12 @@ class FitArgs:
 
         origvel = self.kin.remap('vel')
         origsig = self.kin.remap('sig')
+        nmasked0 = self.kin.vel_mask.sum()
+        ngood = (~self.kin.vel_mask).sum()
 
         #count spaxels in each bin and make 2d maps excluding large bins
         nspax = np.array([(self.kin.remap('binid') == self.kin.binid[i]).sum() for i in range(len(self.kin.binid))])
         binmask = self.kin.remap(nspax) > 10
-        ngood = self.kin.vel_mask.sum()
-        nmasked0 = (~self.kin.vel_mask).astype(bool).sum()
 
         #axisymmetric fit of data
         fit = None
@@ -422,15 +424,15 @@ class FitArgs:
             raise AttributeError('Must define nbins first')
 
         inc = self.guess[1] if self.kin.phot_inc is None else self.kin.phot_inc
-        #pa = self.guess[2] if self.phot_pa is None else self.phot_pa
+        pa = self.guess[2] if self.kin.phot_pa is None else self.kin.phot_pa
         ndim = len(self.guess) + (self.nbins + self.fixcent) * self.disp
 
         #prior bounds defined based off of guess
         bounds = np.zeros((ndim, 2))
         if incgauss: bounds[0] = (inc, incpad)
         else: bounds[0] = (max(inc - incpad, 5), min(inc + incpad, 85))
-        #if pagauss: bounds[1] = (pa, papad)
-        bounds[1] = (theta0[1] - papad, theta0[1] + papad)
+        if pagauss: bounds[1] = (pa, papad)
+        else: bounds[1] = (theta0[1] - papad, theta0[1] + papad)
         bounds[2] = (0, 180) #uninformed
         bounds[3] = (theta0[3] - vsyspad, theta0[3] + vsyspad)
         if self.nglobs == 6: #assumes (0,0) is the best guess for center
@@ -465,6 +467,13 @@ class FitArgs:
 
         #calculate asymmetry
         self.arc, self.asymmap = asymmetry(self.kin, pa, vsys, xc, yc)
+
+    def setphotpa(self, galmeta):
+        '''
+        Correct the photometric PA by 180 degrees to align with the kinematics if necessary.
+        '''
+
+        self.kin.phot_pa = galmeta.guess_kinematic_pa(self.kin.x, self.kin.y, self.kin.vel) % 360
 
     def setnglobs(self, nglobs):
         '''
