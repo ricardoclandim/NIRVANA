@@ -211,7 +211,6 @@ class Kinematics:
         self.sb_anr = sb_anr
         self.phot_inc = phot_inc
         self.maxr = maxr
-        self.bordermask = bordermask        # TODO: Is this ever used?
 
         # Build coordinate arrays
         if x is None:
@@ -446,7 +445,7 @@ class Kinematics:
         # definite....
         return copy.deepcopy(self)
 
-        # TODO: Par of old doc string
+        # TODO: Part of old doc string
 #        In detail, this creates a new instance of the subclass and then
 #        instantiates the base class with copies of all the relevant attributes
 #        needed for its instantiation.
@@ -468,7 +467,7 @@ class Kinematics:
 #        return _copy
 
 
-    def update_sigma(self, sig=None, sig_ivar=None, sig_covar=None):
+    def update_sigma(self, sig=None, sig_ivar=None, sig_covar=None, sqr=False):
         """
         Update both the measured and corrected velocity dispersions and errors.
 
@@ -491,21 +490,53 @@ class Kinematics:
                 New velocity dispersion covariance.  If None, the covariance
                 remains unchanged.  Shape must match the current number of bins
                 (:attr:`nbin`) along each axis.
+            sqr (:obj:`bool`, optional):
+                The provided values are for sigma-square, not sigma
         """
         if sig is not None:
             if sig.size != self.nbin:
                 raise ValueError('Provided velocity dispersion has incorrect shape!')
-            self.sig = sig.ravel().copy()
+            if sqr:
+                self.sig_phys2 = sig.ravel().copy()
+            else:
+                self.sig = sig.ravel().copy()
         if sig_ivar is not None:
             if sig_ivar.size != self.nbin:
                 raise ValueError('Provided dispersion inv. variance has incorrect shape!')
-            self.sig_ivar = sig_ivar.ravel().copy()
+            if sqr:
+                self.sig_phys2_ivar = sig_ivar.ravel().copy()
+            else:
+                self.sig_ivar = sig_ivar.ravel().copy()
         if sig_covar is not None:
             if sig_covar.shape != (self.nbin,self.nbin):
                 raise ValueError('Provided dispersion covariance has incorrect shape!')
             if not isinstance(sig_covar, sparse.csr_matrix):
                 raise TypeError('Covariance matrix must have type scipy.sparse.csr_matrix')
-            self.sig_covar = sig_covar.copy()
+            if sqr:
+                self.sig_phys2_covar = sig_covar.copy()
+            else:
+                self.sig_covar = sig_covar.copy()
+
+        if sqr:
+            # The provided data is actually of sig_phys2, not observed sigma.
+            if self.sig_phys2 is None:
+                self.sig = None
+                self.sig_ivar = None
+                self.sig_covar = None
+                return
+
+            # Calculate the observed sigma
+            self.sig = np.sqrt(self.sig_phys2 if self.sig_corr is None \
+                                else self.sig_phys2 + self.sig_corr**2)
+            # Its inverse variance
+            self.sig_ivar = 4 * self.sig**2 * self.sig_phys2_ivar
+            # And its covariance, if available
+            if self.sig_phys2_covar is None:
+                self.sig_covar = None
+            else:
+                jac = sparse.diags(1/(2*self.sig + (self.sig == 0.0))**2, format='csr')
+                self.sig_covar = jac.dot(self.sig_phys2_covar.dot(jac.T))
+            return
 
         if self.sig is None:
             self.sig_phys2 = None
@@ -874,13 +905,13 @@ class Kinematics:
         self.reject(vel_rej=vel_rej, sig_rej=sig_rej)
         return vel_rej, sig_rej
 
-    def deviate(self, size=None, rng=None, ignore_sigma=False):
-        """
+    def deviate(self, size=None, rng=None, sigma='draw'):
+        r"""
         Draw Gaussian deviates from the velocity and velocity dispersion error
         distributions.
 
-        This is largely a simple wrapper for
-        :func:`~nirvana.data.util.gaussian_deviates`.  One deviate is draw for
+        This is basically a wrapper for
+        :func:`~nirvana.data.util.gaussian_deviates`.  One deviate is drawn for
         each of the valid velocity and velocity dispersion measurements.
         Multiple sets of deviates can be drawn using ``size``.
 
@@ -900,7 +931,8 @@ class Kinematics:
         kinematics object::
 
             # Generate 10 sets of deviates
-            vgpm, dv, sgpm, ds = noisefree_mock.deviate(size=10, ignore_sigma=disk.dc is None)
+            vgpm, dv, sgpm, ds \
+                    = noisefree_mock.deviate(size=10, sigma='ignore' if disk.dc is None else 'draw')
             # Use them in a simulation of fitting the mock data
             _vel = noisefree_mock.vel.copy()
             _sig = noisefree_mock.sig.copy()
@@ -921,10 +953,16 @@ class Kinematics:
             rng (`numpy.random.Generator`, optional):
                 Generator object to use.  If None, a new Generator is
                 instantiated.
-            ignore_sigma (:obj:`bool`, optional):
-                Ignore the velocity dispersion deviates even if the error
-                distributions exist.
+            sigma (:obj:`str`, optional):
+                Treatment for the velocity dispersion.  Options are:
 
+                    - 'draw': Draw Gaussian deviates from ``sig_ivar`` or
+                      ``sig_covar``, if they exist.
+                    - 'drawsqr': Draw Gaussian deviates from ``sig_phys2_ivar``
+                      or ``sig_phys2_covar``, if they exist.
+                    - 'ignore': Do not draw any deviates for the dispersion,
+                      even if the error distributions exist.
+                
         Returns:
             :obj:`tuple`: Good-value masks and deviates for the velocity and
             velocity dispersion, respectively.  If neither :attr:`vel_ivar` nor
@@ -936,9 +974,16 @@ class Kinematics:
             is the provided keyword argument and ``n_good`` is the number of
             valid kinematic measurements.
         """
-        s_ret = (None, None) if ignore_sigma \
-                    else gaussian_deviates(ivar=self.sig_ivar, mask=self.sig_mask,
-                                           covar=self.sig_covar, size=size, rng=rng)
+        if sigma == 'ignore':
+            s_ret = (None, None)
+        elif sigma == 'draw':
+            s_ret = gaussian_deviates(ivar=self.sig_ivar, mask=self.sig_mask, covar=self.sig_covar,
+                                      size=size, rng=rng)
+        elif sigma == 'drawsqr':
+            s_ret = gaussian_deviates(ivar=self.sig_phys2_ivar, mask=self.sig_mask,
+                                      covar=self.sig_phys2_covar, size=size, rng=rng)
+        else:
+            raise ValueError('Value for sigma must be ignore, draw, or drawsqr.')
         return gaussian_deviates(ivar=self.vel_ivar, mask=self.vel_mask, covar=self.vel_covar,
                                  size=size, rng=rng) + s_ret
 
