@@ -945,6 +945,7 @@ class MaNGAGasKinematics(MaNGAKinematics):
             reff = 1.0 if 'REFF' not in hdu[0].header else hdu[0].header['REFF']
             phot_ell = hdu[0].header['ECOOELL'] if 'ECOOELL' in hdu[0].header else 0.5
             phot_inc = np.degrees(np.arccos(1 - phot_ell))
+            phot_pa = hdu[0].header['ECOOPA'] if 'ECOOPA' in hdu[0].header else None
             pri, sec, anc, oth = parse_manga_targeting_bits(hdu[0].header['MNGTARG1'],
                                                             hdu[0].header['MNGTARG3'])
             maxr = 2.5 if sec else 1.5
@@ -1007,7 +1008,7 @@ class MaNGAGasKinematics(MaNGAKinematics):
                          sig=sig, sig_ivar=sig_ivar, sig_mask=sig_mask, sig_covar=sig_covar,
                          sig_corr=sig_corr, psf_name=psf_name, psf=psf, binid=binid, grid_x=grid_x, 
                          grid_y=grid_y, grid_sb=grid_sb, grid_wcs=wcs, reff=reff, fwhm=fwhm,
-                         image=image, phot_inc=phot_inc, maxr=maxr,
+                         image=image, phot_inc=phot_inc, phot_pa=phot_pa, maxr=maxr,
                          positive_definite=positive_definite)
 
 
@@ -1116,6 +1117,7 @@ class MaNGAStellarKinematics(MaNGAKinematics):
             reff = 1.0 if 'REFF' not in hdu[0].header else hdu[0].header['REFF']
             phot_ell = hdu[0].header['ECOOELL'] if 'ECOOELL' in hdu[0].header else 0.5
             phot_inc = np.degrees(np.arccos(1 - phot_ell))
+            phot_pa = hdu[0].header['ECOOPA'] if 'ECOOPA' in hdu[0].header else None
             pri, sec, anc, oth = parse_manga_targeting_bits(hdu[0].header['MNGTARG1'],
                                                             hdu[0].header['MNGTARG3'])
             maxr = 2.5 if sec else 1.5
@@ -1163,7 +1165,7 @@ class MaNGAStellarKinematics(MaNGAKinematics):
                          sig_ivar=sig_ivar, sig_mask=sig_mask, sig_covar=sig_covar,
                          sig_corr=sig_corr, psf_name=psf_name, psf=psf, binid=binid, grid_x=grid_x, 
                          grid_y=grid_y, grid_sb=grid_sb, grid_wcs=wcs, reff=reff, fwhm=fwhm,
-                         image=image, phot_inc=phot_inc, maxr=maxr,
+                         image=image, phot_inc=phot_inc, phot_pa=phot_pa, maxr=maxr,
                          positive_definite=positive_definite)
 
 
