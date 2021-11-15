@@ -1,0 +1,441 @@
+"""
+Script that runs the axisymmetric, least-squares fit for MaNGA data.
+"""
+import os
+import argparse
+import pathlib
+
+from IPython import embed
+
+import numpy as np
+from scipy import sparse
+from matplotlib import pyplot
+
+from astropy.io import fits
+
+from ..data import manga
+from ..data.bin2d import Bin2D, VoronoiBinning
+from ..models import axisym
+from ..models import oned
+from ..models import geometry
+from ..models.beam import gauss2d_kernel, ConvolveFFTW
+from ..models import twod
+from ..util import fileio
+
+import warnings
+warnings.simplefilter('error', RuntimeWarning)
+
+def parse_args(options=None):
+
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument('ofile', type=str, help='Name for output file')
+    parser.add_argument('nsim', type=int, help='Number of simulations to perform')
+
+    parser.add_argument('--basep', default=[0., 0., 45., 30., 0.], nargs=5,
+                        help='Base thin disk parameters: x0, y0, pa (deg), inc (deg), vsys')
+
+    parser.add_argument('--rc', default='HyperbolicTangent', type=str,
+                        help='Rotation curve parameterization to use: HyperbolicTangent or PolyEx')
+    parser.add_argument('--rcp', default=[150., 10.], nargs='*',
+                        help='*Deprojected* rotation curve parameters')
+                        
+    parser.add_argument('--dc', default=None, type=str,
+                        help='Dispersion profile parameterization to use: Exponential, ExpBase, '
+                             'or Const.  If None, velocity dispersion is not simulated/fit.')
+    parser.add_argument('--dcp', default=None, nargs='*',
+                        help='Dispersion profile parameters')
+
+    parser.add_argument('--sersic', default=[10., 1., 45., 30.], nargs=4,
+                        help='Sersic photometry parameters for luminosity weighting: Reff, n, '
+                             'PA (deg), inclination (deg)')
+
+    parser.add_argument('--snr', type=float, default=30., help='S/N normalization')
+    parser.add_argument('--binning_snr', type=float, default=None,
+                        help='Minimum S/N used for binning the data.  If not provided, data are '
+                             'not binned.')
+
+    parser.add_argument('--ifusize', type=float, default=32.,
+                        help='Size of the hexagonal patch in arcsec.')
+
+    parser.add_argument('--covar_sim', default=False, action='store_true',
+                        help='Include MaNGA-like covariance when generating the noise field for '
+                             'each simulation.')
+    parser.add_argument('--covar_fit', default=False, action='store_true',
+                        help='Assume MaNGA-like covariance when *fitting* the synthetic data in '
+                             'each simulation.')
+
+    parser.add_argument('--psf_sim', type=float, default=2.5, 
+                        help='FWHM in arcsec of a Gaussian PSF to use when generating the '
+                             'synthetic model data to fit.  If negative, no PSF is included.')
+    parser.add_argument('--psf_fit', type=float, default=2.5, 
+                        help='FWHM of the Gaussian PSF to use when *fitting* the synthetic data '
+                             'in each simulation.  If negative, no PSF is included in the fit.')
+
+    parser.add_argument('--verbose', default=-1, type=int,
+                        help='Verbosity level.  -1=supress all terminal output; 0=only status '
+                             'output written to terminal; 1=show fit result QA plot; 2=full '
+                             'output.')
+
+    parser.add_argument('--screen', default=False, action='store_true',
+                        help='Indicate that the script is being run behind a screen (used to set '
+                             'matplotlib backend).') 
+
+    parser.add_argument('--overwrite', default=False, action='store_true',
+                        help='Overwrite any existing files.')
+
+#    parser.add_argument('--scatter', default=0.0, help='Intrinsic scatter to add')
+#    parser.add_argument('--vel_rej', nargs='*', default=[15,10,10,10],
+#                        help='The velocity rejection sigma.  Provide 1 or 4 numbers.  If 1 '
+#                             'number provided, the same sigma threshold is used for all fit '
+#                             'iterations.')
+#    parser.add_argument('--sig_rej', nargs='*', default=[15,10,10,10],
+#                        help='The dispersion rejection sigma.  Provide 1 or 4 numbers.  If 1 '
+#                             'number provided, the same sigma threshold is used for all fit '
+#                             'iterations.')
+# TODO: Bring these back when simulating a fit to a specific MaNGA target?
+#    parser.add_argument('plate', type=int, help='MaNGA plate identifier (e.g., 8138)')
+#    parser.add_argument('ifu', type=int, help='MaNGA ifu identifier (e.g., 12704)')
+#    parser.add_argument('--daptype', default='HYB10-MILESHC-MASTARHC2', type=str,
+#                        help='DAP analysis key used to select the data files.  This is needed '
+#                             'regardless of whether or not you specify the directory with the '
+#                             'data files (using --root).')
+#    parser.add_argument('--dr', default='MPL-11', type=str,
+#                        help='The MaNGA data release.  This is only used to automatically '
+#                             'construct the directory to the MaNGA galaxy data (see also '
+#                             '--redux and --analysis), and it will be ignored if the root '
+#                             'directory is set directly (using --root).')
+#    parser.add_argument('--redux', default=None, type=str,
+#                        help='Top-level directory with the MaNGA DRP output.  If not defined and '
+#                             'the direct root to the files is also not defined (see --root), '
+#                             'this is set by the environmental variable MANGA_SPECTRO_REDUX.')
+#    parser.add_argument('--analysis', default=None, type=str,
+#                        help='Top-level directory with the MaNGA DAP output.  If not defined and '
+#                             'the direct root to the files is also not defined (see --root), '
+#                             'this is set by the environmental variable MANGA_SPECTRO_ANALYSIS.')
+#    parser.add_argument('--root', default=None, type=str,
+#                        help='Path with *all* fits files required for the fit.  This includes ' \
+#                             'the DRPall file, the DRP LOGCUBE file, and the DAP MAPS file.  ' \
+#                             'The LOGCUBE file is only required if the beam-smearing is ' \
+#                             'included in the fit.')
+
+    return parser.parse_args() if options is None else parser.parse_args(options)
+
+
+def _fit_meta_dtype(par_names):
+    """
+    Set the data type for a `numpy.recarray`_ used to hold metadata of the
+    best-fit model.
+
+    Args:
+        par_names (array-like):
+            Array of strings with the short names for the model parameters.
+
+    Returns:
+        :obj:`list`: The list of tuples providing the name, data type, and shape
+        of each `numpy.recarray`_ column.
+    """
+    gp = [(f'G_{n}'.upper(), np.float) for n in par_names]
+    bp = [(f'F_{n}'.upper(), np.float) for n in par_names]
+    bpe = [(f'E_{n}'.upper(), np.float) for n in par_names]
+    
+    return [('MAPN', np.int),
+            ('IFUSIZE', np.float),
+            ('PIXSCALE', np.float),
+            ('PSFINP', np.float),
+            ('PSFOUT', np.float),
+            ('SNR', np.float),
+            ('BINNING', np.float),
+            ('REFF', np.float),
+            ('SERSICN', np.float),
+            ('PA', np.float),
+            ('ELL', np.float),
+            ('VNFIT', np.int),
+            ('VCHI2', np.float),
+            ('SNFIT', np.int),
+            ('SCHI2', np.float),
+            ('CHI2', np.float),
+            ('RCHI2', np.float),
+            ('STATUS', np.int),
+            ('SUCCESS', np.int)] + gp + bp + bpe
+
+
+def main(args):
+
+    # Running the script behind a screen, so switch the matplotlib backend
+    if args.screen:
+        pyplot.switch_backend('agg')
+
+    if args.nsim < 1:
+        raise ValueError('Must run at least 1 simulation.')
+    ofile = pathlib.Path(args.ofile)
+    if ofile.exists() and not args.overwrite:
+        raise FileExistsError(f'{str(ofile)} exists!')
+
+    # Instantiate the disk
+    rc_class = getattr(oned, args.rc)()
+    dc_class = None if args.dc is None else getattr(oned, args.dc)()
+    disk = axisym.AxisymmetricDisk(rc=rc_class, dc=dc_class)
+
+    # Set the input parameters
+    p0 = np.append(args.basep, args.rcp)
+    if args.dc is not None:
+        if args.dcp is None:
+            raise ValueError('Must provide parameters for dispersion parameterization.')
+        p0 = np.append(p0, args.dcp)
+
+    # Get the IFU Mask
+    pixelscale = 0.5
+    width_buffer = 10
+    n = int(np.floor(args.ifusize/pixelscale)) + width_buffer
+    if n % 2 != 0:
+        n += 1
+    x = np.arange(n, dtype=float)[::-1] - n//2
+    y = np.arange(n, dtype=float) - n//2
+    x, y = np.meshgrid(pixelscale*x, pixelscale*y)
+    ifu_mask = geometry.point_inside_polygon(geometry.hexagon_vertices(d=args.ifusize),
+                                             np.column_stack((x.ravel(), y.ravel())))
+    ifu_mask = np.logical_not(ifu_mask).reshape(x.shape)
+
+    # Set the beam-smearing kernel(s)
+    cnvfftw = ConvolveFFTW(x.shape)
+    sig2fwhm = np.sqrt(8*np.log(2))
+    beam_sim = gauss2d_kernel(n, args.psf_sim/pixelscale/sig2fwhm) if args.psf_sim > 0 else None
+    beam_fit = gauss2d_kernel(n, args.psf_fit/pixelscale/sig2fwhm) if args.psf_fit > 0 else None
+
+    # Set the surface-brightness profile
+    # TODO: Oversample and then block average to mimic integration over the size
+    # of the pixel?
+    reff, sersic_n, pa, inc = args.sersic
+    sb = twod.Sersic2D(1., reff, sersic_n, ellipticity=1 - np.cos(np.radians(inc)),
+                       position_angle=pa)(x,y)
+    sb = cnvfftw(sb, beam_sim)
+
+    # Set the S/N and renormalize to the provided value
+    snr = np.sqrt(sb)
+    scale_fac = args.snr/np.amax(snr)
+    snr *= scale_fac
+    # Not really necessary to scale the SB because the SB weighting only matters
+    # in a relative sense.
+    sb *= scale_fac**2
+    sb_err = sb/snr
+
+    # Generate the SB covariance, if requested
+    if args.covar_sim:
+        print('Generating Flux Covariance')
+        gpm, sb_covar = manga.manga_map_covar(1./sb_err**2, positive_definite=False, fill=True)
+    else:
+        sb_covar = None
+
+    # Bin the data
+    gpm = np.logical_not(ifu_mask)
+    binid = np.full(ifu_mask.shape, -1, dtype=int)
+    if args.binning_snr is None:
+        # Make a fake binid based on the ifu_mask
+        binid[gpm] = np.arange(np.sum(gpm))
+        binner = Bin2D(binid=binid)
+        binned_sb = binner.remap(binner.bin(sb), masked=False, fill_value=0.)
+        binned_sb_err = binner.remap(binner.bin(sb_err), masked=False, fill_value=0.)
+        binned_snr = binner.remap(binner.bin(snr), masked=False, fill_value=0.)
+    else:
+        binid[gpm] = VoronoiBinning.bin_index(x[gpm], y[gpm], sb[gpm],
+                                    sb_covar[np.ix_(gpm,gpm)] if arsg.covar_sim else sb_err[gpm],
+                                    args.binning_snr, show=False)
+        binner = Bin2D(binid=binid)
+        binned_sb = binner.remap(binner.bin(sb), masked=False, fill_value=0.)
+
+        if arsg.covar_sim:
+            binned_sb_covar = binner.remap_covar(binner.bin_covar(sb_covar))
+            binned_sb_err = np.sqrt(binned_sb_covar.diagonal())
+        else:
+            binned_sb_covar = None
+            binned_sb_err = binner.bin_covar(sparse.diags(sb_err.ravel()**2, format='csr'))
+            binned_sb_err = binner.remap(np.sqrt(binned_sb_err.diagonal()), masked=False,
+                                         fill_value=0.)
+        binned_snr = binned_sb/(binned_sb_err + (binned_sb_err == 0.))
+
+    # Get the model velocities and dispersions
+    vel, sig = disk.model(p0, x=x, y=y, beam=beam_sim)
+    _sb, vel, sig = binner.bin_moments(sb, vel, sig)
+    vel = binner.remap(vel)
+    sig = binner.remap(sig)
+    vel_ivar = np.ma.MaskedArray(np.ma.divide(binned_snr, sig)**2, mask=ifu_mask)
+    sig_ivar = np.ma.MaskedArray(np.ma.divide(binned_snr, sig)**2, mask=ifu_mask)
+
+    if arsg.covar_sim:
+        print('Generating Velocity Covariance')
+        gpm, vel_covar = manga.manga_map_covar(vel_ivar, positive_definite=False, fill=True)
+        print('Generating Sigma Covariance')
+        gpm, sig_covar = manga.manga_map_covar(sig_ivar, positive_definite=False, fill=True)
+    else:
+        vel_covar = None
+        sig_covar = None
+
+    noisefree_mock = disk.mock_observation(p0, x=x, y=y, sb=sb, binid=binid,
+                                           vel_ivar=vel_ivar, vel_covar=vel_covar,
+                                           vel_mask=ifu_mask, sig_ivar=sig_ivar,
+                                           sig_covar=sig_covar, sig_mask=ifu_mask, beam=beam_sim,
+                                           cnvfftw=cnvfftw, positive_definite=True)
+
+    disk_par_names = disk.par_names(short=True)
+    metadata = fileio.init_record_array(args.nsim, _fit_meta_dtype(disk_par_names))
+
+    vgpm, dv, sgpm, ds2 = noisefree_mock.deviate(size=args.nsim,
+                                                 sigma='ignore' if disk.dc is None else 'drawsqr')
+
+    _vel = noisefree_mock.vel.copy()
+    _sig2 = noisefree_mock.sig_phys2.copy()
+
+    noisy_mock = noisefree_mock.copy()
+    noisy_mock._set_beam(beam_fit, None)
+    for i in range(args.nsim):
+        print(f'Sim {i+1}/{args.nsim}', end='\r')
+        noisy_mock.vel[vgpm] = _vel[vgpm] + dv[i]
+        if disk.dc is not None:
+            _sig2[sgpm] += ds2[i]
+            noisy_mock.update_sigma(sig=_sig2, sqr=True)
+            _sig2[sgpm] -= ds2[i]
+
+        disk.lsq_fit(noisy_mock, sb_wgt=True, p0=p0, scatter=None, verbose=args.verbose,
+                     assume_posdef_covar=True, ignore_covar=not args.covar_fit, cnvfftw=cnvfftw)
+
+        vfom, sfom = disk._get_fom()(disk.par, sep=True)
+        metadata['VCHI2'][i] = np.sum(vfom**2)
+        metadata['SCHI2'][i] = np.sum(sfom**2)
+        metadata['CHI2'][i] = metadata['VCHI2'][i] + metadata['SCHI2'][i]
+        metadata['RCHI2'][i] = metadata['CHI2'][i] \
+                                / (metadata['VNFIT'][i] + metadata['SNFIT'][i] - disk.np)
+
+        metadata['STATUS'][i] = disk.fit_status
+        metadata['SUCCESS'][i] = int(disk.fit_success)
+
+        for n, gp, p, pe in zip(disk_par_names, p0, disk.par, disk.par_err):
+            metadata[f'G_{n}'.upper()][i] = gp
+            metadata[f'F_{n}'.upper()][i] = p
+            metadata[f'E_{n}'.upper()][i] = pe
+    print(f'Sim {args.nsim}/{args.nsim}')
+
+    # Build the output fits extension (base) headers
+    #   - Primary header
+    prihdr = fileio.initialize_primary_header()
+    #   - Add the model types to the primary header
+    prihdr['MODELTYP'] = ('AxisymmetricDisk', 'nirvana class used to fit the data')
+    prihdr['RCMODEL'] = (disk.rc.__class__.__name__, 'Rotation curve parameterization')
+    if disk.dc is not None:
+        prihdr['DCMODEL'] = (disk.dc.__class__.__name__, 'Dispersion profile parameterization')
+    hdus = [fits.PrimaryHDU(header=prihdr),
+            fits.BinTableHDU.from_columns([fits.Column(name=n,
+                                                       format=fileio.rec_to_fits_type(metadata[n]),
+                                                       array=metadata[n])
+                                             for n in metadata.dtype.names],
+                                           name='FITMETA')]
+
+    if args.ofile.split('.')[-1] == 'gz':
+        _ofile = args.ofile[:ofile.rfind('.')]
+        compress = True
+    else:
+        _ofile = args.ofile
+
+    fits.HDUList(hdus).writeto(_ofile, overwrite=True, checksum=True)
+    if compress:
+        fileio.compress_file(_ofile, overwrite=True)
+        os.remove(_ofile)
+
+
+# def main_nodisp(args):
+
+#     # Running the script behind a screen, so switch the matplotlib backend
+#     if args.screen:
+#         pyplot.switch_backend('agg')
+
+#     reff = 10.87
+#     sersic_n = 4.1
+#     ell = 0.31
+#     pa = 165.1
+#     p0 = np.array([-0.2, -0.08, 166.3, 53.0, 25.6, 217.0, 2.82]) #, 189.7, 16.2])
+#     disk = axisym.AxisymmetricDisk(rc=oned.HyperbolicTangent()) #, dc=oned.Exponential())
+
+#     n = 72
+#     ifusize = 32
+#     pixelscale = 0.5
+#     x = np.arange(n, dtype=float)[::-1] - n//2
+#     y = np.arange(n, dtype=float) - n//2
+#     x, y = np.meshgrid(pixelscale*x, pixelscale*y)
+#     cnvfftw = ConvolveFFTW(x.shape)
+#     sig2fwhm = np.sqrt(8*np.log(2))
+
+#     # TODO: Oversample to mimic integration over the size of the pixel?
+#     sb = twod.Sersic2D(1., reff, sersic_n, ellipticity=ell, position_angle=pa)(x,y)
+#     beam = gauss2d_kernel(n, 2.5/pixelscale/sig2fwhm)
+#     sb = cnvfftw(sb, beam)
+#     snr = np.sqrt(sb)
+#     scale_fac = 70./np.amax(snr)
+#     snr *= scale_fac
+#     # Not really necessary to scale the SB because the SB weighting only matters
+#     # in a relative sense.
+#     sb *= scale_fac**2
+
+#     ifu_mask = geometry.point_inside_polygon(geometry.hexagon_vertices(d=ifusize),
+#                                              np.column_stack((x.ravel(), y.ravel())))
+#     ifu_mask = np.logical_not(ifu_mask).reshape(x.shape)
+
+#     # Make a fake binid based on the ifu_mask
+#     binid = np.full(ifu_mask.shape, -1, dtype=int)
+#     gpm = np.logical_not(ifu_mask)
+#     binid[gpm] = np.arange(np.sum(gpm))
+
+#     binning = False
+#     if binning:
+#         # TODO: Come back to this
+
+#         binid, _, _, _, _, binsnr, _, _ \
+#                 = voronoi_2d_binning(x.ravel(), y.ravel(), sb.ravel(), (sb/snr).ravel(), 10.,
+#                                     plot=False)
+#         binid = binid.reshape(x.shape)
+
+#         _, _, _, grid_indx, bin_inverse, bin_transform = get_map_bin_transformations(binid=binid)
+#         _binned_sb = bin_transform.dot(sb.ravel())
+#         binned_sb = np.ma.MaskedArray(np.zeros(x.shape, dtype=float), mask=True)
+#         binned_sb[np.unravel_index(grid_indx, x.shape)] = _binned_sb[bin_inverse]
+#         binned_snr = np.ma.MaskedArray(np.zeros(x.shape, dtype=float), mask=True)
+#         binned_snr[np.unravel_index(grid_indx, x.shape)] = binsnr[bin_inverse]
+
+# #    vel, sig = disk.model(p0, x=x, y=y, beam=beam)
+# #    vel_ivar = np.ma.MaskedArray((snr/sig)**2, mask=ifu_mask)
+#     vel = disk.model(p0, x=x, y=y, beam=beam)
+#     vel_ivar = np.ma.MaskedArray((snr/100)**2, mask=ifu_mask)
+#     sig_ivar = None #np.ma.MaskedArray((snr/sig)**2, mask=ifu_mask)
+
+#     print('Generating Velocity Covariance')
+#     gpm, vel_covar = manga.manga_map_covar(vel_ivar, positive_definite=False, fill=True)
+#     print('Generating Sigma Covariance')
+# #    gpm, sig_covar = manga.manga_map_covar(sig_ivar, positive_definite=False, fill=True)
+#     sig_covar = None
+
+#     print('Noise-free Mock')
+#     noisefree_mock = disk.mock_observation(p0, x=x, y=y, sb=sb, binid=binid,
+#                                            vel_ivar=vel_ivar, vel_covar=vel_covar,
+#                                            vel_mask=ifu_mask, sig_ivar=sig_ivar,
+#                                            sig_covar=sig_covar, sig_mask=ifu_mask, beam=beam,
+#                                            cnvfftw=cnvfftw, positive_definite=True)
+
+#     nsim = 10
+#     vgpm, dv, sgpm, ds = noisefree_mock.deviate(size=nsim, ignore_sigma=disk.dc is None)
+#     _vel = noisefree_mock.vel.copy()
+# #    _sig = noisefree_mock.sig.copy()
+#     noisy_mock = noisefree_mock.copy()
+#     for i in range(nsim):
+#         noisy_mock.vel[vgpm] = _vel[vgpm] + dv[i]
+#         if disk.dc is not None:
+#             _sig[sgpm] += ds[i]
+#             noisy_mock.update_sigma(sig=_sig)
+#             _sig[sgpm] -= ds[i]
+
+#         disk.lsq_fit(noisy_mock, sb_wgt=True, p0=p0, scatter=None, verbose=0,
+#                      assume_posdef_covar=True, ignore_covar=True, cnvfftw=cnvfftw)
+
+#         embed()
+#         exit()
+
+#         pyplot.imshow(noisy_mock.remap('vel'), origin='lower', interpolation='nearest')
+#         pyplot.show()
+#     exit()
