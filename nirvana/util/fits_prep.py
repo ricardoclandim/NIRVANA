@@ -481,7 +481,7 @@ def imagefits(f, galmeta, gal=None, outfile=None, padding=20, remotedir=None, ou
     #if galmeta==None:
         #drpallfile = glob(drpalldir + '/drpall*')[0]
         #galmeta = MaNGAGlobalPar(resdict['plate'], resdict['ifu'], drpall_file=drpallfile)
-    hdr = initialize_primary_header(galmeta)
+    hdr = initialize_primary_header(galmeta=galmeta)
     maphdr = add_wcs(hdr, args.kin)
     psfhdr = hdr.copy()
     psfhdr['PSFNAME'] = (args.kin.psf_name, 'Original PSF name')

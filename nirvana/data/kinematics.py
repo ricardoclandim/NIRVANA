@@ -527,8 +527,9 @@ class Kinematics:
                 return
 
             # Calculate the observed sigma
-            self.sig = np.sqrt(self.sig_phys2 if self.sig_corr is None \
-                                else self.sig_phys2 + self.sig_corr**2)
+            self.sig_mask |= self.sig_phys2 < 0.
+            self.sig = np.ma.sqrt(self.sig_phys2 if self.sig_corr is None \
+                                    else self.sig_phys2 + self.sig_corr**2).filled(0.0)
             # Its inverse variance
             self.sig_ivar = 4 * self.sig**2 * self.sig_phys2_ivar
             # And its covariance, if available

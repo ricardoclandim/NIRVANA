@@ -1709,7 +1709,7 @@ class AxisymmetricDisk:
             result = optimize.least_squares(fom, p, # method='lm', #xtol=None,
                                             x_scale='jac', method='trf', xtol=1e-12,
                                             bounds=(lb[self.free], ub[self.free]), 
-                                            verbose=verbose, **jac_kwargs)
+                                            verbose=max(verbose,0), **jac_kwargs)
             try:
                 pe = np.sqrt(np.diag(cov_err(result.jac)))
             except:
@@ -1744,8 +1744,9 @@ class AxisymmetricDisk:
             self.par_err = np.zeros(self.np, dtype=float)
             self.par_err[self.free] = pe
 
-        # Always show the report, regardless of verbosity
-        self.report(fit_message=result.message)
+        # Print the report
+        if verbose > -1:
+            self.report(fit_message=result.message)
 
     def report(self, fit_message=None):
         """
@@ -2049,7 +2050,7 @@ def axisym_fit_data(galmeta, kin, p0, disk, ofile, vmask, smask):
 
     # Build the output fits extension (base) headers
     #   - Primary header
-    prihdr = fileio.initialize_primary_header(galmeta)
+    prihdr = fileio.initialize_primary_header(galmeta=galmeta)
     #   - Add the model types to the primary header
     prihdr['MODELTYP'] = ('AxisymmetricDisk', 'nirvana class used to fit the data')
     prihdr['RCMODEL'] = (disk.rc.__class__.__name__, 'Rotation curve parameterization')
@@ -2119,7 +2120,7 @@ def axisym_fit_data(galmeta, kin, p0, disk, ofile, vmask, smask):
                                                         err=True, bm=disk.mbm),
                           name='SIGSQR_MASK'),
             fits.ImageHDU(data=sig_mod,
-                          header=fileio.finalize_header(maphdr, 'SIG_MOD',bunit='km/s'),
+                          header=fileio.finalize_header(maphdr, 'SIG_MOD', bunit='km/s'),
                           name='SIG_MOD'),
             fits.ImageHDU(data=sig_mod_intr,
                           header=fileio.finalize_header(maphdr, 'SIG_MODI', bunit='km/s'),
