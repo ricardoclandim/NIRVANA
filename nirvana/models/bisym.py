@@ -8,22 +8,27 @@ import multiprocessing as mp
 import numpy as np
 from scipy import stats, optimize
 
-import matplotlib.pyplot as plt
-
 try:
     from tqdm import tqdm
 except:
     tqdm = None
+
+try:
+    import pyfftw
+except:
+    pyfftw = None
 
 import dynesty
 
 from .beam import smear, ConvolveFFTW
 from .geometry import projected_polar
 from ..data.manga import MaNGAGasKinematics, MaNGAStellarKinematics
-from ..data.util import trim_shape, unpack
+from ..data.util import trim_shape, unpack, cinv
 from ..data.fitargs import FitArgs
 from ..models.higher_order import bisym_model
 
+import warnings
+warnings.simplefilter('ignore', RuntimeWarning)
 
 def smoothing(array, weight=1):
     """
@@ -146,9 +151,15 @@ def ptform(params, args):
         ycp = unifprior('yc', paramdict, bounddict)
         repack += [xcp,ycp]
 
+    #do scatter terms with logunif
+    if args.scatter:
+        velscp = unifprior('vel_scatter', paramdict, bounddict, func=lambda x:10**x)
+        sigscp = unifprior('sig_scatter', paramdict, bounddict, func=lambda x:10**x)
+
     #repack all the velocities
     repack += [*vtp, *v2tp, *v2rp]
     if args.disp: repack += [*sigp]
+    if args.scatter: repack += [velscp, sigscp]
     return repack
 
 def loglike(params, args, squared=False):
@@ -156,7 +167,6 @@ def loglike(params, args, squared=False):
     Log likelihood for :class:`dynesty.NestedSampler` fit. 
     
     Makes a model based on current parameters and computes a chi squared with
-    tht
     original data.
 
     Args:
@@ -185,15 +195,20 @@ def loglike(params, args, squared=False):
 
     #inflate ivar with noise floor
     if args.kin.vel_ivar is not None: 
-        vel_ivar = 1/(1/args.kin.vel_ivar + args.noise_floor**2)
-        llike = llike * vel_ivar - .5 * np.log(2*np.pi * vel_ivar)
-    llike = -.5 * np.ma.sum(llike)
+        if args.scatter: 
+            vel_ivar = 1/(1/args.kin.vel_ivar + paramdict['vel_scatter']**2)
+        else:
+            vel_ivar = 1/(1/args.kin.vel_ivar + args.noise_floor**2)
+        llike = llike * vel_ivar 
+    llike = -.5 * np.ma.sum(llike + np.log(2*np.pi * vel_ivar))
 
     #add in penalty for non smooth rotation curves
     if args.weight != -1:
-        llike = llike - smoothing(paramdict['vt'],  args.weight) \
-                      - smoothing(paramdict['v2t'], args.weight) \
-                      - smoothing(paramdict['v2r'], args.weight)
+        if args.scatter: velweight = args.weight / paramdict['vel_scatter']
+        else: velweight = args.weight
+        llike = llike - smoothing(paramdict['vt'],  velweight) \
+                      - smoothing(paramdict['v2t'], velweight) \
+                      - smoothing(paramdict['v2r'], velweight)
 
     #add in sigma model if applicable
     if sigmodel is not None:
@@ -211,31 +226,96 @@ def loglike(params, args, squared=False):
 
         #inflate ivar with noisefloor
         if sigdataivar is not None: 
-            sigdataivar = 1/(1/sigdataivar + args.noise_floor**2)
+            if args.scatter: 
+                sigdataivar = 1/(1/args.kin.sig_ivar + paramdict['sig_scatter']**2)
+            else:
+                sigdataivar = 1/(1/sigdataivar + args.noise_floor**2)
             siglike = siglike * sigdataivar - .5 * np.log(2*np.pi * sigdataivar)
+
         llike -= .5*np.ma.sum(siglike)
 
         #smooth profile
         if args.weight != -1:
-            llike -= smoothing(paramdict['sig'], args.weight*.1)
+            if args.scatter: sigweight = args.weight / paramdict['sig_scatter']
+            else: sigweight = args.weight
+            llike -= smoothing(paramdict['sig'], sigweight*.1)
 
     #apply a penalty to llike if 2nd order terms are too large
+    if hasattr(args, 'penalty') and args.penalty:
+        if args.scatter: penalty = args.penalty / paramdict['vel_scatter']
+        else: penalty = args.penalty
+        vtm  = paramdict['vt' ].mean()
+        v2tm = paramdict['v2t'].mean()
+        v2rm = paramdict['v2r'].mean()
+
+        #scaling penalty if 2nd order profs are big
+        llike -= penalty * (v2tm - vtm)/vtm
+        llike -= penalty * (v2rm - vtm)/vtm
+
+    return llike
+
+def covarlike(params, args):
+    '''
+    Log likelihood function utilizing the full covariance matrix of the data.
+
+    Performs the same function as :func:`loglike` but uses the covariance
+    matrix for all of the spaxels rather than just the errors for each
+    individual spaxel. It takes the exact same arguments and outputs the same
+    things too, so it should be able to be switched in and out.
+
+    Args:
+        params (:obj:`tuple`):
+            Tuple of parameters that are being fit. Assumes the standard order
+            of parameters constructed in :func:`nirvana.fitting.fit`.
+        args (:class:`~nirvana.data.fitargs.FitArgs`):
+            Object containing all of the data and settings needed for the
+            galaxy.  
+        squared (:obj:`bool`, optional):
+            Whether to compute the chi squared against the square of the
+            dispersion profile or not. 
+
+    Returns:
+        :obj:`float`: Log likelihood value associated with parameters.
+    '''
+    #unpack, generate models and resids
+    paramdict = unpack(params, args)
+    velmodel, sigmodel = bisym_model(args, paramdict)
+    velresid = (velmodel - args.kin.vel)[~args.kin.vel_mask]
+    sigresid = (sigmodel - args.kin.sig)[~args.kin.sig_mask]
+
+    #calculate loglikes for velocity and dispersion
+    vellike = -.5 * velresid.T.dot(args.velcovinv.dot(velresid)) + args.velcoeff
+    if sigmodel is not None:
+        siglike = -.5 * sigresid.T.dot(args.sigcovinv.dot(sigresid)) + args.sigcoeff
+    else: siglike = 0
+
+    #smoothing penalties
+    if args.weight and args.weight != -1:
+        weightlike = - smoothing(paramdict['vt'],  args.weight) \
+                     - smoothing(paramdict['v2t'], args.weight) \
+                     - smoothing(paramdict['v2r'], args.weight)
+        if siglike: 
+            weightlike -= smoothing(paramdict['sig'], args.weight*.1)
+    else: weightlike = 0
+
+    #second order penalties
     if hasattr(args, 'penalty') and args.penalty:
         vtm  = paramdict['vt' ].mean()
         v2tm = paramdict['v2t'].mean()
         v2rm = paramdict['v2r'].mean()
 
         #scaling penalty if 2nd order profs are big
-        llike -= args.penalty * (v2tm - vtm)/vtm
-        llike -= args.penalty * (v2rm - vtm)/vtm
+        penlike = - (args.penalty * (v2tm - vtm)/vtm) \
+                  - (args.penalty * (v2rm - vtm)/vtm)
+    else: penlike = 0 
 
-    return llike
+    return vellike + siglike + weightlike + penlike 
 
 def fit(plate, ifu, galmeta = None, daptype='HYB10-MILESHC-MASTARHC2', dr='MPL-11', nbins=None,
         cores=10, maxr=None, cen=True, weight=10, smearing=True, points=500,
         stellar=False, root=None, verbose=False, disp=True, 
-        fixcent=True, method='dynesty', remotedir=None, floor=5, penalty=100,
-        mock=None):
+        fixcent=True, remotedir=None, floor=5, penalty=100,
+        mock=None, covar=False, scatter=False):
     '''
     Main function for fitting a MaNGA galaxy with a nonaxisymmetric model.
 
@@ -282,9 +362,6 @@ def fit(plate, ifu, galmeta = None, daptype='HYB10-MILESHC-MASTARHC2', dr='MPL-1
             2010. Not currently functional
         fixcent (:obj:`bool`, optional):
             Flag for whether to fix the center velocity bin at 0.
-        method (:obj:`str`, optional):
-            Which fitting method to use. Defaults to `'dynesty'` but can also
-            be 'lsq'`.
         remotedir (:obj:`str`, optional):
             If a directory is given, it will download data from sas into that
             base directory rather than looking for it locally
@@ -325,18 +402,20 @@ def fit(plate, ifu, galmeta = None, daptype='HYB10-MILESHC-MASTARHC2', dr='MPL-1
     #get info on galaxy and define bins and starting guess
     else:
         if stellar:
-            kin = MaNGAStellarKinematics.from_plateifu(plate, ifu, daptype=daptype, dr=dr,
-                                                        cube_path=root,
-                                                        image_path=root, maps_path=root, 
-                                                        remotedir=remotedir)
+            kin = MaNGAStellarKinematics.from_plateifu(plate, ifu,
+                    daptype=daptype, dr=dr, cube_path=root, image_path=root,
+                    maps_path=root, remotedir=remotedir, covar=covar,
+                    positive_definite=True)
         else:
-            kin = MaNGAGasKinematics.from_plateifu(plate, ifu, line='Ha-6564', daptype=daptype,
-                                                    dr=dr,  cube_path=root,
-                                                    image_path=root, maps_path=root, 
-                                                    remotedir=remotedir)
+            kin = MaNGAGasKinematics.from_plateifu(plate, ifu, line='Ha-6564',
+                    daptype=daptype, dr=dr,  cube_path=root, image_path=root,
+                    maps_path=root, remotedir=remotedir, covar=covar,
+                    positive_definite=True)
 
         #set basic fit parameters for galaxy
-        args = FitArgs(kin, nglobs, weight, disp, fixcent, floor, penalty, points, smearing, maxr)
+        veltype = 'Stars' if stellar else 'Gas'
+        args = FitArgs(kin, veltype, nglobs, weight, disp, fixcent, floor, penalty,
+                points, smearing, maxr, scatter)
 
     #set bin edges
     if galmeta is not None: 
@@ -351,10 +430,9 @@ def fit(plate, ifu, galmeta = None, daptype='HYB10-MILESHC-MASTARHC2', dr='MPL-1
     if len(args.edges) - fixcent < 3:
         raise ValueError('Galaxy unsuitable: too few radial bins')
 
-    #define a variable for speeding up convolutions
-    #has to be a global because multiprocessing can't pickle cython
-    global conv
-    conv = ConvolveFFTW(args.kin.spatial_shape)
+    #set up fftw for speeding up convolutions
+    if pyfftw is not None: args.conv = ConvolveFFTW(args.kin.spatial_shape)
+    else: args.conv = None
 
     #starting positions for all parameters based on a quick fit
     #not used in dynesty
@@ -362,14 +440,48 @@ def fit(plate, ifu, galmeta = None, daptype='HYB10-MILESHC-MASTARHC2', dr='MPL-1
     theta0 = args.getguess(galmeta=galmeta)
     ndim = len(theta0)
 
+    #clip and invert covariance matrices
+    if args.kin.vel_covar is not None and covar: 
+        #goodvelcovar = args.kin.vel_covar[np.ix_(goodvel, goodvel)]
+        goodvelcovar = np.diag(1/args.kin.vel_ivar)[np.ix_(goodvel, goodvel)]# + 1e-10
+        args.velcovinv = cinv(goodvelcovar)
+        sign, logdet = np.linalg.slogdet(goodvelcovar)#.todense())
+        if sign != 1:
+            raise ValueError('Determinant of velocity covariance is not positive')
+        args.velcoeff = -.5 * (np.log(2 * np.pi) * goodvel.sum() + logdet)
+
+        if args.kin.sig_phys2_covar is not None:
+            goodsig = ~args.kin.sig_mask
+            #goodsigcovar = args.kin.sig_covar[np.ix_(goodsig, goodsig)]
+            goodsigcovar = np.diag(1/args.kin.sig_ivar)[np.ix_(goodsig, goodsig)]# + 1e-10
+            args.sigcovinv = cinv(goodsigcovar)
+            sign, logdet = np.linalg.slogdet(goodsigcovar)#.todense())
+            if sign != 1:
+                raise ValueError('Determinant of dispersion covariance is not positive')
+            args.sigcoeff = -.5 * (np.log(2 * np.pi) * goodsig.sum() + logdet)
+
+        else: args.sigcovinv = None
+
+        if not np.isfinite(args.velcovinv).all():
+            raise Exception('nans in velcovinv')
+        if not np.isfinite(args.sigcovinv).all():
+            raise Exception('nans in sigcovinv')
+        if not np.isfinite(args.velcoeff):
+            raise Exception('nans in velcoeff')
+        if not np.isfinite(args.sigcoeff):
+            raise Exception('nans in sigcoeff')
+
+    else: args.velcovinv, args.sigcovinv = (None, None)
+
+
     #adjust dimensions according to fit params
     nbin = len(args.edges) - args.fixcent
     if disp: ndim += nbin + args.fixcent
+    if scatter: ndim += 2
     args.setnbins(nbin)
     print(f'{nbin + args.fixcent} radial bins, {ndim} parameters')
     
     #prior bounds and asymmetry defined based off of guess
-    #args.setbounds()
     if galmeta is not None: 
         args.setphotpa(galmeta)
         args.setbounds(incpad=3, incgauss=True)#, papad=10, pagauss=True)
@@ -377,34 +489,20 @@ def fit(plate, ifu, galmeta = None, daptype='HYB10-MILESHC-MASTARHC2', dr='MPL-1
     args.getasym()
 
     #open up multiprocessing pool if needed
-    if cores > 1 and method == 'dynesty':
+    if cores > 1:
         pool = mp.Pool(cores)
         pool.size = cores
     else: pool = None
 
-    if method == 'lsq':
-        #minfunc = lambda x: loglike(x, args)
-        def minfunc(params):
-            velmodel, sigmodel = bisym_model(args, unpack(params, args))
-            velchisq = (velmodel - args.kin.vel)**2 * args.kin.vel_ivar
-            sigchisq = (sigmodel - args.kin.sig)**2 * args.kin.sig_ivar
-            return velchisq + sigchisq
+    #dynesty sampler with periodic pa and pab
+    if not covar: sampler = dynesty.NestedSampler(loglike, ptform, ndim, nlive=points,
+            periodic=[1,2], pool=pool,
+            ptform_args = [args], logl_args = [args], verbose=verbose)
+    else: sampler = dynesty.NestedSampler(covarlike, ptform, ndim, nlive=points,
+            periodic=[1,2], pool=pool,
+            ptform_args = [args], logl_args = [args], verbose=verbose)
+    sampler.run_nested()
 
-        lsqguess = np.append(args.guess, [np.median(args.sig)] * (args.nbins + args.fixcent))
-        sampler = optimize.least_squares(minfunc, x0=lsqguess, method='trf',
-                  bounds=(args.bounds[:,0], args.bounds[:,1]), verbose=2, diff_step=[.01] * len(lsqguess))
-        args.guess = lsqguess
-
-    elif method == 'dynesty':
-        #dynesty sampler with periodic pa and pab
-        sampler = dynesty.NestedSampler(loglike, ptform, ndim, nlive=points,
-                periodic=[1,2], pool=pool,
-                ptform_args = [args], logl_args = [args], verbose=verbose)
-        sampler.run_nested()
-
-        if pool is not None: pool.close()
-
-    else:
-        raise ValueError('Choose a valid fitting method: dynesty or lsq')
+    if pool is not None: pool.close()
 
     return sampler, args

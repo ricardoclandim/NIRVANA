@@ -15,11 +15,6 @@ from astropy.stats import sigma_clip
 import matplotlib.pyplot as plt
 import warnings
 
-try:
-    import theano.tensor as tt
-except:
-    tt = None
-
 from .util import get_map_bin_transformations, impose_positive_definite
 
 from ..models.beam import construct_beam, ConvolveFFTW, smear
@@ -503,7 +498,7 @@ class Kinematics():
             m = mask
 
         # Check the shapes (overkill if the user selected an attribute...)    
-        if d.shape != self.vel.shape and tt is not None and type(d) is not tt.TensorVariable:
+        if d.shape != self.vel.shape:
             raise ValueError('To remap, data must have the same shape as the internal data '
                              'attributes: {0}'.format(self.vel.shape))
         if m is not None and m.shape != self.vel.shape:
