@@ -8,6 +8,11 @@ import warnings
 
 from astropy.stats import sigma_clip
 
+try:
+    import pyfftw
+except:
+    pyfftw = None
+
 from ..models.geometry import projected_polar
 from ..models.asymmetry import asymmetry
 from ..models.axisym import AxisymmetricDisk, axisym_iter_fit
@@ -20,11 +25,13 @@ class FitArgs:
     data.
     '''
 
-    def __init__(self, kinematics, nglobs=6, weight=10, disp=True,
+    def __init__(self, kinematics, veltype='Gas', nglobs=6, weight=10, disp=True,
                 fixcent=True, noisefloor=5, penalty=100, npoints=500,
-                smearing=True, maxr=None, edges=None, guess=None, nbins=None, bounds=None,
+                smearing=True, maxr=None, scatter=False, plate=None, ifu=None, 
+                edges=None, guess=None, nbins=None, bounds=None,
                 arc=None, asymmap=None):
 
+        self.veltype = veltype
         self.nglobs = nglobs
         self.weight = weight
         self.edges = edges
@@ -41,6 +48,9 @@ class FitArgs:
         self.npoints = npoints
         self.smearing = smearing
         self.kin = kinematics
+        self.scatter = scatter
+        self.plate = plate
+        self.ifu = ifu
 
     def setedges(self, inc, maxr=None, nbin=False, clipmasked=True):
         '''
@@ -279,38 +289,50 @@ class FitArgs:
         filledvel[mask] = avel[mask]
 
         #same for sig
-        filledsig = np.ma.array(np.sqrt(self.kin.remap('sig_phys2')), mask=binmask) if self.kin.sig is not None else None
+        filledsig = np.ma.array(np.ma.sqrt(self.kin.remap('sig_phys2')).filled(0.), mask=binmask) if self.kin.sig is not None else None
         if filledsig is not None and asig is not None:
             mask |= filledsig.mask | (filledsig == 0).data
             filledsig = filledsig.data
             filledsig[mask] = asig[mask]
 
+        masks = []
+        labels = []
         #reconvolve psf on top of velocity and dispersion
-        cnvfftw = ConvolveFFTW(self.kin.spatial_shape)
-        smeared = smear(filledvel, self.kin.beam_fft, beam_fft=True, sig=filledsig, sb=None, cnvfftw=cnvfftw)
+        if self.smearing == True and self.kin.beam_fft is not None:
+            if pyfftw is not None: cnvfftw = ConvolveFFTW(self.kin.spatial_shape)
+            else: cnvfftw = None
+            smeared = smear(filledvel, self.kin.beam_fft, beam_fft=True, sig=filledsig, sb=None, cnvfftw=cnvfftw)
 
-        #cut out spaxels with too high residual because they're probably bad
-        dvmask = self.kin.bin(np.abs(filledvel - smeared[1]) > smear_dv) 
-        masks = [dvmask]
-        labels = ['dv']
-        if self.kin.sig is not None: 
-            dsigmask = self.kin.bin(np.abs(filledsig - smeared[2]) > smear_dsig)
-            masks += [dsigmask]
-            labels += ['dsig']
+            #cut out spaxels with too high residual because they're probably bad
+            dvmask = self.kin.bin(np.abs(filledvel - smeared[1]) > smear_dv) 
+            masks += [dvmask]
+            labels += ['dv']
+            if self.kin.sig is not None: 
+                dsigmask = self.kin.bin(np.abs(filledsig - smeared[2]) > smear_dsig)
+                masks += [dsigmask]
+                labels += ['dsig']
 
         #clip on surface brightness and ANR
         if self.kin.sb is not None: 
-            sbmask = self.kin.sb < sbf
+            self.kin.sb[self.kin.sb < 0] = 0.
+            self.kin.sb[self.kin.sb > 100] = 0.
+            sbmask = (self.kin.sb < sbf) | (self.kin.sb > 50)
             masks += [sbmask]
             labels += ['sb']
 
         if self.kin.sb_anr is not None:
-            anrmask = self.kin.sb_anr < anr
+            anrmask = (self.kin.sb_anr < anr) | (self.kin.sb_anr > 1000)
             masks += [anrmask]
             labels += ['anr']
 
+        #cut out spaxels with erroneously small errors
+        ivarmask = (self.kin.vel_ivar < 1e-5) | (self.kin.sb_ivar < 1e-5)\
+                 | (self.kin.sig_ivar < 1e-5)
+        masks += [ivarmask]
+        labels += ['ivar']
+
         #combine all masks and apply to data
-        mask = np.zeros(dvmask.shape)
+        mask = np.zeros(self.kin.vel_mask.shape)
         for m in masks: mask += m
         mask = mask.astype(bool)
         self.kin.remask(mask)
@@ -363,17 +385,17 @@ class FitArgs:
                 labels += ['resid', 'chisq']
                 print(f'Clipping converged after {niter} iterations')
 
-            plt.figure(figsize = (16,8))
-            plt.subplot(241)
+            plt.figure(figsize = (12,12))
+            plt.subplot(331)
             plt.axis('off')
             plt.imshow(origvel, cmap='jet', origin='lower')
             plt.title('Original vel')
-            plt.subplot(242)
+            plt.subplot(332)
             plt.axis('off')
             plt.imshow(origsig, cmap='jet', origin='lower')
             plt.title('Original sig')
             for i in range(len(masks)):
-                plt.subplot(243+i)
+                plt.subplot(333+i)
                 plt.axis('off')
                 plt.imshow(self.kin.remap(masks[i]), origin='lower')
                 plt.title(labels[i])
@@ -425,7 +447,7 @@ class FitArgs:
 
         inc = self.guess[1] if self.kin.phot_inc is None else self.kin.phot_inc
         pa = self.guess[2] if self.kin.phot_pa is None else self.kin.phot_pa
-        ndim = len(self.guess) + (self.nbins + self.fixcent) * self.disp
+        ndim = len(self.guess) + (self.nbins + self.fixcent) * self.disp + 2*self.scatter
 
         #prior bounds defined based off of guess
         bounds = np.zeros((ndim, 2))
@@ -444,9 +466,13 @@ class FitArgs:
 
         #cap velocities at maximum in vf plus a padding factor
         vmax = min(np.max(np.abs(self.kin.vel))/np.cos(np.radians(inc)) * velpad, velmax)
+        end = self.nglobs + 3*self.nbins
         bounds[self.nglobs:self.nglobs + self.nbins] = (0, vmax)
-        bounds[self.nglobs + self.nbins:self.nglobs + 3*self.nbins] = (0, vmax)
-        if self.disp: bounds[self.nglobs + 3*self.nbins:] = (0, min(np.max(self.kin.sig), sigmax))
+        bounds[self.nglobs + self.nbins:end] = (0, vmax)
+        if self.disp: bounds[end:end + self.nbins + 1] = (0, min(np.max(self.kin.sig), sigmax))
+    
+        if self.scatter: bounds[end + self.nbins + 1:end + self.nbins + 3] = (-1,2)
+
         self.bounds = bounds
 
     def getasym(self):

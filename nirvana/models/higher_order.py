@@ -56,18 +56,17 @@ def bisym_model(args, paramdict, plot=False, relative_pab=False):
     #define dispersion and surface brightness if desired
     if args.disp: 
         sigmodel = np.interp(r, args.edges, paramdict['sig'])
-        sb = args.kin.remap('sb', masked=False)
     else: 
         sigmodel = None
-        sb = None
+
 
     #apply beam smearing if beam is given
-    try: conv
-    except: conv = None
     if args.kin.beam_fft is not None:
+        conv = args.conv if hasattr(args, 'conv') else None
         if hasattr(args, 'smearing') and not args.smearing: pass
-        else: sbmodel, velmodel, sigmodel = smear(velmodel, args.kin.beam_fft, sb=sb, 
-                sig=sigmodel, beam_fft=True, cnvfftw=conv, verbose=False)
+        else: 
+            sbmodel, velmodel, sigmodel = smear(velmodel, args.kin.beam_fft, sb=args.kin.remap('sb'), 
+            sig=sigmodel, beam_fft=True, cnvfftw=conv, verbose=False)
 
     #remasking after convolution
     if args.kin.vel_mask is not None: velmodel = np.ma.array(velmodel, mask=args.kin.remap('vel_mask'))
@@ -80,9 +79,9 @@ def bisym_model(args, paramdict, plot=False, relative_pab=False):
 
     #return a 2D array for plotting reasons
     if plot:
-        velremap = args.kin.remap(binvel, masked=True)
+        velremap = args.kin.remap(binvel, args.kin.vel_mask)
         if sigmodel is not None: 
-            sigremap = args.kin.remap(binsig, masked=True)
+            sigremap = args.kin.remap(binsig, args.kin.vel_mask)
             return velremap, sigremap
         return velremap
 

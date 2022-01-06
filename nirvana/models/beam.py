@@ -12,7 +12,6 @@ try:
 except:
     pyfftw = None
 
-
 def gauss2d_kernel(n, sigma):
     """
     Return a circular 2D Gaussian.
@@ -213,6 +212,17 @@ class ConvolveFFTW:
         self.data_fft *= self.kern_fft
         self.ifft()
         return self.dcnv.real.copy()
+
+    def __reduce__(self):
+        '''
+        Internal method for pickling.
+
+        Returns:
+            :obj:`tuple`: Tuple of the class type and the arguments needed for
+            instantiating the class.
+        '''
+            
+        return (self.__class__, (self.shape, ))
 
     def fft(self, data, copy=True, shift=False):
         """

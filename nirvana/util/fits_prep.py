@@ -163,7 +163,7 @@ def profs(samp, args, plot=None, stds=False, jump=None, **kwargs):
 
     return paramdict
 
-def fileprep(f, plate=None, ifu=None, smearing=True, stellar=False, maxr=None,
+def fileprep(f, plate=None, ifu=None, smearing=None, stellar=False, maxr=None,
         cen=True, fixcent=True, clip=True, remotedir=None,
         gal=None, galmeta=None):
     """
@@ -208,6 +208,9 @@ def fileprep(f, plate=None, ifu=None, smearing=True, stellar=False, maxr=None,
             not found and are remotely downloaded.
         gal (:class:`~nirvana.data.fitargs.FitArgs`, optional):
             Galaxy object to use instead of loading the galaxy from scratch.
+        galmeta (:class:`~nirvana.data.manga.MaNGAGlobalPar`, optional):
+            Info on MaNGA galaxy used for plate and ifu
+
         
         Returns:
             :class:`~nirvana.data.fitargs.FitArgs`: Galaxy object containing
@@ -222,7 +225,8 @@ def fileprep(f, plate=None, ifu=None, smearing=True, stellar=False, maxr=None,
         with fits.open(f) as fitsfile:
             table = fitsfile[1].data
             maxr = fitsfile[0].header['maxr']
-            smearing = fitsfile[0].header['smearing']
+            smearing = fitsfile[0].header['smearing'] if smearing is None else smearing
+            scatter = fitsfile[0].header['scatter']
 
         #unpack bintable into dict
         keys = table.columns.names
@@ -233,19 +237,25 @@ def fileprep(f, plate=None, ifu=None, smearing=True, stellar=False, maxr=None,
         for s in ['sig','sigl','sigu']:
             resdict[s] = resdict[s][resdict['sigmask'] == 0]
 
+        #failsafe
+        if 'Stars' in f: resdict['type'] = 'Stars'
+
         #get galaxy object
         if gal is None:
             if resdict['type'] == 'Stars':
                 kin = MaNGAStellarKinematics.from_plateifu(resdict['plate'],resdict['ifu'], ignore_psf=not smearing, remotedir=remotedir)
             else:
                 kin = MaNGAGasKinematics.from_plateifu(resdict['plate'],resdict['ifu'], ignore_psf=not smearing, remotedir=remotedir)
+            scatter = ('vel_scatter' in resdict.keys()) and (resdict['vel_scatter'] != 0)
         else:
             kin = gal
+            scatter = gal.scatter
 
         fill = len(resdict['velmask'])
         fixcent = resdict['vt'][0] == 0
-        lenmeds = 6 + 3*(fill - resdict['velmask'].sum() - fixcent) + (fill - resdict['sigmask'].sum())
+        lenmeds = 6 + 3*(fill - resdict['velmask'].sum() - fixcent) + (fill - resdict['sigmask'].sum()) + 2*scatter
         meds = np.zeros(lenmeds)
+
 
     else:
         isfits = False
@@ -259,35 +269,36 @@ def fileprep(f, plate=None, ifu=None, smearing=True, stellar=False, maxr=None,
             gal = f[:-5] + '.gal'
         if type(gal) == str: gal = np.load(gal, allow_pickle=True)
 
-        #parse the automatically generated filename
-        if plate is None or ifu is None:
-            fname = re.split('/', f[:-5])[-1]
-            info = re.split('/|-|_', fname)
-            plate = int(info[0]) if plate is None else plate
-            ifu = int(info[1]) if ifu is None else ifu
-            stellar = True if 'stel' in info else False
-            cen = True if 'nocen' not in info else False
-            smearing = True if 'nosmear' not in info else False
-            try: maxr = float([i for i in info if 'r' in i][0][:-1])
-            except: maxr = None
-
-            if 'fixcent' in info: fixcent = True
-            elif 'freecent' in info: fixcent = False
-
         #load input galaxy object
         if gal is not None:
             kin = gal
 
         #load in MaNGA data
         else:
+            #parse the automatically generated filename
+            if plate is None or ifu is None:
+                fname = re.split('/', f[:-5])[-1]
+                info = re.split('/|-|_', fname)
+                plate = int(info[0]) if plate is None else plate
+                ifu = int(info[1]) if ifu is None else ifu
+                stellar = True if 'stel' in info else False
+                cen = True if 'nocen' not in info else False
+                smearing = True if 'nosmear' not in info else False
+                try: maxr = float([i for i in info if 'r' in i][0][:-1])
+                except: maxr = None
+
+                if 'fixcent' in info: fixcent = True
+                elif 'freecent' in info: fixcent = False
+
             if stellar:
                 kin = MaNGAStellarKinematics.from_plateifu(plate,ifu, ignore_psf=not smearing, remotedir=remotedir)
             else:
                 kin = MaNGAGasKinematics.from_plateifu(plate,ifu, ignore_psf=not smearing, remotedir=remotedir)
 
+        print(stellar)
     #set relevant parameters for galaxy
     if isinstance(kin, FitArgs): args = kin
-    else: args = FitArgs(kin)
+    else: args = FitArgs(kin, smearing=smearing, scatter=scatter)
     args.setdisp(True)
     args.setnglobs(4) if not cen else args.setnglobs(6)
     args.setfixcent(fixcent)
@@ -302,8 +313,9 @@ def fileprep(f, plate=None, ifu=None, smearing=True, stellar=False, maxr=None,
     if not isfits: meds = dynmeds(chains)
 
     #get appropriate number of edges  by looking at length of meds
-    nbins = (len(meds) - args.nglobs - fixcent)/4
+    nbins = (len(meds) - args.nglobs - fixcent - 2*args.scatter)/4
     if not nbins.is_integer(): 
+        print(len(meds), args.nglobs, fixcent, 2*args.scatter, nbins)
         raise ValueError('Dynesty output array has a bad shape.')
     else: nbins = int(nbins)
 
@@ -311,8 +323,8 @@ def fileprep(f, plate=None, ifu=None, smearing=True, stellar=False, maxr=None,
     if not isfits:
         if gal is None: args.setedges(nbins - 1 + args.fixcent, nbin=True, maxr=maxr)
         resdict = profs(chains, args, stds=True)
-        resdict['plate'] = plate
-        resdict['ifu'] = ifu
+        resdict['plate'] = galmeta.plate if galmeta is not None else None
+        resdict['ifu'] = galmeta.ifu if galmeta is not None else None
         resdict['type'] = 'Stars' if stellar else 'Gas'
     else:
         args.edges = resdict['bin_edges'][~resdict['velmask']]
@@ -322,10 +334,43 @@ def fileprep(f, plate=None, ifu=None, smearing=True, stellar=False, maxr=None,
 
     return args, resdict
 
-def extractfile(f, remotedir=None, gal=None):
+def extractfile(f, remotedir=None, gal=None, galmeta=None):
+    '''
+    Take a filename, open it, and extract the info needed for output files.
+
+    Tries to open a file using :func:`~nirvana.util.fits_prep.fileprep` to get
+    the :class:`~nirvana.data.fitargs.FitArgs` object and the dictionary of its
+    fit parameters. Then get its asymmetry parameter and map, returning all of
+    that.
+
+    Args:
+        f (:obj:`str`):
+            Complete filename to be extracted with
+            :func:`~nirvana.util.fits_prep.fileprep`.
+        remotedir (:obj:`str`, optional):
+            Directory to look for downloaded data in.
+        gal (:class:`~nirvana.data.fitargs.FitArgs`, optional):
+            Pre loaded galaxy object to use instead of reloading galaxy
+        galmeta (:class:`~nirvana.data.manga.MaNGAGlobalPar`, optional):
+            Global data used for :func:`~nirvana.util.fits_prep.fileprep`.
+
+    Returns:
+        :class:`~nirvana.data.fitargs.FitArgs`: Galaxy object
+
+        :obj:`float`: Asymmetry parameter
+
+        `numpy.ndarray`_: 2D map of spatially resolved asymmetry
+
+        :obj:`dict`: Dictionary of fit parameters
+
+    Raises:
+        Exception:
+            Raised if any part of the file extraction process fails. Should
+            provide a useful error message.
+    '''
     try: 
         #get info out of each file and make bisym model
-        args, resdict = fileprep(f, remotedir=remotedir, gal=gal)
+        args, resdict = fileprep(f, remotedir=remotedir, gal=gal, galmeta=galmeta)
 
         inc, pa, pab, vsys, xc, yc = args.guess[:6]
         arc, asymmap = asymmetry(args.kin, pa, vsys, xc, yc)
@@ -341,7 +386,28 @@ def extractfile(f, remotedir=None, gal=None):
 
 def extractdir(cores=10, directory='/data/manga/digiorgio/nirvana/'):
     '''
-    Scan an entire directory for nirvana output files and extract useful data from them.
+    Scan an entire directory for nirvana output files and extract useful data
+    from them.
+
+    Looks for all available .nirv files in a given directory and runs
+    :func:`~nirvana.util.fits_prep.extractfile` on all of them, producing
+    arrays of the outputs. Uses multiprocessing for parallel loading of files.
+
+    Args:
+        cores (:obj:`int`, optional):
+            Number of cores to use for multiprocessing.
+        directory (:obj:`str`, optional):
+            Directory to look for .nirv files in.
+
+    Returns:
+        `numpy.ndarray`_: array of :class:`~nirvana.data.fitargs.FitArgs`
+        galaxy objects
+
+        `numpy.ndarray`_: array of :obj:`float` asymmetry parameters
+
+        `numpy.ndarray`_: array of 2D maps of spatially resolved asymmetry
+
+        `numpy.ndarray`_: array of :obj:`dict` dictionaries of fit parameters
     '''
 
     #find nirvana files
@@ -359,6 +425,42 @@ def extractdir(cores=10, directory='/data/manga/digiorgio/nirvana/'):
     return galaxies, arcs, asyms, dicts
 
 def dictformatting(d, drp=None, dap=None, padding=20, fill=-9999, drpalldir='.', dapalldir='.'):
+    '''
+    Reformat results dictionaries so they can be put into FITS tables.
+
+    Take the dictionaries that come out of
+    :func:`~nirvana.util.fits_prep.fileprep` and make their velocity profiles a
+    standard length to accommodate limitations of the FITS format. Also apply a
+    mask to the profiles with filler values.
+
+    Args:
+        d (:obj:`dict`):
+            Dictionary of fit results.
+        drp (`numpy.ndarray`_, optional):
+            Data array from DRPAll file
+        dap (`numpy.ndarray`_, optional):
+            Data array from DAPAll file
+        padding (:obj:`int`, optional):
+            Maximum length to pad velocity profiles out to
+        fill (:obj:`float`, optional):
+            Value to fill in while padding velocity profiles
+        drpalldir (:obj:`str`, optional):
+            Path to look for DRPAll files for. If the DRPAll array isn't
+            already supplied, it will look in this directory for files that
+            match 'drpall*' and load the first one.
+        dapalldir (:obj:`str`, optional):
+            Path to look for DAPAll files for. If the DAPAll array isn't
+            already supplied, it will look in this directory for files that
+            match 'dapall*' and load the first one.
+
+    Returns:
+        :obj:`dict`: Reformatted dictionary.
+
+    Raises:
+        Exception:
+            Raised if dictionary is empty or isn't in the correct format
+    '''
+
     #load dapall and drpall
     if drp is None:
         drpfile = glob(drpalldir + '/drpall*')[0]
@@ -382,31 +484,58 @@ def dictformatting(d, drp=None, dap=None, padding=20, fill=-9999, drpalldir='.',
         sigmask[:len(d['sig'])] = False
 
         #corresponding indicies in dapall and drpall
+        print(d['plate'],d['ifu'])
         drpindex = np.where(drp['plateifu'] == f"{d['plate']}-{d['ifu']}")[0][0]
         dapindex = np.where(dap['plateifu'] == f"{d['plate']}-{d['ifu']}")[0][0]
         data += [velmask, sigmask, drpindex, dapindex]
 
     #failure for empty dict
-    except:
+    except Exception as e:
+        print(e)
         data = None
 
     return data
 
-def makealltable(fname='', dir='.', vftype='', outfile=None, padding=20):
+def makealltable(fname='', dir='.', vftype='', outfile=None):
     '''
-    Take a list of dictionaries from extractdir and turn them into an astropy table (and a fits file if a filename is given).
+    Combine the fit parameter tables for all of the FITS files in a given
+    directory of a given velocity field type into one table.
+
+    Looks for all of the FITS files matching a certain filename and velocity
+    field type (stars or gas) and combines their tables of fit parameters into
+    one giant Astropy table. This can also be saved as another FITS file if a
+    filename is given.
+
+    Args:
+        fname (:obj:`str`, optional):
+            All FITS files containing this string will be loaded and combined
+        dir (:obj:`str`, optional):
+            Directory to look for FITS files in
+        vftype (:obj:`str`, optional):
+            Specific type of velocity field to get the FITS files for ('Stars' or 'Gas')
+        outfile (:obj:`str`, optional):
+            If given, the output table will be written to this filename
+
+    Returns:
+        :class:`~astropy.table.Table`: table of combined fit data
+
+    Raises:
+        FileNotFoundError:
+            Raised if no FITS files matching the description are found
     '''
 
     #load dapall and drpall
     drp = fits.open('/data/manga/spectro/redux/MPL-11/drpall-v3_1_1.fits')[1].data
     dap = fits.open('/data/manga/spectro/analysis/MPL-11/dapall-v3_1_1-3.1.0.fits')[1].data
 
+    #look for fits files
     fs = glob(f'{dir}/{fname}*{vftype}.fits')
     if len(fs) == 0:
         raise FileNotFoundError(f'No matching FITS files found in directory "{dir}"')
     else:
         print(len(fs), 'files found...')
 
+    #combine all fits tables into one list
     tables = []
     for f in tqdm(fs):
         try: 
@@ -424,9 +553,12 @@ def makealltable(fname='', dir='.', vftype='', outfile=None, padding=20):
             dtype = tables[i].dtype
         except: i += 1
 
+    #put all of the data from the tables into one array
     data = np.zeros(len(tables), dtype=dtype)
     for i in range(len(tables)):
         data[i] = tables[i]
+
+    #turn array into an astropy table
     t = Table(data)
 
     #apparently numpy doesn't handle its own uint and bool dtypes correctly
@@ -444,7 +576,20 @@ def maskedarraytofile(array, name=None, fill=0, hdr=None):
     '''
     Write a masked array to an HDU. 
     
-    Numpy says it's not implemented yet so I'm implementing it.
+    Numpy says it's not implemented yet so I'm implementing it. It takes a masked array, replaces the masked areas with a fill value, then writes it to an HDU.
+
+    Args:
+        array (`numpy.ma.array`_):
+            Masked array to be written to an HDU
+        name (:obj:`str`, optional):
+            Name for the HDU
+        fill (:obj:`float`, optional):
+            Fill value to put in masked areas
+        hdr (:class:`~astropy.fits.Header`, optional):
+            Header for resulting HDU
+
+    Returns:
+        :class:`~astropy.fits.ImageHDU`: HDU of the masked array
     '''
     array[array.mask] = fill
     array = array.data
@@ -461,12 +606,16 @@ def imagefits(f, galmeta, gal=None, outfile=None, padding=20, remotedir=None, ou
         except: raise FileNotFoundError('Could not load .gal file')
 
     #get relevant data
-    args, arc, asymmap, resdict = extractfile(f, remotedir=remotedir, gal=gal)
+    args, arc, asymmap, resdict = extractfile(f, remotedir=remotedir, gal=gal, galmeta=galmeta)
     if gal is not None: args = gal
     resdict['bin_edges'] = np.array(args.edges)
     r, th = projected_polar(args.kin.x - resdict['xc'], args.kin.y - resdict['yc'], *np.radians((resdict['pa'], resdict['inc'])))
     r = args.kin.remap(r)
     th = args.kin.remap(th)
+
+    if not args.scatter or 'vel_scatter' not in resdict.keys():
+        resdict['vel_scatter'] = 0
+        resdict['sig_scatter'] = 0
 
     data = dictformatting(resdict, padding=padding, drpalldir=drpalldir, dapalldir=dapalldir)
     data += [*np.delete(args.bounds.T, slice(7,-1), axis=1)]
@@ -475,7 +624,7 @@ def imagefits(f, galmeta, gal=None, outfile=None, padding=20, remotedir=None, ou
     dtypes = ['f4','f4','f4','f4','f4','f4','20f4','20f4','20f4','20f4',
               'f4','f4','f4','f4','f4','f4','f4','f4','f4','f4','f4','f4',
               '20f4','20f4','20f4','20f4','20f4','20f4','20f4','20f4',
-              'I','I','S','f4','20f4','20?','20?','I','I','8f4','8f4']
+              'I','I','S','f4','20f4','f4','f4','20?','20?','I','I','8f4','8f4']
 
     #add parameters to the header
     #if galmeta==None:
@@ -508,6 +657,7 @@ def imagefits(f, galmeta, gal=None, outfile=None, padding=20, remotedir=None, ou
     hdr['smearing'] = (args.smearing, 'Whether PSF smearing was used')
     hdr['ivar_flr'] = (args.noise_floor, 'Noise added to ivar arrays in quadrature')
     hdr['penalty'] = (args.penalty, 'Penalty for large 2nd order terms')
+    hdr['scatter'] = (args.scatter, 'Whether intrinsic scatter was included')
 
     avmax, ainc, apa, ahrot, avsys = args.getguess(simple=True, galmeta=galmeta)
     hdr['a_vmax'] = (avmax, 'Axisymmetric asymptotic velocity in km/s')
@@ -519,7 +669,7 @@ def imagefits(f, galmeta, gal=None, outfile=None, padding=20, remotedir=None, ou
     t = Table(names=names, dtype=dtypes)
     t.add_row(data)
     reordered = ['plate','ifu','type','drpindex','dapindex','bin_edges','prior_lbound','prior_ubound',
-          'xc','yc','inc','pa','pab','vsys','vt','v2t','v2r','sig','velmask','sigmask',
+          'xc','yc','inc','pa','pab','vsys','vt','v2t','v2r','sig','velmask','sigmask', 'vel_scatter', 'sig_scatter',
           'xcl','ycl','incl','pal','pabl','vsysl','vtl','v2tl','v2rl','sigl',
           'xcu','ycu','incu','pau','pabu','vsysu','vtu','v2tu','v2ru','sigu','a_rc']
     t = t[reordered]
