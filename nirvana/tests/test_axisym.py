@@ -444,6 +444,7 @@ def test_mock_covar():
     assert numpy.ma.std(mock_vremap-vremap) > 5, 'Velocity error changed'
     assert numpy.ma.std(mock_sremap-sremap) > 7, 'Dispersion error changed'
 
+
 @requires_remote
 def test_fisher():
 

@@ -1178,7 +1178,8 @@ class AxisymmetricDisk:
             return _kin
 
         # Get the deviates
-        vgpm, dv, sgpm, ds = _kin.deviate(ignore_sigma=self.dc is None)
+        sigma_method = 'ignore' if self.dc is None else 'draw' 
+        vgpm, dv, sgpm, ds = _kin.deviate(sigma=sigma_method)
         # Add the velocity error
         _kin.vel[vgpm] += dv
         # Add the dispersion error and update the dispersion values
