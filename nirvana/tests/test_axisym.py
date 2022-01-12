@@ -444,14 +444,13 @@ def test_mock_covar():
     assert numpy.ma.std(mock_vremap-vremap) > 5, 'Velocity error changed'
     assert numpy.ma.std(mock_sremap-sremap) > 7, 'Dispersion error changed'
 
-
 @requires_remote
 def test_fisher():
 
     data_root = remote_data_file()
     for use_covar in [False, True]:
         kin = manga.MaNGAStellarKinematics.from_plateifu(8138, 12704, cube_path=data_root,
-                                                        maps_path=data_root, covar=use_covar)
+                                                         maps_path=data_root, covar=use_covar)
 
         # Set the parameters close to the best-fitting parameters from a previous
         # run
