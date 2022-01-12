@@ -86,7 +86,7 @@ class FitArgs:
             maxr = np.max(np.sqrt(x**2 + y**2))
 
         #specify number of bins manually if desired
-        if nbin: self.edges = np.linspace(0, maxr, inc+1)
+        if nbin: self.edges = np.linspace(0, maxr, inc + 1 + self.fixcent)
 
         #calculate nyquist bin width based off fwhm and inc
         else:
@@ -109,14 +109,12 @@ class FitArgs:
             for i in range(len(self.edges)-1):
                 mcut = (mr > self.edges[i]) * (mr < self.edges[i+1])
                 cut = (r > self.edges[i]) * (r < self.edges[i+1])
-                nspax[i] = np.sum(mcut)
-                maskfrac[i] = np.sum(self.kin.vel_mask[cut])/cut.sum()
+                #nspax[i] = np.sum(mcut)
+                maskfrac[i] = 1 - mcut.sum()/cut.sum()
             
             #cut bins where too many spaxels are masked
             bad = (maskfrac > .75)
-            print(self.edges)
             self.edges = [self.edges[0], *self.edges[1:][~bad]]
-            print(self.edges)
 
             #mask spaxels outside last bin edge
             self.kin.vel_mask[r > self.edges[-1]] = True
@@ -285,6 +283,7 @@ class FitArgs:
         #have to do this so the convolution doesn't barf
         filledvel = np.ma.array(self.kin.remap('vel'), mask=binmask)
         mask = filledvel.mask | binmask.data | (filledvel == 0).data
+        origmask = mask
         filledvel = filledvel.data
         filledvel[mask] = avel[mask]
 
@@ -315,13 +314,13 @@ class FitArgs:
         #clip on surface brightness and ANR
         if self.kin.sb is not None: 
             self.kin.sb[self.kin.sb < 0] = 0.
-            self.kin.sb[self.kin.sb > 100] = 0.
-            sbmask = (self.kin.sb < sbf) | (self.kin.sb > 50)
+            self.kin.sb[self.kin.sb > 300] = 0.
+            sbmask = (self.kin.sb < sbf) | (self.kin.sb > 300)
             masks += [sbmask]
             labels += ['sb']
 
         if self.kin.sb_anr is not None:
-            anrmask = (self.kin.sb_anr < anr) | (self.kin.sb_anr > 1000)
+            anrmask = (self.kin.sb_anr < anr) | (self.kin.sb_anr > 10000)
             masks += [anrmask]
             labels += ['anr']
 
@@ -376,6 +375,8 @@ class FitArgs:
 
             #apply mask to data
             self.kin.remask(clipmask)
+
+        self.kin.sb_mask = sbmask + self.kin.bin(origmask)
 
         #make a plot of all of the masks if desired
         if verbose: 
