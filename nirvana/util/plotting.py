@@ -76,6 +76,8 @@ def summaryplot(f, plate=None, ifu=None, smearing=True, stellar=False, maxr=None
         remotedir (:obj:`str`, optional):
             Directory to load MaNGA data files from, or save them if they are
             not found and are remotely downloaded.
+        gal (:class:`~nirvana.data.fitargs.FitArgs`, optional):
+            Pre existing galaxy object to use instead of loading from scratch
     """
 
     #check if plot file already exists
@@ -511,6 +513,9 @@ def safeplot(f, func='sum', **kwargs):
     Args:
         f (:obj:`str`):
             Name of the `.fits` file you want to plot.
+        func (:obj:`str`, optional):
+            Use `sum` to plot data with
+            :func:`~nirvana.util.plotting.summaryplot` or `sep` to plot using
         kwargs (optional):
             Arguments for `~nirvana.plotting.summaryplot`.
     '''
@@ -518,6 +523,8 @@ def safeplot(f, func='sum', **kwargs):
     try:
         if func == 'sum': summaryplot(f, save=True, **kwargs)
         elif func == 'sep': separate_components(f, save=True, **kwargs)
+        else:
+            raise UserInputError('Plotting function must be "sum" or "sep"')
     except Exception:
         print(f, 'failed')
         print(traceback.format_exc())
@@ -544,6 +551,10 @@ def plotdir(directory='/data/manga/digiorgio/nirvana/', fname='*-*_*.nirv', core
             many cores and don't call `plt.ioff()` before this, this function
             may crash the desktop environment of your operating system because
             it tries to open too many windows at once.
+        func (:obj:`str`, optional):
+            Use `sum` to plot data with
+            :func:`~nirvana.util.plotting.summaryplot` or `sep` to plot using
+            :func:`~nirvana.util.plotting.separatecomponents`
         kwargs (optional):
             Arguments for `~nirvana.plotting.summaryplot`.
     '''
