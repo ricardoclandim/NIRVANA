@@ -16,12 +16,11 @@ import matplotlib.pyplot as plt
 import warnings
 
 from .bin2d import Bin2D
-from .util import get_map_bin_transformations, impose_positive_definite, fill_matrix
 from .util import gaussian_deviates
 from ..models.beam import construct_beam, ConvolveFFTW, smear
 from ..models.geometry import projected_polar
 
-
+# TODO: Make Kinematics a subclass of Bin2D?
 class Kinematics:
     r"""
     Base class to hold data fit by the kinematic model.
@@ -231,22 +230,19 @@ class Kinematics:
         else:
             self.sig_corr = sig_corr
 
-        # The following are arrays used to convert between arrays
-        # holding the data for the unique bins to arrays with the full
+        # The following arrays and Bin2D object are used to convert between
+        # arrays holding the data for the unique bins to arrays with the full
         # data map.
         self.grid_x = grid_x
         self.grid_y = grid_y
         self.grid_wcs = grid_wcs
-        self.binid, self.nspax, self.bin_indx, self.grid_indx, self.bin_inverse, \
-            self.bin_transform \
-                = get_map_bin_transformations(spatial_shape=self.spatial_shape, binid=binid)
-        self.nbin = self.nspax.size
+        self.binner = Bin2D(binid=binid)
 
         # Unravel and select the valid values for all arrays
         for attr in ['x', 'y', 'sb', 'sb_ivar', 'sb_mask', 'vel', 'vel_ivar', 'vel_mask', 'sig', 
                      'sig_ivar', 'sig_mask', 'sig_corr', 'sb_anr']:
             if getattr(self, attr) is not None:
-                setattr(self, attr, getattr(self, attr).ravel()[self.bin_indx])
+                setattr(self, attr, self.binner.unique(getattr(self, attr)))
 
         # Set the surface-brightness grid.  This needs to be after the
         # unraveling of the attributes done in the lines above so that I can use
@@ -261,6 +257,20 @@ class Kinematics:
         # TODO: Should issue a some warning/error if the user has provided both
         # ivar and covar and they are not consistent
         self.update_sigma()
+
+    # TODO: Adding was a way of avoiding crashes in other parts of the code, but
+    # we should figure out which of these we actually need?
+    @property
+    def nspax(self):
+        return self.binner.nbin
+
+    @property
+    def binid(self):
+        return self.binner.ubinid
+
+    @property
+    def nbin(self):
+        return self.binner.nbin.size
 
     def _set_beam(self, psf, aperture):
         """
@@ -412,7 +422,7 @@ class Kinematics:
         #   assert np.allclose(ivc.toarray(),
         #                      vel_covar[np.ix_(gpm.ravel(), gpm.ravel())].toarray())
 
-        _covar = self.bin_transform.dot(_covar.dot(self.bin_transform.T))
+        _covar = self.binner.bin_covar(_covar)
 
         # Deal with possible numerical error
         # - Force it to be positive
@@ -424,40 +434,17 @@ class Kinematics:
 
     def copy(self):
         """
-        Perform a deep copy of the instance.
+        Perform a *deep* copy of the instance.
 
         .. warning::
             
-            Use this with care...
+            I'm generally wary of ``deepcopy``, but using it is so much faster
+            than trying to instantiate a new object using the internal data, and
+            it avoids numerical error for the covariance matrix, which can lead
+            to them not being positive definite.
 
         """
-        # TODO: I'm really wary of deepcopy, but this is so much faster than
-        # trying to instantiate a new object, and avoids numerical error for the
-        # covariance matrix, which can lead to them not being positive
-        # definite....
         return copy.deepcopy(self)
-
-        # TODO: Part of old doc string
-#        In detail, this creates a new instance of the subclass and then
-#        instantiates the base class with copies of all the relevant attributes
-#        needed for its instantiation.
-
-#        _copy = super().__new__(self.__class__)
-#        Kinematics.__init__(_copy, self.remap('vel'), vel_ivar=self.remap('vel_ivar'),
-#                            vel_covar=self.remap_covar('vel_covar'), x=self.remap('x'),
-#                            y=self.remap('y'), sb=self.remap('sb'),
-#                            sb_ivar=self.remap('sb_ivar'), sb_covar=self.remap_covar('sb_covar'),
-#                            sb_anr=self.remap('sb_anr'), sig=self.remap('sig'),
-#                            sig_ivar=self.remap('sig_ivar'),
-#                            sig_covar=self.remap_covar('sig_covar'),
-#                            sig_corr=self.remap('sig_corr'), psf_name=self.psf_name,
-#                            psf=self.beam, binid=self.remap('binid', masked=False, fill_value=-1),
-#                            grid_x=self.grid_x, grid_y=self.grid_y, grid_sb=self.grid_sb,
-#                            grid_wcs=self.grid_wcs, reff=self.reff, fwhm=self.fwhm,
-#                            bordermask=self.bordermask, image=self.image, phot_inc=self.phot_inc,
-#                            maxr=self.maxr, quiet=True)
-#        return _copy
-
 
     def update_sigma(self, sig=None, sig_ivar=None, sig_covar=None, sqr=False):
         """
@@ -619,28 +606,7 @@ class Kinematics:
             d = data
             m = mask
 
-        # Check the shapes (overkill if the user selected an attribute...)    
-        if d.shape != self.vel.shape: # and tt is not None and type(d) is not tt.TensorVariable:
-            raise ValueError('To remap, data must have the same shape as the internal data '
-                             'attributes: {0}'.format(self.vel.shape))
-        if m is not None and m.shape != self.vel.shape:
-            raise ValueError('To remap, mask must have the same shape as the internal data '
-                             'attributes: {0}'.format(self.vel.shape))
-
-        # Construct the output map
-#        _data = np.ma.masked_all(self.spatial_shape, dtype=d.dtype)
-        # NOTE: np.ma.masked_all sets the initial data array to
-        # 2.17506892e-314, which just leads to trouble. I've replaced this with
-        # the line below to make sure that the initial value is just 0.
-        _data = np.ma.MaskedArray(np.zeros(self.spatial_shape, dtype=d.dtype), mask=True)
-        _data[np.unravel_index(self.grid_indx, self.spatial_shape)] = d[self.bin_inverse]
-        if m is not None:
-            np.ma.getmaskarray(_data)[np.unravel_index(self.grid_indx, self.spatial_shape)] \
-                    = m[self.bin_inverse]
-        # Return a masked array if requested; otherwise, fill the masked values
-        # with the equivalent of 0. WARNING: this will be False for a boolean
-        # array...
-        return _data if masked else _data.filled(d.dtype.type(fill_value))
+        return self.binner.remap(d, mask=m, masked=masked, fill_value=fill_value)
 
     def remap_covar(self, covar):
         """
@@ -648,6 +614,9 @@ class Kinematics:
         spaxels.
 
         Spaxels in the same bin are perfectly correlated.
+
+        This is a simple wrapper for :func:`~nirvana.util.bin2d.Bin2D.remap_covar` using
+        the :class:`~nirvana.util.bin2d.Bin2D` instance :attr:`binner`.
 
         Args:
             covar (`numpy.ndarray`_, `scipy.sparse.csr_matrix`_, :obj:`str`):
@@ -660,116 +629,123 @@ class Kinematics:
             covariance.
         """
         _covar = getattr(self, covar) if isinstance(covar, str) else covar
-        if _covar is None:
-            return None
-        gpm = np.ones(self.nbin, dtype=bool) if self.binid is None \
-                    else self.remap('binid', masked=False, fill_value=-1) > -1
-        _bt = self.bin_transform[:,gpm.ravel()].T
-        _bt[_bt > 0] = 1.
-        return fill_matrix(_bt.dot(_covar.dot(_bt.T)), gpm.ravel())
+        return None if _covar is None else self.binner.remap_covar(_covar)
 
-    # TODO: Include an optional weight map.  E.g., to mimic the luminosity
-    # weighting of the kinematics in data.
     def bin(self, data):
         """
         Provided a set of mapped data, rebin it to match the internal vectors.
 
-        This method is most often used to bin maps of model data to match the
-        binning of the kinematic data.  The operation takes the average of
-        ``data`` within a bin defined by the kinematic data.  For unbinned data,
-        this operation simply selects and reorders the data from the input map
-        to match the internal vectors with the kinematic data.
-        
-        Args:
-            data (`numpy.ndarray`_):
-                Data to rebin. Shape must match :attr:`spatial_shape`.
-
-        Returns:
-            `numpy.ndarray`_: A vector with the data rebinned to match the
-            number of unique measurements available.
-
-        Raises:
-            ValueError:
-                Raised if the shape of the input array is incorrect.
+        This is a simple wrapper for :func:`~nirvana.util.bin2d.Bin2D.bin` using
+        the :class:`~nirvana.util.bin2d.Bin2D` instance :attr:`binner`.
         """
-        if data.shape != self.spatial_shape:
-            raise ValueError('Data to rebin has incorrect shape; expected {0}, found {1}.'.format(
-                              self.spatial_shape, data.shape))
-        return self.bin_transform.dot(data.ravel())
+        return self.binner.bin(data)
 
-    # TODO: Include an optional weight map.  E.g., to mimic the luminosity
-    # weighting of the kinematics in data.
     def deriv_bin(self, data, deriv):
         """
-        Provided a set of mapped data, rebin it to match the internal vectors.
+        Provided a set of mapped data, rebin it to match the internal vectors
+        and propagate the derivatives in the data.
 
-        This method is most often used to bin maps of model data to match the
-        binning of the kinematic data.  The operation takes the average of
-        ``data`` within a bin defined by the kinematic data.  For unbinned data,
-        this operation simply selects and reorders the data from the input map
-        to match the internal vectors with the kinematic data.
+        This is a simple wrapper for :func:`~nirvana.util.bin2d.Bin2D.deriv_bin`
+        using the :class:`~nirvana.util.bin2d.Bin2D` instance :attr:`binner`.
+        """
+        return self.binner.deriv_bin(data, deriv)
 
-        This method is identical to :func:`bin`, except that it allows for
-        propagation of derivatives of the provided model with respect to its
-        parameters.  The propagation of derivatives for any single parameter is
-        identical to calling :func:`bin` on that derivative map.
-        
+    # TODO: Include error calculations?
+    def bin_moments(self, norm, center, stddev):
+        r"""
+        Bin a set of Gaussian moments.
+
+        Assuming the provided data are the normalization, mean, and standard
+        deviation of a set of Gaussian profiles, this method performs a nominal
+        calculation of the moments of the summed Gaussian profile.
+
+        This is a simple wrapper for
+        :func:`~nirvana.util.bin2d.Bin2D.bin_moments` using the
+        :class:`~nirvana.util.bin2d.Bin2D` instance :attr:`binner`.
+
+        .. note::
+
+            Any of the input arguments can be None, but at least one of them
+            cannot be!
+
         Args:
-            data (`numpy.ndarray`_):
-                Data to rebin. Shape must match :attr:`spatial_shape`.
-            deriv (`numpy.ndarray`_):
-                If the input data is a kinematic model, this provides the
-                derivatives of model w.r.t. its parameters.  The first two axes
-                of the array must have a shape that matches
+            norm (`numpy.ndarray`_):
+                Gaussian normalization.  Shape must match :attr:`spatial_shape`.
+            center (`numpy.ndarray`_):
+                Gaussian center.  Shape must match :attr:`spatial_shape`.
+            stddev (`numpy.ndarray`_, optional):
+                Gaussian standard deviation.  Shape must match
                 :attr:`spatial_shape`.
 
         Returns:
-            :obj:`tuple`: Two `numpy.ndarray`_ arrays.  The first provides the
-            vector with the data rebinned to match the number of unique
-            measurements available, and the second is a 2D array with the binned
-            derivatives for each model parameter.
-
-        Raises:
-            ValueError:
-                Raised if the spatial shapes of the input arrays are incorrect.
+            :obj:`tuple`: A tuple of three `numpy.ndarray`_ objects with the
+            binned normalization, mean, and standard deviation of the summed
+            profile.  If ``norm`` is None on input, the returned 0th moment is 1
+            everywhere.  If ``center`` is None on input, the returned 1st moment
+            is 0 everywhere.  If ``stddev`` is None on input, the returned 2nd
+            moment is 1 everywhere.
         """
-        if data.shape != self.spatial_shape:
-            raise ValueError('Data to rebin has incorrect shape; expected {0}, found {1}.'.format(
-                              self.spatial_shape, data.shape))
-        if deriv.shape[:2] != self.spatial_shape:
-            raise ValueError('Derivative shape is incorrect; expected {0}, found {1}.'.format(
-                              self.spatial_shape, deriv.shape[:2]))
-        return self.bin_transform.dot(data.ravel()), \
-                    np.stack(tuple([self.bin_transform.dot(deriv[...,i].ravel())
-                                    for i in range(deriv.shape[-1])]), axis=-1)
+        return self.binner.bin_moments(norm, center, stddev)
+
+    def deriv_bin_moments(self, norm, center, stddev, dnorm, dcenter, dstddev):
+        r"""
+        Bin a set of Gaussian moments and propagate the calculation for the
+        derivatives.
+
+        This method is identical to :func:`bin_moments`, except it includes the
+        propagation of the derivatives.
+
+        .. note::
+
+            Any of the first three input arguments can be None, but at least one of them
+            cannot be!
+
+        This is a simple wrapper for
+        :func:`~nirvana.util.bin2d.Bin2D.deriv_bin_moments` using the
+        :class:`~nirvana.util.bin2d.Bin2D` instance :attr:`binner`.
+
+        Args:
+            norm (`numpy.ndarray`_):
+                Gaussian normalization.  Shape must match :attr:`spatial_shape`.
+                Can be None.
+            center (`numpy.ndarray`_):
+                Gaussian center.  Shape must match :attr:`spatial_shape`.  Can
+                be None.
+            stddev (`numpy.ndarray`_, optional):
+                Gaussian standard deviation.  Shape must match
+                :attr:`spatial_shape`.  Can be None.
+            dnorm (`numpy.ndarray`_):
+                Derivative of the Gaussian normalization with respect to model
+                parameters.  Shape of the first two axes must match
+                :attr:`spatial_shape`.  Can be None.
+            dcenter (`numpy.ndarray`_):
+                Derivative of the Gaussian center with respect to model
+                parameters.  Shape of the first two axes must match
+                :attr:`spatial_shape`.  Can be None.
+            dstddev (`numpy.ndarray`_, optional):
+                Derivative of the Gaussian standard deviation with respect to
+                model parameters.  Shape of the first two axes must match
+                :attr:`spatial_shape`.  Can be None.
+
+        Returns:
+            :obj:`tuple`: A tuple of three `numpy.ndarray`_ objects with the
+            binned normalization, mean, and standard deviation of the summed
+            profile.  If ``norm`` is None on input, the returned 0th moment is 1
+            everywhere.  If ``center`` is None on input, the returned 1st moment
+            is 0 everywhere.  If ``stddev`` is None on input, the returned 2nd
+            moment is 1 everywhere.
+        """
+        return self.binner.deriv_bin_moments(norm, center, stddev, dnorm, dcenter, dstddev)
 
     def unique(self, data):
         """
-        Provided a set of binned and remapped data (i.e., each element in a
-        bin has the same value in the map), select the unique values from the
-        map.
+        Provided a 2D array of binned data, select and return the unique values
+        from the map.
 
-        This is the same operation performed on the input 2D maps of data to
-        extract the unique data vectors; e.g.,::
-
-            assert np.array_equal(self.vel, self.unique(self.remap('vel', masked=False)))
-
-        Args:
-            data (`numpy.ndarray`_):
-                The 2D data array from which to extract the unique data.
-                Shape must be :attr:`spatial_shape`.
-
-        Returns:
-            `numpy.ndarray`_: The 1D vector with the unique data.
-
-        Raises:
-            ValueError:
-                Raised if the spatial shape is wrong.
+        This is a simple wrapper for :func:`~nirvana.util.bin2d.Bin2D.unique`
+        using the :class:`~nirvana.util.bin2d.Bin2D` instance :attr:`binner`.
         """
-        if data.shape != self.spatial_shape:
-            raise ValueError(f'Input has incorrect shape; found {data.shape}, '
-                             f'expected {self.spatial_shape}.')
-        return data.flat[self.bin_indx]
+        return self.binner.unique(data)
 
     def max_radius(self):
         """

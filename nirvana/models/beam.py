@@ -351,7 +351,6 @@ def smear(v, beam, beam_fft=False, sb=None, sig=None, cnvfftw=None, verbose=Fals
     # Get the first moment of the beam-smeared intensity distribution
     if verbose: print('Convolving surface brightness...')
     mom0 = _cnv(np.ones(v.shape, dtype=float) if sb is None else sb, bfft, kernel_fft=True)
-#    mom0 = None if sb is None else _cnv(sb, bfft, kernel_fft=True)
 
     # First moment
     if verbose: print('Convolving velocity field...',sb,v)

@@ -275,7 +275,7 @@ def main(args):
     else:
         vel, sig = disk.model(p0, x=x, y=y, beam=beam_sim)
     _sb, vel, sig = binner.bin_moments(sb, vel, sig)
-#    vel = binner.remap(vel)
+    vel = binner.remap(vel)
     sig = 30*np.ones(vel.shape, dtype=float) if sig is None else binner.remap(sig)
     vel_ivar = np.ma.MaskedArray(np.ma.divide(binned_snr, sig)**2, mask=ifu_mask)
     sig_ivar = np.ma.MaskedArray(np.ma.divide(binned_snr, sig)**2, mask=ifu_mask)

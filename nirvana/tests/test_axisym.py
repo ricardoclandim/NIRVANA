@@ -181,7 +181,7 @@ def test_disk_derivative_bin():
         cnvfftw = ConvolveFFTW(kin.spatial_shape)
     except:
         cnvfftw = None
-    v, sig, dv, dsig = disk.deriv_model(disk.par, x=kin.grid_x, y=kin.grid_y, sb=kin.grid_sb, 
+    v, sig, dv, dsig = disk.deriv_model(disk.par, x=kin.grid_x, y=kin.grid_y, #sb=kin.grid_sb,
                                         beam=kin.beam_fft, is_fft=True, cnvfftw=cnvfftw)
     # Now also include the binning
     bv, dbv = kin.deriv_bin(v, dv)
@@ -209,8 +209,73 @@ def test_disk_derivative_bin():
         assert numpy.allclose(dbv[...,i], fd_dbv[...,i], rtol=0., atol=1e-4), \
                 f'Finite difference produced different derivative for parameter {i+1}!'
         # The difference is relatively large (again) for the dispersion data
-        assert numpy.allclose(dbsig[...,i], fd_dbsig[...,i], rtol=0., atol=3e-3), \
+        assert numpy.allclose(dbsig[...,i], fd_dbsig[...,i], rtol=0., atol=1e-3), \
                 f'Finite difference produced different sigma derivative for parameter {i+1}!'
+
+
+@requires_remote
+def test_disk_derivative_bin_moments():
+
+    # Read the data to fit
+    data_root = remote_data_file()
+    kin = manga.MaNGAStellarKinematics.from_plateifu(8138, 12704, cube_path=data_root,
+                                                     maps_path=data_root)
+
+    disk = AxisymmetricDisk(rc=HyperbolicTangent(), dc=Exponential())
+    
+    # Ensure that center is offset from 0,0 because of derivative calculation when r==0.
+    disk.par[:2] = 0.1
+    # Use a slowly rising rotation curve.  More quickly rising rotation curves
+    # show a greater difference between the finite-difference and direct
+    # derivative calculations after the convolution.
+    disk.par[-3] = 20.
+
+    # Finite difference test steps
+    #                 x0      y0      pa     inc    vsys   vinf   hv      sig0   hsig
+    dp = numpy.array([0.0001, 0.0001, 0.001, 0.001, 0.001, 0.001, 0.0001, 0.001, 0.0001])
+
+    # Include the beam-smearing
+    try:
+        cnvfftw = ConvolveFFTW(kin.spatial_shape)
+    except:
+        cnvfftw = None
+    v, sig, dv, dsig = disk.deriv_model(disk.par, x=kin.grid_x, y=kin.grid_y, #sb=kin.grid_sb, 
+                                        beam=kin.beam_fft, is_fft=True, cnvfftw=cnvfftw)
+
+    _, bv, bsig, _, dbv, dbsig = kin.deriv_bin_moments(None, v, sig, None, dv, dsig)
+
+    vp = numpy.empty(v.shape+(disk.par.size,), dtype=float)
+    sigp = numpy.empty(v.shape+(disk.par.size,), dtype=float)
+    bvp = numpy.empty(bv.shape+(disk.par.size,), dtype=float)
+    bsigp = numpy.empty(bv.shape+(disk.par.size,), dtype=float)
+    p = disk.par.copy()
+    for i in range(disk.par.size):
+        _p = p.copy()
+        _p[i] += dp[i]
+        # These calls to `model` reuse the previously provided x, y, sb, beam,
+        # and cnvfftw
+        vp[...,i], sigp[...,i] = disk.model(_p)
+        _, bvp[...,i], bsigp[...,i] = kin.bin_moments(None, vp[...,i], sigp[...,i])
+    disk._set_par(p)
+
+    fd_dbv = (bvp - bv[...,None])/dp[None,:]
+    fd_dbsig = (bsigp - bsig[...,None])/dp[None,:]
+
+    # TODO: Constrain the test to only test the bins that have multiple spaxels?
+
+    for i in range(disk.par.size):
+#        vdiff = numpy.absolute(dbv[...,i]-fd_dbv[...,i])
+#        sdiff = numpy.absolute(dbsig[...,i]-fd_dbsig[...,i])
+#        print(i, numpy.amax(vdiff), numpy.amin(vdiff), numpy.amax(sdiff), numpy.amin(sdiff))
+#        print(i, numpy.amax(vdiff[kin.nspax > 1]), numpy.amin(vdiff[kin.nspax > 1]),
+#                 numpy.amax(sdiff[kin.nspax > 1]), numpy.amin(sdiff[kin.nspax > 1]))
+#        continue
+        assert numpy.allclose(dbv[...,i], fd_dbv[...,i], rtol=0., atol=1e-4), \
+                f'Finite difference produced different derivative for parameter {i+1}!'
+        # The difference is relatively large (again) for the dispersion data
+        assert numpy.allclose(dbsig[...,i], fd_dbsig[...,i], rtol=0., atol=1e-3), \
+                f'Finite difference produced different sigma derivative for parameter {i+1}!'
+
 
 @requires_remote
 def test_disk_fit_derivative():
@@ -250,8 +315,12 @@ def test_disk_fit_derivative():
     # Compare them
     fd_dchi = (chip - chi[...,None])/dp[None,:]
     for i in range(disk.par.size):
+#        diff = numpy.absolute(dchi[...,i]-fd_dchi[...,i])
+#        print(i, numpy.amax(diff), numpy.amin(diff))
+#        continue
         assert numpy.allclose(dchi[...,i], fd_dchi[...,i], rtol=0., atol=1e-3), \
                 f'Finite difference produced different derivative for parameter {i+1}!'
+
 
 @requires_remote
 def test_lsq_nopsf():
@@ -437,7 +506,12 @@ def test_mock_covar():
     vremap = kin.remap(kin.bin(v), mask=kin.vel_mask)
     sremap = kin.remap(kin.bin(s), mask=kin.sig_mask)
 
-    mock_kin = disk.mock_observation(p0, kin=kin, add_err=True)
+    # Fix the seed so that the result is deterministic
+    # WARNING: Without this, there were instances where the deviate for the
+    # dispersion would be entirely masked!  Need to understand how/why that can
+    # happen.
+    rng = numpy.random.default_rng(seed=909)
+    mock_kin = disk.mock_observation(p0, kin=kin, add_err=True, rng=rng)
     mock_vremap = mock_kin.remap('vel')
     mock_sremap = mock_kin.remap(numpy.sqrt(mock_kin.sig_phys2), mask=kin.sig_mask)
 

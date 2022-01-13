@@ -962,7 +962,8 @@ class AxisymmetricDisk:
     def mock_observation(self, par, kin=None, x=None, y=None, sb=None, binid=None,
                          vel_ivar=None, vel_covar=None, vel_mask=None, sig_ivar=None,
                          sig_covar=None, sig_mask=None, sig_corr=None, beam=None, is_fft=False,
-                         cnvfftw=None, ignore_beam=False, add_err=False, positive_definite=False):
+                         cnvfftw=None, ignore_beam=False, add_err=False, positive_definite=False,
+                         rng=None):
         r"""
         Construct a mock observation.
 
@@ -1106,6 +1107,9 @@ class AxisymmetricDisk:
                 many noise realizations (see
                 :func:`~nirvana.data.kinematics.Kinematics.deviate`).  This
                 keyword only results in a single noise realization.
+            rng (`numpy.random.Generator`, optional):
+                Generator object to use.  If None, a new Generator is
+                instantiated; see :func:`~nirvana.data.util.gaussian_deviates`.
 
         Returns:
             :class:`~nirvana.data.kinematics.Kinematics`:  Object providing the
@@ -1179,7 +1183,7 @@ class AxisymmetricDisk:
 
         # Get the deviates
         sigma_method = 'ignore' if self.dc is None else 'draw' 
-        vgpm, dv, sgpm, ds = _kin.deviate(sigma=sigma_method)
+        vgpm, dv, sgpm, ds = _kin.deviate(sigma=sigma_method, rng=rng)
         # Add the velocity error
         _kin.vel[vgpm] += dv
         # Add the dispersion error and update the dispersion values
@@ -1302,6 +1306,71 @@ class AxisymmetricDisk:
     def _deriv_s_chisqr_covar(self, sig, dsig):
         return np.dot(self._deriv_s_resid(sig, dsig).T, self._s_ucov).T
 
+    def _binned_model(self, par):
+        """
+        Compute the binned model data.
+
+        Args:
+            par (`numpy.ndarray`_, optional):
+                The list of parameters to use. Length should be either
+                :attr:`np` or :attr:`nfree`. If the latter, the values of the
+                fixed parameters in :attr:`par` are used.
+
+        Returns:
+
+            :obj:`tuple`: Model velocity and velocity dispersion data.  The
+            latter is None if the model has no dispersion parameterization.
+        """
+        self._set_par(par)
+        if self.dc is None:
+            vel = self.model()
+            sig = None
+        else:
+            vel, sig = self.model()
+        return self.kin.bin_moments(self.sb, vel, sig)[1:]
+
+#        # TODO: This binning isn't exactly right...  Need to bin velocity and
+#        # velocity dispersion in the same way that we do the beam-smearing.
+#        # I.e., the binned velocity is sum_i w_i v_i / sum_i w_i, where w_i is
+#        # the luminosity weighting.  And the binned velocity dispersion should
+#        # be sqrt(sum_i w_i (v_i^2 + s_i^2) / sum_i w_i - bin_v^2)
+#        return (self.kin.bin(self.model()), None) if self.dc is None \
+#                        else map(lambda x : self.kin.bin(x), self.model())
+
+    def _deriv_binned_model(self, par):
+        """
+        Compute the binned model data and its derivatives.
+
+        Args:
+            par (`numpy.ndarray`_, optional):
+                The list of parameters to use. Length should be either
+                :attr:`np` or :attr:`nfree`. If the latter, the values of the
+                fixed parameters in :attr:`par` are used.
+
+        Returns:
+            :obj:`tuple`: Model velocity data, velocity dispersion data,
+            velocity derivative, and velocity dispersion derivative.  The
+            velocity dispersion components (2nd and 4th objects) are None if the
+            model has no dispersion parameterization.
+        """
+        self._set_par(par)
+        if self.dc is None:
+            vel, dvel = self.deriv_model()
+            sig, dsig = None, None
+        else:
+            vel, sig, dvel, dsig = self.deriv_model()
+        _, vel, sig, _, dvel, dsig \
+                = self.kin.deriv_bin_moments(self.sb, vel, sig, None, dvel, dsig)
+        return vel, sig, dvel, dsig
+
+#        if self.dc is None:
+#            vel, dvel = self.kin.deriv_bin(*self.deriv_model())
+#            return vel, None, dvel, None
+#        vel, sig, dvel, dsig = self.deriv_model()
+#        vel, dvel = self.kin.deriv_bin(vel, dvel)
+#        sig, dsig = self.kin.deriv_bin(sig, dsig)
+#        return vel, sig, dvel, dsig
+
     def _resid(self, par, sep=False):
         """
         Calculate the residuals between the data and the current model.
@@ -1321,14 +1390,7 @@ class AxisymmetricDisk:
             all data or as separate vectors for the velocity and velocity
             dispersion data (based on ``sep``).
         """
-        self._set_par(par)
-        # TODO: This binning isn't exactly right...  Need to bin velocity and
-        # velocity dispersion in the same way that we do the beam-smearing.
-        # I.e., the binned velocity is sum_i w_i v_i / sum_i w_i, where w_i is
-        # the luminosity weighting.  And the binned velocity dispersion should
-        # be sqrt(sum_i w_i (v_i^2 + s_i^2) / sum_i w_i - bin_v^2)
-        vel, sig = (self.kin.bin(self.model()), None) if self.dc is None \
-                        else map(lambda x : self.kin.bin(x), self.model())
+        vel, sig = self._binned_model(par)
         vfom = self._v_resid(vel)
         sfom = numpy.array([]) if self.dc is None else self._s_resid(sig)
         return (vfom, sfom) if sep else np.append(vfom, sfom)
@@ -1353,15 +1415,10 @@ class AxisymmetricDisk:
             as a single array for all data or as separate arrays for the
             velocity and velocity dispersion data (based on ``sep``).
         """
-        self._set_par(par)
+        vel, sig, dvel, dsig = self._deriv_binned_model(par)
         if self.dc is None:
-            vel, dvel = self.kin.deriv_bin(*self.deriv_model())
             return (self._deriv_v_resid(dvel), numpy.array([])) \
                         if sep else self._deriv_v_resid(dvel)
-
-        vel, sig, dvel, dsig = self.deriv_model()
-        vel, dvel = self.kin.deriv_bin(vel, dvel)
-        sig, dsig = self.kin.deriv_bin(sig, dsig)
         resid = (self._deriv_v_resid(vel), self._deriv_s_resid(sig, dsig))
         return resid if sep else np.vstack(resid)
 
@@ -1385,9 +1442,7 @@ class AxisymmetricDisk:
             returned as a single vector for all data or as separate vectors for
             the velocity and velocity dispersion data (based on ``sep``).
         """
-        self._set_par(par)
-        vel, sig = (self.kin.bin(self.model()), None) if self.dc is None \
-                        else map(lambda x : self.kin.bin(x), self.model())
+        vel, sig = self._binned_model(par)
         if self.has_covar:
             vfom = self._v_chisqr_covar(vel)
             sfom = np.array([]) if self.dc is None else self._s_chisqr_covar(sig)
@@ -1417,24 +1472,15 @@ class AxisymmetricDisk:
             array for all data or as separate arrays for the velocity and
             velocity dispersion data (based on ``sep``).
         """
-        self._set_par(par)
+        vel, sig, dvel, dsig = self._deriv_binned_model(par)
         vf = self._deriv_v_chisqr_covar if self.has_covar else self._deriv_v_chisqr
         if self.dc is None:
-            vel, dvel = self.kin.deriv_bin(*self.deriv_model())
             return (vf(dvel), numpy.array([])) if sep else vf(dvel)
 
         sf = self._deriv_s_chisqr_covar if self.has_covar else self._deriv_s_chisqr
-        vel, sig, dvel, dsig = self.deriv_model()
-        vel, dvel = self.kin.deriv_bin(vel, dvel)
-        sig, dsig = self.kin.deriv_bin(sig, dsig)
-
-#        print(f'{np.all(np.isfinite(dvel)):>5} {np.amin(dvel):.1f} {np.amax(dvel):.1f}'
-#              f'{np.all(np.isfinite(dsig)):>5} {np.amin(dsig):.1f} {np.amax(dsig):.1f}')
-
         dchisqr = (vf(dvel), sf(sig, dsig))
         if not np.all(np.isfinite(dchisqr[0])) or not np.all(np.isfinite(dchisqr[1])):
             raise ValueError('Error in derivative computation.')
-
         return dchisqr if sep else np.vstack(dchisqr)
 
     def _fit_prep(self, kin, p0, fix, scatter, sb_wgt, assume_posdef_covar, ignore_covar, cnvfftw):
