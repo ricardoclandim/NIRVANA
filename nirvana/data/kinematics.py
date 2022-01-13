@@ -15,11 +15,7 @@ from astropy.stats import sigma_clip
 import matplotlib.pyplot as plt
 import warnings
 
-#try:
-#    import theano.tensor as tt
-#except:
-#    tt = None
-
+from .bin2d import Bin2D
 from .util import get_map_bin_transformations, impose_positive_definite, fill_matrix
 from .util import gaussian_deviates
 from ..models.beam import construct_beam, ConvolveFFTW, smear
@@ -256,11 +252,6 @@ class Kinematics:
         # unraveling of the attributes done in the lines above so that I can use
         # self.remap in the case that grid_sb is not provided directly.
         self.grid_sb = self.remap('sb').filled(0.0) if grid_sb is None else grid_sb
-
-        #if self.bordermask is not None:
-        #    self.sb_mask  |= self.bordermask
-        #    self.vel_mask |= self.bordermask
-        #    self.sig_mask |= self.bordermask
 
         # Ingest the covariance matrices, if they're provided
         self.vel_covar = self._ingest_covar(vel_covar, positive_definite=positive_definite)

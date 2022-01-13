@@ -1,5 +1,8 @@
 """
-Two-dimenaional binning routines.
+Two-dimensional binning routines.
+
+.. include common links, assuming primary doc root is up one directory
+.. include:: ../include/links.rst
 """
 import warnings
 
@@ -9,10 +12,11 @@ from matplotlib import pyplot
 from vorbin.voronoi_2d_binning import voronoi_2d_binning
 from .util import get_map_bin_transformations, fill_matrix
 
-# (Mostly) Copied from MaNGA DAP
 class VoronoiBinning:
     """
     Class that wraps Voronoi binning code.
+
+    This is (mostly) copied from the MaNGA Data Analysis Pipeline.
     """
     def __init__(self):
         self.covar = None
@@ -288,7 +292,7 @@ class Bin2D:
                 Gaussian normalization.  Shape must match :attr:`spatial_shape`.
             center (`numpy.ndarray`_):
                 Gaussian center.  Shape must match :attr:`spatial_shape`.
-            stddev (`numpy.ndarray`_):
+            stddev (`numpy.ndarray`_, optional):
                 Gaussian standard deviation.  Shape must match
                 :attr:`spatial_shape`.
 
@@ -306,11 +310,13 @@ class Bin2D:
         if not all([x is None or x.shape == shape for x in [norm, center, stddev]]):
             raise ValueError('Shape of all input arrays must match.')
         mom0 = np.ones(shape, dtype=float) if norm is None else self.bin(norm)
+        if center is None and stddev is None:
+            return mom0, None, None
         inv_mom0 = 1/(mom0 + (mom0 == 0.))
         _center = np.zeros(shape, dtype=float) if center is None else center
         mom1 = self.bin(norm*_center) * inv_mom0
         if stddev is None:
-            return mom0, mom1, np.ones(shape, dtype=float)
+            return mom0, mom1, None
         _mom2 = _center**2 + stddev**2
         return mom0, mom1, np.sqrt(self.bin(norm*_mom2) * inv_mom0 - mom1**2)
 
