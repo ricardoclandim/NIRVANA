@@ -453,8 +453,10 @@ def test_mock_noerr():
     disk = AxisymmetricDisk(rc=HyperbolicTangent(), dc=Exponential())
     v, s = disk.model(p0, x=kin.grid_x, y=kin.grid_y, sb=kin.grid_sb, beam=kin.beam_fft,
                       is_fft=True)
-    vremap = kin.remap(kin.bin(v), mask=kin.vel_mask)
-    sremap = kin.remap(kin.bin(s), mask=kin.sig_mask)
+
+    _, bv, bs = kin.bin_moments(kin.grid_sb, v, s)
+    vremap = kin.remap(bv, mask=kin.vel_mask)
+    sremap = kin.remap(bs, mask=kin.sig_mask)
 
     mock_kin = disk.mock_observation(p0, kin=kin)
     mock_vremap = mock_kin.remap('vel')
@@ -478,8 +480,9 @@ def test_mock_err():
     disk = AxisymmetricDisk(rc=HyperbolicTangent(), dc=Exponential())
     v, s = disk.model(p0, x=kin.grid_x, y=kin.grid_y, sb=kin.grid_sb, beam=kin.beam_fft,
                       is_fft=True)
-    vremap = kin.remap(kin.bin(v), mask=kin.vel_mask)
-    sremap = kin.remap(kin.bin(s), mask=kin.sig_mask)
+    _, bv, bs = kin.bin_moments(kin.grid_sb, v, s)
+    vremap = kin.remap(bv, mask=kin.vel_mask)
+    sremap = kin.remap(bs, mask=kin.sig_mask)
 
     mock_kin = disk.mock_observation(p0, kin=kin, add_err=True)
     mock_vremap = mock_kin.remap('vel')
