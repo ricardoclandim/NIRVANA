@@ -1169,9 +1169,9 @@ class AxisymmetricDisk:
         #                         fix, scat, sb_wgt, posdef, ignore_covar
         self._fit_prep(_kin, par, None, None, True, True, True, cnvfftw)
 
-        # Generate and bin the model data
-        _kin.vel, _sig = (_kin.bin(self.model()), None) if self.dc is None \
-                                else map(lambda x : _kin.bin(x), self.model())
+        # Generate and bin the model data.  NOTE: Call above to _fit_prep sets
+        # _kin to self.kin, which is used by _binned_model...
+        _kin.vel, _sig = self._binned_model(par)
         # If available, include the dispersion correction
         if _kin.sig_corr is not None:
             _sig = np.sqrt(_sig**2 + _kin.sig_corr**2)
@@ -1253,11 +1253,11 @@ class AxisymmetricDisk:
                 measurements for each kinematic moment (ordered velocity then
                 velocity dispersion).
             assume_posdef_covar (:obj:`bool`, optional):
-                If the :class:`~nirvana.data.kinematics.Kinematics` includes
+                If the :class:`~nirvana.data.kinematics.Kinematics` include
                 covariance matrices, this forces the code to proceed assuming
                 the matrices are positive definite.
             ignore_covar (:obj:`bool`, optional):
-                If the :class:`~nirvana.data.kinematics.Kinematics` includes
+                If the :class:`~nirvana.data.kinematics.Kinematics` include
                 covariance matrices, ignore them and just use the inverse
                 variance.
             cnvfftw (:class:`~nirvana.models.beam.ConvolveFFTW`, optional):
@@ -1266,7 +1266,7 @@ class AxisymmetricDisk:
                 None, a new :class:`~nirvana.models.beam.ConvolveFFTW` instance
                 is constructed to perform the convolutions.  If the class cannot
                 be constructed because the user doesn't have pyfftw installed,
-                then the convolutions fall back to the numpy routines.
+                then the convolutions fall back to numpy routines.
             inverse (:obj:`bool`, optional):
                 Return the inverse of the FIM, which is equivalent to the
                 covariance matrix in the model parameters.
@@ -1280,6 +1280,8 @@ class AxisymmetricDisk:
         jac = self._get_jac()(self.par[self.free])
         return cov_err(jac) if inverse else np.dot(jac.T,jac)
 
+    # This slew of "private" functions consolidate the velocity residual and
+    # chi-square calculations
     def _v_resid(self, vel):
         return self.kin.vel[self.vel_gpm] - vel[self.vel_gpm]
     def _deriv_v_resid(self, dvel):
@@ -1293,6 +1295,8 @@ class AxisymmetricDisk:
     def _deriv_v_chisqr_covar(self, dvel):
         return np.dot(self._deriv_v_resid(dvel).T, self._v_ucov).T
 
+    # This slew of "private" functions consolidate the velocity dispersion
+    # residual and chi-square calculations
     def _s_resid(self, sig):
         return self.kin.sig_phys2[self.sig_gpm] - sig[self.sig_gpm]**2
     def _deriv_s_resid(self, sig, dsig):

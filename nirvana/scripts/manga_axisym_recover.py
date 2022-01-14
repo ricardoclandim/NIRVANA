@@ -53,7 +53,12 @@ def parse_args(options=None):
     parser.add_argument('--sersic', default=[10., 1.], nargs=2,
                         help='Sersic photometry parameters for luminosity weighting: Reff '
                              'in arcsec and the Sersic index.')
-
+    parser.add_argument('--intrinsic_sb', default=False, action='store_true',
+                        help='By default, the intrinsic SB is used to generate the synthetic '
+                             'data, but the *smoothed* SB is used for the luminosity weighting '
+                             'during the fit to mimic the use in the data.  Setting this flag'
+                             'performs the more idealized (and correct) simulation where both '
+                             'synthetic data and the model are generated using the same SB.')
     parser.add_argument('--snr', type=float, default=30., help='S/N normalization')
     parser.add_argument('--binning_snr', type=float, default=None,
                         help='Minimum S/N used for binning the data.  If not provided, data are '
@@ -223,23 +228,14 @@ def main(args):
     pa, inc = args.basep[2:4]
     ell = 1 - np.cos(np.radians(inc))
     sb = twod.Sersic2D(1., reff, sersic_n, ellipticity=ell, position_angle=pa)(x,y)
-    sb = cnvfftw(sb, beam_sim)
+    smeared_sb = cnvfftw(sb, beam_sim)
 
-    # Set the S/N and renormalize to the provided value
-    snr = np.sqrt(sb)
+    # Set the S/N using the *smeared* SB and renormalize to the provided value
+    snr = np.sqrt(smeared_sb)
     scale_fac = args.snr/np.amax(snr)
     snr *= scale_fac
-    # Not really necessary to scale the SB because the SB weighting only matters
-    # in a relative sense.
-    sb *= scale_fac**2
-    sb_err = sb/snr
-
-    # Generate the SB covariance, if requested
-    if args.covar_sim:
-        print('Generating Flux Covariance')
-        gpm, sb_covar = manga.manga_map_covar(1./sb_err**2, positive_definite=False, fill=True)
-    else:
-        sb_covar = None
+    smeared_sb *= scale_fac**2
+    smeared_sb_err = smeared_sb/snr
 
     # Bin the data
     gpm = np.logical_not(ifu_mask)
@@ -248,44 +244,48 @@ def main(args):
         # Make a fake binid based on the ifu_mask
         binid[gpm] = np.arange(np.sum(gpm))
         binner = Bin2D(binid=binid)
-        binned_sb = binner.remap(binner.bin(sb), masked=False, fill_value=0.)
-        binned_sb_err = binner.remap(binner.bin(sb_err), masked=False, fill_value=0.)
+        binned_sb = binner.remap(binner.bin(smeared_sb), masked=False, fill_value=0.)
+        binned_sb_err = binner.remap(binner.bin(smeared_sb_err), masked=False, fill_value=0.)
         binned_snr = binner.remap(binner.bin(snr), masked=False, fill_value=0.)
     else:
-        binid[gpm] = VoronoiBinning.bin_index(x[gpm], y[gpm], sb[gpm],
-                                    sb_covar[np.ix_(gpm,gpm)] if args.covar_sim else sb_err[gpm],
-                                    args.binning_snr, show=False)
+        binid[gpm] = VoronoiBinning.bin_index(x[gpm], y[gpm], smeared_sb[gpm],
+                                              smeared_sb_covar[np.ix_(gpm,gpm)] if args.covar_sim
+                                                else smeared_sb_err[gpm],
+                                              args.binning_snr, show=False)
         binner = Bin2D(binid=binid)
-        binned_sb = binner.remap(binner.bin(sb), masked=False, fill_value=0.)
+        binned_sb = binner.remap(binner.bin(smeared_sb), masked=False, fill_value=0.)
 
         if args.covar_sim:
-            binned_sb_covar = binner.remap_covar(binner.bin_covar(sb_covar))
+            print('Generating Flux Covariance')
+            _, smeared_sb_covar = manga.manga_map_covar(1./smeared_sb_err**2,
+                                                        positive_definite=False, fill=True)
+            binned_sb_covar = binner.remap_covar(binner.bin_covar(smeared_sb_covar))
             binned_sb_err = np.sqrt(binned_sb_covar.diagonal())
         else:
             binned_sb_covar = None
-            binned_sb_err = binner.bin_covar(sparse.diags(sb_err.ravel()**2, format='csr'))
+            binned_sb_err = binner.bin_covar(sparse.diags(smeared_sb_err.ravel()**2, format='csr'))
             binned_sb_err = binner.remap(np.sqrt(binned_sb_err.diagonal()), masked=False,
                                          fill_value=0.)
         binned_snr = binned_sb/(binned_sb_err + (binned_sb_err == 0.))
 
     # Get the model velocities and dispersions
     if disk.dc is None:
-        vel = disk.model(p0, x=x, y=y, beam=beam_sim)
+        vel = disk.model(p0, x=x, y=y, sb=sb, beam=beam_sim)
         sig = None
     else:
-        vel, sig = disk.model(p0, x=x, y=y, beam=beam_sim)
-    _sb, vel, sig = binner.bin_moments(sb, vel, sig)
+        vel, sig = disk.model(p0, x=x, y=y, sb=sb, beam=beam_sim)
+    _, vel, sig = binner.bin_moments(smeared_sb, vel, sig)
     vel = binner.remap(vel)
-    sig = 30*np.ones(vel.shape, dtype=float) if sig is None else binner.remap(sig)
+    sig = np.full(vel.shape, 30., dtype=float) if sig is None else binner.remap(sig)
     vel_ivar = np.ma.MaskedArray(np.ma.divide(binned_snr, sig)**2, mask=ifu_mask)
     sig_ivar = np.ma.MaskedArray(np.ma.divide(binned_snr, sig)**2, mask=ifu_mask)
 
     if args.covar_sim:
         print('Generating Velocity Covariance')
-        gpm, vel_covar = manga.manga_map_covar(vel_ivar, positive_definite=False, fill=True)
+        _, vel_covar = manga.manga_map_covar(vel_ivar, positive_definite=False, fill=True)
         if sig is not None:
             print('Generating Sigma Covariance')
-            gpm, sig_covar = manga.manga_map_covar(sig_ivar, positive_definite=False, fill=True)
+            _, sig_covar = manga.manga_map_covar(sig_ivar, positive_definite=False, fill=True)
     else:
         vel_covar = None
         sig_covar = None
@@ -310,11 +310,12 @@ def main(args):
     metadata['ELL'] = ell
 
     # Get the noise-free mock
-    noisefree_mock = disk.mock_observation(p0, x=x, y=y, sb=sb, binid=binid, vel_ivar=vel_ivar,
-                                           vel_covar=vel_covar, vel_mask=ifu_mask,
-                                           sig_ivar=sig_ivar, sig_covar=sig_covar,
-                                           sig_mask=ifu_mask, beam=beam_sim, cnvfftw=cnvfftw,
-                                           positive_definite=True)
+    noisefree_mock = disk.mock_observation(p0, x=x, y=y,
+                                           sb=sb if args.intrinsic_sb else smeared_sb,
+                                           binid=binid, vel_ivar=vel_ivar, vel_covar=vel_covar,
+                                           vel_mask=ifu_mask, sig_ivar=sig_ivar,
+                                           sig_covar=sig_covar, sig_mask=ifu_mask, beam=beam_sim,
+                                           cnvfftw=cnvfftw, positive_definite=True)
 
     # Generate *all* the deviates.  All the deviates are drawn here to speed up
     # the multivariate deviates.
