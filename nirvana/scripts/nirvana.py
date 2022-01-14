@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 """
-Script that runs the fit.
+Script that runs the bisymmetric fit.
 """
 
 import argparse
@@ -10,10 +10,9 @@ import os
 from glob import glob
 import numpy as np
 
-from nirvana.fitting import fit
-from nirvana.output import imagefits
+from nirvana.models.bisym import fit
+from nirvana.util.fits_prep import fileprep, imagefits
 from nirvana.data.manga import MaNGAGlobalPar
-from nirvana.plotting import fileprep
 
 def parse_args(options=None):
 
@@ -65,7 +64,7 @@ def parse_args(options=None):
                         help='Overwrite preexisting outfiles')
     parser.add_argument('--drpall_dir', default='.',
                         help='Path to drpall file. Will use first file in dir')
-    parser.add_argument('--penalty', type=float, default=100,
+    parser.add_argument('--penalty', type=float, default=500,
                         help='Relative size of penalty for big 2nd order terms')
     parser.add_argument('--floor', type=float, default=5,
                         help='Error floor to add onto ivars')
@@ -96,6 +95,8 @@ def main(args):
         print(e)
         galmeta = None
 
+    if args.stellar: vftype = 'Stars'
+    else: vftype = 'Gas'
 
     #make descriptive outfile name
     if args.outfile is None:
@@ -112,17 +113,17 @@ def main(args):
         if args.mock_inc: args.outfile += f'_i{int(args.mock_inc)}'
         if args.resid: args.outfile += f'_r{args.resid}'
 
+        fitsname = f"{args.dir}nirvana_{plate}-{ifu}_{vftype}" 
+        if args.mock:
+            fitsname += '_mock'
+            if args.mock_inc: fitsname += f'_i{int(args.mock_inc)}'
+            if args.resid: fitsname += f'_r{args.resid}'
+    else: fitsname = args.dir + args.outfile
+
     print('File name:', args.outfile)
-    if args.stellar: vftype = 'Stars'
-    else: vftype = 'Gas'
 
     fname = args.dir + args.outfile + '.nirv'
     galname = args.dir + args.outfile + '.gal'
-    fitsname = f"{args.dir}nirvana_{plate}-{ifu}_{vftype}"
-    if args.mock:
-        fitsname += '_mock'
-        if args.mock_inc: fitsname += f'_i{int(args.mock_inc)}'
-        if args.resid: fitsname += f'_r{args.resid}'
     fitsname += '.fits'
 
     #check if outfile already exists
@@ -143,7 +144,7 @@ def main(args):
         mockgal, params = fileprep(args.mock, remotedir=args.remote)
         if args.mock_inc: 
             params['inc'] = args.mock_inc
-            mockgal.phot_inc = args.mock_inc
+            mockgal.kin.phot_inc = args.mock_inc
         mock = (mockgal, params, args.resid)
     else: mock = None
 
@@ -159,7 +160,7 @@ def main(args):
     pickle.dump(gal, open(galname, 'wb'))
     if args.fits: 
         try:
-            imagefits(fname, galmeta, gal, outfile=fitsname, remotedir=args.remote) 
+            imagefits(fname, galmeta, gal, outfile=fitsname, remotedir=args.remote, drpalldir=args.drpall_dir, dapalldir=args.drpall_dir) 
             os.remove(fname)
             os.remove(galname)
         except Exception:

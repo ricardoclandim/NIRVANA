@@ -25,7 +25,7 @@ import matplotlib.image as img
 from astropy.io import fits
 from astropy.wcs import WCS
 
-from .util import get_map_bin_transformations, impose_positive_definite, gaussian_fill
+from .util import get_map_bin_transformations, impose_positive_definite, gaussian_fill, fill_matrix
 from .kinematics import Kinematics
 from .meta import GlobalPar
 from ..util.bitmask import BitMask
@@ -551,58 +551,6 @@ def download_plateifu(plate, ifu, daptype='HYB10-MILESHC-MASTARHC2', dr='MPL-11'
         download_file(f'{_sasurl}/{s}/{f}', files[-1], overwrite=overwrite, auth=auth)
     return files
 
-# TODO: I think this has been deprecated in favor of MaNGAGlobalPar.
-#def read_drpall(plate, ifu, redux_path, dr, ext='elpetro', quiet=False):
-#    """
-#    Read the NASA Sloan Atlas data from the DRPall file for the
-#    appropriate data release.
-#
-#    Args:
-#        plate (:obj:`int`):
-#            Plate of galaxy.
-#        ifu (:obj:`int`):
-#            IFU of galaxy.
-#        redux_path (:obj:`str`, optional):
-#            The top-level directory with all DRP output. If None,
-#            this will be set to the ``MANGA_SPECTRO_REDUX``
-#        dr (:obj:`str`, optional):
-#            Data release identifier that matches the directory with
-#            the data.
-#        ext (:obj:`str`):
-#            Whether to use the `elpetro` or `sersic` derived values
-#            in the NSA catalog.
-#        quiet (:obj:`bool`, optional):
-#            Suppress printed output.
-#
-#    Returns:
-#        :obj:`tuple`: tuple of inclination, position angle, and |Sersic| n
-#        values. Angles are in degrees.
-#
-#    Raises:
-#        FileNotFoundError:
-#            Raised if the DRPall file can't be found in the specified
-#            place.
-#    """
-#    # Read the drpall file
-#    if not quiet:
-#        print('Reading {0} ... '.format(cube_file))
-#    drpall_file = glob.glob(f'{cubepath}/{dr}/drpall*.fits')[0]
-#    plateifu = f'{plate}-{ifu}'
-#
-#    if not drpall_file:
-#        raise FileNotFoundError('Could not find drpall file')
-#
-#    with fits.open(drpall_file) as hdu:
-#        data = hdu[1].data[hdu[1].data['plateifu'] == plateifu]
-#        inc = np.degrees(np.arccos(data[f'nsa_{ext}_ba']))
-#        pa = data[f'nsa_{ext}_phi']
-#        n = data['nsa_sersic_n']
-#
-#    if not quiet:
-#        print('Done')
-#    return inc, pa, n
-
-
 def sdss_bitmask(bitgroup):
     """
     Return a :class:`~nirvana.util.bitmask.BitMask` instance for the
@@ -823,15 +771,7 @@ def manga_map_covar(ivar, binid=None, rho_sig=1.92, rlim=3.2, min_ivar=1e-10, rh
     if not fill:
         return gpm, cov
 
-    # Fill out the full covariance matrix so that its size matches the input
-    # map size
-    _cov = sparse.lil_matrix((ivar.size,ivar.size), dtype=float)
-    # NOTE: scipy issues a SparseEfficiencyWarning suggesting the next
-    # operation is more efficient using an lil_matrix instead of a csr_matrix;
-    # that's the reason for the declaration above and the conversion in the
-    # return type...
-    _cov[np.ix_(gpm.ravel(),gpm.ravel())] = cov
-    return gpm, _cov.tocsr()
+    return gpm, fill_matrix(cov, gpm.ravel())
 
 
 class MaNGAKinematics(Kinematics):
@@ -995,6 +935,7 @@ class MaNGAGasKinematics(MaNGAKinematics):
             reff = 1.0 if 'REFF' not in hdu[0].header else hdu[0].header['REFF']
             phot_ell = hdu[0].header['ECOOELL'] if 'ECOOELL' in hdu[0].header else 0.5
             phot_inc = np.degrees(np.arccos(1 - phot_ell))
+            phot_pa = hdu[0].header['ECOOPA'] if 'ECOOPA' in hdu[0].header else None
             pri, sec, anc, oth = parse_manga_targeting_bits(hdu[0].header['MNGTARG1'],
                                                             hdu[0].header['MNGTARG3'])
             maxr = 2.5 if sec else 1.5
@@ -1057,7 +998,7 @@ class MaNGAGasKinematics(MaNGAKinematics):
                          sig=sig, sig_ivar=sig_ivar, sig_mask=sig_mask, sig_covar=sig_covar,
                          sig_corr=sig_corr, psf_name=psf_name, psf=psf, binid=binid, grid_x=grid_x, 
                          grid_y=grid_y, grid_sb=grid_sb, grid_wcs=wcs, reff=reff, fwhm=fwhm,
-                         image=image, phot_inc=phot_inc, maxr=maxr,
+                         image=image, phot_inc=phot_inc, phot_pa=phot_pa, maxr=maxr,
                          positive_definite=positive_definite)
 
 
@@ -1166,6 +1107,7 @@ class MaNGAStellarKinematics(MaNGAKinematics):
             reff = 1.0 if 'REFF' not in hdu[0].header else hdu[0].header['REFF']
             phot_ell = hdu[0].header['ECOOELL'] if 'ECOOELL' in hdu[0].header else 0.5
             phot_inc = np.degrees(np.arccos(1 - phot_ell))
+            phot_pa = hdu[0].header['ECOOPA'] if 'ECOOPA' in hdu[0].header else None
             pri, sec, anc, oth = parse_manga_targeting_bits(hdu[0].header['MNGTARG1'],
                                                             hdu[0].header['MNGTARG3'])
             maxr = 2.5 if sec else 1.5
@@ -1213,7 +1155,7 @@ class MaNGAStellarKinematics(MaNGAKinematics):
                          sig_ivar=sig_ivar, sig_mask=sig_mask, sig_covar=sig_covar,
                          sig_corr=sig_corr, psf_name=psf_name, psf=psf, binid=binid, grid_x=grid_x, 
                          grid_y=grid_y, grid_sb=grid_sb, grid_wcs=wcs, reff=reff, fwhm=fwhm,
-                         image=image, phot_inc=phot_inc, maxr=maxr,
+                         image=image, phot_inc=phot_inc, phot_pa=phot_pa, maxr=maxr,
                          positive_definite=positive_definite)
 
 

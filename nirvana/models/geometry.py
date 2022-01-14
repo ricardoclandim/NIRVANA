@@ -519,167 +519,68 @@ def point_inside_polygon(polygon, point):
     return np.absolute(polygon_winding_number(polygon, point)) == 1
 
 
-# TODO: The rest of these functions should probably be in their own module
-
-def asymmetry(args, pa, vsys, xc=0, yc=0, maxd=.5):
-    '''
-    Calculate global asymmetry parameter and map of asymmetry.
-
-    Using Equation 7 from Andersen & Bershady (2007), the symmetry of a galaxy
-    is calculated. This is done by reflecting it across the supplied position
-    angle (assumed to be the major axis) and the angle perpendicular to that
-    (assumed to be the minor axis). The value calculated is essentially a
-    normalized error weighted difference between the velocity measurements on
-    either side of a reflecting line. 
-
-    The function tries to find the nearest neighbor to a spaxel's reflected
-    coordinates. If the distance is too far, the spaxel is masked.
-
-    The returned value is the mean of the sums of all of the normalized
-    asymmetries over the whole velocity field for the major and minor axes and
-    should scale between 0 and 1, wih 0 being totally symmetrical and 1 being
-    totally asymmetrical. The map is the average of the asymmetry maps for the
-    major and minor axes.
+def hexagon_vertices(d=1., incircle=False, close=False, orientation='horizontal'):
+    r"""
+    Construct the vertices of a hexagon.
 
     Args:
-        args (:class:`_nirvana.data.fitargs.FitArgs`):
-            Object containing all of the data and fit parameters for the galaxy
-        pa (:obj:`float`):
-            Position angle of galaxy (in degrees)
-        vsys (:obj:`float`):
-            Systemic velocity of galaxy in the same units as the velocity
-        xc (:obj:`float`, optional):
-            x position of the center of the velocity field. Must be in the same
-            units as `args.x`.
-        yc (:obj:`float`, optional):
-            y position of the center of the velocity field. Must be in the same
-            units as `args.y`.
-        maxd (:obj:`float`, optional):
-            Maximum distance to allow the nearest neighbor finding to look for
-            a reflexted spaxel. Any neighbor pairs at a radius larger than this
-            will be masked. Must be in the same units as the spatial
-            coordinates `args.x` and `args.y`.
+        d (:obj:`float`, optional):
+            The diameter of circumscribed circle.
+        incircle (:obj:`bool`, optional):
+            Use the provided diameter to set the incircle of the hexagon
+            instead of its circumscribed circle.
+        close (:obj:`bool`, optional):
+            "Close" the hexagon by repeating the first set of
+            coordinates at the end of the array of vertices.
+        orientation (:obj:`str`, :obj:`float`, optional):
+            Sets the orientation of the hexagon, must be either
+            'horizontal', 'vertical', or a rotation angle in degrees
+            relative to the horizontal orientation.  The horizontal and
+            vertical orientations set the long axis of the hexagon along
+            the Cartesian x and y axis, respectively.  The horizontal
+            orientation is equivalent to a rotation angle of 0 and a
+            vertical orientation is equivalent to a rotation angle of 30
+            degrees.  While the polar-coordinate ordering of the
+            vertices in the output array will change, note the shape
+            is degenerate with a periodicity of 60 degrees.
 
     Returns:
-        :obj:`float`: Global asymmetry value for the entire galaxy. Scales
-        between 0 and 1. 
-        `numpy.ndarray`_: Array of spatially resolved
-        asymmetry values for every possible point in the velocity field. Should
-        be the same shape as the input velocity fields.
+        `numpy.ndarray`_: An array with shape :math:`(6,2)`, or
+        :math:`(7,2)` if ``close`` is True, providing the x and y
+        Cartesian vertices of the hexagon.
+    """
+    if isinstance(orientation, str) and orientation not in ['horizontal', 'vertical']:
+        raise ValueError('Orientation must be horizontal, vertical, or a rotation in degrees.')
 
-    '''
+    # Get the incircle radius
+    r = d/2/np.cos(np.pi/6) if incircle else d/2 
+    # Generate each vertex, in clockwise order
+    v = np.zeros((6,2), dtype=float)
 
-    #construct KDTree of spaxels for matching
-    x = args.x - xc
-    y = args.y - yc
-    tree = KDTree(list(zip(x,y)))
-    
-    #compute major and minor axis asymmetry 
-    arc2d = []
-    for axis in [0,90]:
-        #match spaxels to their reflections, mask out ones without matches
-        d,i = tree.query(reflect(pa - axis, x, y).T)
-        mask = np.ma.array(np.ones(len(args.vel)), mask = (d>maxd) | args.vel_mask)
+    v[0,0] = -r/2
+    v[1,0] = r/2
+    v[2,0] = r
+    v[3,0] = r/2
+    v[4,0] = -r/2
+    v[5,0] = -r
 
-        #compute Andersen & Bershady (2013) A_RC parameter 2D maps
-        vel = args.remap(args.vel * mask) - vsys
-        ivar = args.remap(args.vel_ivar * mask)
-        velr = args.remap(args.vel[i] * mask - vsys)
-        ivarr = args.remap(args.vel_ivar[i] * mask)
-        arc2d += [A_RC(vel, velr, ivar, ivarr)]
-    
-    #mean of maps to get global asym
-    arc = np.mean([np.sum(a) for a in arc2d])
-    asymmap = np.ma.array(arc2d).mean(axis=0)
-    return arc, asymmap
+    v[0,1] = r * np.sin(np.pi/3.0)
+    v[1,1] = r * np.sin(np.pi/3.0)
+    v[2,1] = 0.
+    v[3,1] = -r * np.sin(np.pi/3.0)
+    v[4,1] = -r * np.sin(np.pi/3.0)
+    v[5,1] = 0.
 
-def A_RC(vel, velr, ivar, ivarr):
-    '''
-    Compute velocity field asymmetry for a velocity field and its reflection.
+    # Append the first point to close the shape
+    if close:
+        v = np.vstack((v,v[0]))
 
-    From Andersen & Bershady (2013) equation 7 but doesn't sum over whole
-    galaxy so asymmmetry is spatially resolved. 
+    if orientation == 'horizontal' or orientation == 0.:
+        return v
+    v[:,0], v[:,1] = rotate(v[:,0], v[:,1],
+                            np.radians(30. if orientation == 'vertical' else orientation))
+    return v
 
-    Using Equation 7 from Andersen & Bershady (2007), the symmetry of a galaxy
-    is calculated. This is done by reflecting it across the supplied position
-    angle (assumed to be the major axis) and the angle perpendicular to that
-    (assumed to be the minor axis). The value calculated is essentially a
-    normalized error weighted difference between the velocity measurements on
-    either side of a reflecting line. 
-
-    The returned array is  of all of the normalized asymmetries over the whole
-    velocity field for the major and minor axes and should scale between 0 and
-    1, wih 0 being totally symmetrical and 1 being totally asymmetrical. The
-    map is the average of the asymmetry maps for the major and minor axes.
-
-    Args:
-        vel (`numpy.ndarray`_):
-            Array of velocity measurements for a galaxy.
-        velr (`numpy.ndarray`_):
-            Array of velocity measurements for a galaxy reflected across the desired axis.
-        ivar (`numpy.ndarray`_):
-            Array of velocity inverse variances for a galaxy.
-        ivarr (`numpy.ndarray`_):
-            Array of velocity inverse variances for a galaxy reflected across
-            the desired axis.
-
-    Returns:
-        `numpy.ndarray`_: Array of rotational asymmetries for all of the
-        velocity measurements supplied. Should be the same shape as the input
-        arrays.
-    '''
-    return (np.abs(np.abs(vel) - np.abs(velr))/np.sqrt(1/ivar + 1/ivarr) 
-         / (.5*np.sum(np.abs(vel) + np.abs(velr))/np.sqrt(1/ivar + 1/ivarr)))
-
-def reflect(pa, x, y):
-    '''
-    Reflect arrays coordinates across a given position angle.
-
-    Args:
-        pa (:obj:`float`):
-            Position angle to reflect across (in degrees)
-        x (`numpy.ndarray`_):
-            Array of x coordinate positions. Must be the same shape as `y`.
-        y (`numpy.ndarray`_):
-            Array of y coordinate positions. Must be the same shape as `x`.
-
-    Returns:
-        :obj:`tuple`: Two `numpy.ndarray`_ objects of the new reflected x and y
-        coordinates
-    '''
-
-    th = np.radians(90 - pa) #turn position angle into a regular angle
-
-    #reflection matrix across arbitrary angle
-    ux = np.cos(th) 
-    uy = np.sin(th)
-    return np.dot([[ux**2 - uy**2, 2*ux*uy], [2*ux*uy, uy**2 - ux**2]], [x, y])
-
-def fig2data(fig):
-    '''
-    Take a `matplolib` figure and return it as an array of RGBA values.
-
-    Stolen from somewhere on Stack Overflow.
-
-    Args:
-        fig (`matplotlib.figure.Figure`_):
-            Figure to be turned into an array.
-
-    Returns:
-        `numpy.ndarray`_: RGBA array representation of the figure.
-    '''
-
-    # draw the renderer
-    fig.canvas.draw()
- 
-    # Get the RGBA buffer from the figure
-    h,w = fig.canvas.get_width_height()
-    buf = np.fromstring(fig.canvas.tostring_argb(), dtype=np.uint8)
-    buf.shape = (w, h, 4)
- 
-    # canvas.tostring_argb give pixmap in ARGB mode. Roll the ALPHA channel to have it in RGBA mode
-    buf = np.roll(buf, 3, axis=2)
-    return buf
 
 def proj_angle(angle, inc, pa):
     '''

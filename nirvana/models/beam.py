@@ -12,7 +12,6 @@ try:
 except:
     pyfftw = None
 
-
 def gauss2d_kernel(n, sigma):
     """
     Return a circular 2D Gaussian.
@@ -214,6 +213,17 @@ class ConvolveFFTW:
         self.ifft()
         return self.dcnv.real.copy()
 
+    def __reduce__(self):
+        '''
+        Internal method for pickling.
+
+        Returns:
+            :obj:`tuple`: Tuple of the class type and the arguments needed for
+            instantiating the class.
+        '''
+            
+        return (self.__class__, (self.shape, ))
+
     def fft(self, data, copy=True, shift=False):
         """
         Calculate the FFT of the provided data array.
@@ -341,7 +351,6 @@ def smear(v, beam, beam_fft=False, sb=None, sig=None, cnvfftw=None, verbose=Fals
     # Get the first moment of the beam-smeared intensity distribution
     if verbose: print('Convolving surface brightness...')
     mom0 = _cnv(np.ones(v.shape, dtype=float) if sb is None else sb, bfft, kernel_fft=True)
-#    mom0 = None if sb is None else _cnv(sb, bfft, kernel_fft=True)
 
     # First moment
     if verbose: print('Convolving velocity field...',sb,v)
@@ -485,6 +494,7 @@ def deriv_smear(v, dv, beam, beam_fft=False, sb=None, dsb=None, sig=None, dsig=N
                             - 2 * mom1 * dmom1[...,i]
         # dsb terms
         if dsb is not None:
+            dmom2[...,i] += _cnv(_sig*dsb[...,i], bfft, kernel_fft=True) * inv_mom0
             dmom2[...,i] -= mom2 * inv_mom0 * dmom0[...,i]
         # dsig terms
         if dsig is not None:

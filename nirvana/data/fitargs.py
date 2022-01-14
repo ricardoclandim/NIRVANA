@@ -3,15 +3,20 @@
 from IPython import embed
 
 import numpy as np
+import matplotlib.pyplot as plt
 import warnings
 
-from scipy.optimize import leastsq, least_squares
-import matplotlib.pyplot as plt
 from astropy.stats import sigma_clip
 
-from ..models.geometry import projected_polar, asymmetry
+try:
+    import pyfftw
+except:
+    pyfftw = None
+
+from ..models.geometry import projected_polar
+from ..models.asymmetry import asymmetry
 from ..models.axisym import AxisymmetricDisk, axisym_iter_fit
-from ..models.beam import ConvolveFFTW
+from ..models.beam import ConvolveFFTW, smear
 
 class FitArgs:
     '''
@@ -20,11 +25,13 @@ class FitArgs:
     data.
     '''
 
-    def __init__(self, nglobs=6, weight=10, edges=None, disp=True,
-            fixcent=True, guess=None, nbins=None, bounds=None,
-            arc=None, asymmap=None, noisefloor=5, penalty=100,
-            npoints=500, smearing=True):
+    def __init__(self, kinematics, veltype='Gas', nglobs=6, weight=10, disp=True,
+                fixcent=True, noisefloor=5, penalty=100, npoints=500,
+                smearing=True, maxr=None, scatter=False, plate=None, ifu=None, 
+                edges=None, guess=None, nbins=None, bounds=None,
+                arc=None, asymmap=None):
 
+        self.veltype = veltype
         self.nglobs = nglobs
         self.weight = weight
         self.edges = edges
@@ -40,6 +47,10 @@ class FitArgs:
         self.penalty = penalty
         self.npoints = npoints
         self.smearing = smearing
+        self.kin = kinematics
+        self.scatter = scatter
+        self.plate = plate
+        self.ifu = ifu
 
     def setedges(self, inc, maxr=None, nbin=False, clipmasked=True):
         '''
@@ -69,29 +80,27 @@ class FitArgs:
 
         #figure out max radius if not set
         if maxr == None: 
-            #mask outside pixels if necessary
-            if self.bordermask is not None:
-                x = self.x * (1-self.bordermask)
-                y = self.y * (1-self.bordermask)
-            else: x,y = (self.x, self.y)
+            x,y = (self.kin.x, self.kin.y)
 
             #calculate maximum radius of image if none is given
             maxr = np.max(np.sqrt(x**2 + y**2))
 
         #specify number of bins manually if desired
-        if nbin: self.edges = np.linspace(0, maxr, inc+1)
+        if nbin: self.edges = np.linspace(0, maxr, inc + 1 + self.fixcent)
 
         #calculate nyquist bin width based off fwhm and inc
         else:
-            binwidth = min(self.fwhm/2/np.cos(np.radians(inc)), self.fwhm)
+            if self.kin.fwhm is None: 
+                raise ValueError('Must either supply bin number or use PSF')
+            binwidth = min(self.kin.fwhm/2/np.cos(np.radians(inc)), self.kin.fwhm)
             self.edges = np.arange(0, maxr, binwidth)
 
         #clip outer bins that have too many masked spaxels
         if clipmasked:
             #find radial coordinates of each spaxel
             guess = self.getguess(simple=True)
-            r,th = projected_polar(self.x, self.y, *np.radians((guess[2], inc)))
-            mr = np.ma.array(r, mask=self.vel_mask)
+            r,th = projected_polar(self.kin.x, self.kin.y, *np.radians((guess[2], inc)))
+            mr = np.ma.array(r, mask=self.kin.vel_mask)
 
             #calculate the number of spaxels in each bin 
             #and what fraction of them are masked
@@ -100,15 +109,15 @@ class FitArgs:
             for i in range(len(self.edges)-1):
                 mcut = (mr > self.edges[i]) * (mr < self.edges[i+1])
                 cut = (r > self.edges[i]) * (r < self.edges[i+1])
-                nspax[i] = np.sum(mcut)
-                maskfrac[i] = np.sum(self.vel_mask[cut])/cut.sum()
+                #nspax[i] = np.sum(mcut)
+                maskfrac[i] = 1 - mcut.sum()/cut.sum()
             
             #cut bins where too many spaxels are masked
             bad = (maskfrac > .75)
             self.edges = [self.edges[0], *self.edges[1:][~bad]]
 
             #mask spaxels outside last bin edge
-            self.vel_mask[r > self.edges[-1]] = True
+            self.kin.vel_mask[r > self.edges[-1]] = True
 
         self.maxr = max(self.edges)
 
@@ -150,8 +159,8 @@ class FitArgs:
             all velocities are in consistent units.
         '''
 
-        if self.vel_ivar is None: ivar = np.ones_like(self.vel)
-        else: ivar = self.vel_ivar
+        if self.kin.vel_ivar is None: ivar = np.ones_like(self.kin.vel)
+        else: ivar = self.kin.vel_ivar
 
         if clip: self.clip()
 
@@ -167,7 +176,7 @@ class FitArgs:
 
         if fit is None:
             fit = AxisymmetricDisk()
-            fit.lsq_fit(self)
+            fit.lsq_fit(self.kin)
             model = fit.model()
 
         #get fit params
@@ -182,7 +191,7 @@ class FitArgs:
         if not hasattr(self, 'edges') or simple: return [vmax,inc,pa,h,vsys]
 
         #define polar coordinates and normalize to effective radius
-        r,th = projected_polar(self.grid_x, self.grid_y, *np.radians([pa,inc]))
+        r,th = projected_polar(self.kin.grid_x, self.kin.grid_y, *np.radians([pa,inc]))
 
         #iterate through bins and get vt value for each bin, 
         #dummy value for v2t and v2r since there isn't a good guess
@@ -204,8 +213,201 @@ class FitArgs:
         self.guess = guess
         return self.guess
 
+    def clip(self, galmeta=None, sigma=10, sbf=.03, anr=5, maxiter=10, smear_dv=50, smear_dsig=50, clip_thresh=.80, verbose=False):
+        '''
+        Filter out bad spaxels in kinematic data.
+        
+        Looks for features smaller than PSF by reconvolving PSF and looking for
+        outlier points. Iteratively fits axisymmetric velocity field models and
+        sigma clips residuals and chisq to get rid of outliers. Also clips
+        based on surface brightness flux and ANR ratios. Applies new mask to
+        galaxy.
+
+        Args: 
+            sigma (:obj:`float`, optional): 
+                Significance threshold to be passed to
+                `astropy.stats.sigma_clip` for sigma clipping the residuals
+                and chi squared. Can't be too low or it will cut out
+                nonaxisymmetric features. 
+            sbf (:obj:`float`, optional): 
+                Flux threshold below which spaxels are masked.
+            anr (:obj:`float`, optional): 
+                Surface brightness amplitude/noise ratio threshold below which
+                spaxels are masked.
+            maxiter (:obj:`int`, optional):
+                Maximum number of iterations to allow clipping process to go
+                through.
+            smear_dv (:obj:`float`, optional):
+                Threshold for clipping residuals of resmeared velocity data
+            smear_dsig (:obj:`float`, optional):
+                Threshold for clipping residuals of resmeared velocity
+                dispersion data.
+            clip_thresh (:obj:`float`, optional):
+                Maximum fraction of the bins that can be clipped in order for
+                the data to still be considered good. Will throw an error if
+                it exceeds this level.
+            verbose (:obj:`bool`, optional):
+                Flag for printing out information on iterations.
+        '''
+
+        origvel = self.kin.remap('vel')
+        origsig = self.kin.remap('sig')
+        nmasked0 = self.kin.vel_mask.sum()
+        ngood = (~self.kin.vel_mask).sum()
+
+        #count spaxels in each bin and make 2d maps excluding large bins
+        nspax = np.array([(self.kin.remap('binid') == self.kin.binid[i]).sum() for i in range(len(self.kin.binid))])
+        binmask = self.kin.remap(nspax) > 10
+
+        #axisymmetric fit of data
+        fit = None
+        if galmeta is not None:
+            try:
+                fit = axisym_iter_fit(galmeta, self)[0]
+                avel, asig = fit.model()
+            except Exception as e: 
+                print(e)
+                warnings.warn('Iterative fit failed, using noniterative fit instead')
+
+        #failsafe simpler fit
+        if fit is None:
+            fit = AxisymmetricDisk()
+            fit.lsq_fit(self.kin)
+            avel = fit.model()
+            asig = None
+
+        #surface brightness
+        sb  = np.ma.array(self.kin.remap('sb'), mask=binmask) if self.kin.sb is not None else None
+
+        #get the vel field, fill masked areas with axisym model
+        #have to do this so the convolution doesn't barf
+        filledvel = np.ma.array(self.kin.remap('vel'), mask=binmask)
+        mask = filledvel.mask | binmask.data | (filledvel == 0).data
+        origmask = mask
+        filledvel = filledvel.data
+        filledvel[mask] = avel[mask]
+
+        #same for sig
+        filledsig = np.ma.array(np.ma.sqrt(self.kin.remap('sig_phys2')).filled(0.), mask=binmask) if self.kin.sig is not None else None
+        if filledsig is not None and asig is not None:
+            mask |= filledsig.mask | (filledsig == 0).data
+            filledsig = filledsig.data
+            filledsig[mask] = asig[mask]
+
+        masks = []
+        labels = []
+        #reconvolve psf on top of velocity and dispersion
+        if self.smearing == True and self.kin.beam_fft is not None:
+            if pyfftw is not None: cnvfftw = ConvolveFFTW(self.kin.spatial_shape)
+            else: cnvfftw = None
+            smeared = smear(filledvel, self.kin.beam_fft, beam_fft=True, sig=filledsig, sb=None, cnvfftw=cnvfftw)
+
+            #cut out spaxels with too high residual because they're probably bad
+            dvmask = self.kin.bin(np.abs(filledvel - smeared[1]) > smear_dv) 
+            masks += [dvmask]
+            labels += ['dv']
+            if self.kin.sig is not None: 
+                dsigmask = self.kin.bin(np.abs(filledsig - smeared[2]) > smear_dsig)
+                masks += [dsigmask]
+                labels += ['dsig']
+
+        #clip on surface brightness and ANR
+        if self.kin.sb is not None: 
+            self.kin.sb[self.kin.sb < 0] = 0.
+            self.kin.sb[self.kin.sb > 300] = 0.
+            sbmask = (self.kin.sb < sbf) | (self.kin.sb > 300)
+            masks += [sbmask]
+            labels += ['sb']
+
+        if self.kin.sb_anr is not None:
+            anrmask = (self.kin.sb_anr < anr) | (self.kin.sb_anr > 10000)
+            masks += [anrmask]
+            labels += ['anr']
+
+        #cut out spaxels with erroneously small errors
+        ivarmask = (self.kin.vel_ivar < 1e-5) | (self.kin.sb_ivar < 1e-5)\
+                 | (self.kin.sig_ivar < 1e-5)
+        masks += [ivarmask]
+        labels += ['ivar']
+
+        #combine all masks and apply to data
+        mask = np.zeros(self.kin.vel_mask.shape)
+        for m in masks: mask += m
+        mask = mask.astype(bool)
+        self.kin.remask(mask)
+
+        #iterate through rest of clips until mask converges
+        nmaskedold = -1
+        nmasked = np.sum(mask)
+        niter = 0
+        err = False
+        while nmaskedold != nmasked and sigma:
+            #quick axisymmetric least squares fit
+            fit = AxisymmetricDisk()
+            fit.lsq_fit(self.kin)
+
+            #quick axisymmetric fit
+            model = self.kin.bin(fit.model())
+            resid = self.kin.vel - model
+
+            #clean up the data by sigma clipping residuals and chisq
+            chisq = resid**2 * self.kin.vel_ivar if self.kin.vel_ivar is not None else resid**2
+            residmask = sigma_clip(resid, sigma=sigma, masked=True).mask
+            chisqmask = sigma_clip(chisq, sigma=sigma, masked=True).mask
+            clipmask = (mask + residmask + chisqmask).astype(bool)
+
+            #iterate
+            nmaskedold = nmasked
+            nmasked = np.sum(clipmask)
+            niter += 1
+            if verbose: print(f'Performed {niter} clipping iterations...')
+
+            #break if too many iterations
+            if niter > maxiter: 
+                if verbose: print(f'Reached maximum clipping iterations: {niter}')
+                break
+
+            #break if too much data has been clipped
+            maskfrac = (nmasked - nmasked0)/ngood
+            if maskfrac > clip_thresh:
+                err = True
+                break
+
+            #apply mask to data
+            self.kin.remask(clipmask)
+
+        self.kin.sb_mask = sbmask + self.kin.bin(origmask)
+
+        #make a plot of all of the masks if desired
+        if verbose: 
+            print(f'{round(maskfrac * 100, 1)}% of data clipped')
+            if sigma:
+                masks += [residmask, chisqmask]
+                labels += ['resid', 'chisq']
+                print(f'Clipping converged after {niter} iterations')
+
+            plt.figure(figsize = (12,12))
+            plt.subplot(331)
+            plt.axis('off')
+            plt.imshow(origvel, cmap='jet', origin='lower')
+            plt.title('Original vel')
+            plt.subplot(332)
+            plt.axis('off')
+            plt.imshow(origsig, cmap='jet', origin='lower')
+            plt.title('Original sig')
+            for i in range(len(masks)):
+                plt.subplot(333+i)
+                plt.axis('off')
+                plt.imshow(self.kin.remap(masks[i]), origin='lower')
+                plt.title(labels[i])
+            plt.tight_layout()
+            plt.show()
+
+        if err:
+            raise ValueError(f'Bad velocity field: {round(maskfrac * 100, 1)}% of data clipped after {niter} iterations')
+
     def setbounds(self, incpad=20, papad=30, vsyspad=30, cenpad=2, velpad = 1.5,
-            velmax=400, sigmax=300, incgauss=False):
+            velmax=400, sigmax=300, incgauss=False, pagauss=False):
         '''
         Set the bounds for the prior of the fit.
 
@@ -234,6 +436,9 @@ class FitArgs:
             incgauss (:obj:`bool`, optional):
                 If `True`, will treat `incpad` as the standard deviation of a
                 Gaussian prior rather than bounds of a uniform prior.
+            pagauss (:obj:`bool`, optional):
+                If `True`, will treat `papad` as the standard deviation of a
+                Gaussian prior rather than bounds of a uniform prior.
         '''
 
         try: theta0 = self.guess
@@ -241,14 +446,16 @@ class FitArgs:
         if not hasattr(self, 'nbins'): 
             raise AttributeError('Must define nbins first')
 
-        inc = self.guess[1] if self.phot_inc is None else self.phot_inc
-        ndim = len(self.guess) + (self.nbins + self.fixcent) * self.disp
+        inc = self.guess[1] if self.kin.phot_inc is None else self.kin.phot_inc
+        pa = self.guess[2] if self.kin.phot_pa is None else self.kin.phot_pa
+        ndim = len(self.guess) + (self.nbins + self.fixcent) * self.disp + 2*self.scatter
 
         #prior bounds defined based off of guess
         bounds = np.zeros((ndim, 2))
         if incgauss: bounds[0] = (inc, incpad)
         else: bounds[0] = (max(inc - incpad, 5), min(inc + incpad, 85))
-        bounds[1] = (theta0[1] - papad, theta0[1] + papad)
+        if pagauss: bounds[1] = (pa, papad)
+        else: bounds[1] = (theta0[1] - papad, theta0[1] + papad)
         bounds[2] = (0, 180) #uninformed
         bounds[3] = (theta0[3] - vsyspad, theta0[3] + vsyspad)
         if self.nglobs == 6: #assumes (0,0) is the best guess for center
@@ -259,10 +466,14 @@ class FitArgs:
         if bounds[1][0] < 0 or bounds[1][1] > 360: bounds[1] = (0,360)
 
         #cap velocities at maximum in vf plus a padding factor
-        vmax = min(np.max(np.abs(self.vel))/np.cos(np.radians(inc)) * velpad, velmax)
+        vmax = min(np.max(np.abs(self.kin.vel))/np.cos(np.radians(inc)) * velpad, velmax)
+        end = self.nglobs + 3*self.nbins
         bounds[self.nglobs:self.nglobs + self.nbins] = (0, vmax)
-        bounds[self.nglobs + self.nbins:self.nglobs + 3*self.nbins] = (0, vmax)
-        if self.disp: bounds[self.nglobs + 3*self.nbins:] = (0, min(np.max(self.sig), sigmax))
+        bounds[self.nglobs + self.nbins:end] = (0, vmax)
+        if self.disp: bounds[end:end + self.nbins + 1] = (0, min(np.max(self.kin.sig), sigmax))
+    
+        if self.scatter: bounds[end + self.nbins + 1:end + self.nbins + 3] = (-1,2)
+
         self.bounds = bounds
 
     def getasym(self):
@@ -282,7 +493,14 @@ class FitArgs:
             xc, yc = [0, 0]
 
         #calculate asymmetry
-        self.arc, self.asymmap = asymmetry(self, pa, vsys, xc, yc)
+        self.arc, self.asymmap = asymmetry(self.kin, pa, vsys, xc, yc)
+
+    def setphotpa(self, galmeta):
+        '''
+        Correct the photometric PA by 180 degrees to align with the kinematics if necessary.
+        '''
+
+        self.kin.phot_pa = galmeta.guess_kinematic_pa(self.kin.x, self.kin.y, self.kin.vel) % 360
 
     def setnglobs(self, nglobs):
         '''

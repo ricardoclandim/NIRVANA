@@ -5,17 +5,17 @@ Utility function for modeling.
 """
 
 import numpy as np
-from scipy import linalg
+from scipy import linalg, stats
 
 def cov_err(jac):
     """
-    Provided the Jacobian matrix from a least-squares minimization
+    Provided the Jacobian matrix (the derivative of from a least-squares minimization
     routine, construct the parameter covariance matrix. See e.g.
     Press et al. 2007, Numerical Recipes, 3rd ed., Section 15.4.2
 
     This is directly pulled from ppxf.capfit.cov_err, but only
-    returns the covariance matrix:
-
+    returns the covariance matrix.  See:
+    
     https://pypi.org/project/ppxf/
 
     Args:
@@ -123,5 +123,28 @@ def sech2(x):
     s[indx] = 1/np.cosh(_x[indx])**2
     return s
 
+
+def trunc(q, mean, std, left, right):
+    """
+    Wrapper function for the ``ppf`` method of the `scipy.stats.truncnorm`_
+    function. This makes defining edges easier.
+    
+    Args:
+        q (:obj:`float`):
+            Desired quantile.
+        mean (:obj:`float`):
+            Mean of distribution
+        std (:obj:`float`):
+            Standard deviation of distribution.
+        left (:obj:`float`):
+            Left bound of truncation.
+        right (:obj:`float`):
+            Right bound of truncation.
+
+    Returns:
+        :obj:`float`: Value of the distribution at the desired quantile
+    """
+    a,b = (left-mean)/std, (right-mean)/std #transform to z values
+    return stats.truncnorm.ppf(q,a,b,mean,std)
 
 
