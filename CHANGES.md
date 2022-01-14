@@ -22,6 +22,15 @@
    single fits table.
  - Minor adjustments to the datamodel for the `nirvana_manga_axisym`
    metadata table.
+ - Added functions to generate idealized mock data, and a script to perform
+   idealized recovery simulations for the axisymmetric fits.
+ - Added `nirvana.data.bin2d.Bin2D` to handle binning of kinematic data, instead
+   of having this be part of the `Kinematics` class.
+ - Altered the details of the binning calculation when binning moments from the
+   model for comparison with the data.  The new approach should nominally be
+   closer to the effects of binning the spectra and then fitting the kinematics.
+ - Added method to compute Fisher Information Matrix for axisymmetric fits.
+
 
 0.1.0
 -----
