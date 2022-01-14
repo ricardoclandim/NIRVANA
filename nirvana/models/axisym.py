@@ -1333,6 +1333,8 @@ class AxisymmetricDisk:
             vel, sig = self.model()
         return self.kin.bin_moments(self.sb, vel, sig)[1:]
 
+#       NOTE: LEAVE THIS OLD CODE HERE, in case we want to test the difference
+#       between the new and old approach.
 #        # TODO: This binning isn't exactly right...  Need to bin velocity and
 #        # velocity dispersion in the same way that we do the beam-smearing.
 #        # I.e., the binned velocity is sum_i w_i v_i / sum_i w_i, where w_i is
@@ -1367,6 +1369,8 @@ class AxisymmetricDisk:
                 = self.kin.deriv_bin_moments(self.sb, vel, sig, None, dvel, dsig)
         return vel, sig, dvel, dsig
 
+#       NOTE: LEAVE THIS OLD CODE HERE, in case we want to test the difference
+#       between the new and old approach.
 #        if self.dc is None:
 #            vel, dvel = self.kin.deriv_bin(*self.deriv_model())
 #            return vel, None, dvel, None

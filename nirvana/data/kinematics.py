@@ -50,6 +50,11 @@ class Kinematics:
             None, all pixels are considered valid. If ``vel`` is
             provided as a masked array, this mask is combined with
             ``vel.mask``.
+        vel_covar (`numpy.ndarray`_, `scipy.sparse.csr_matrix`_, optional):
+            Covariance matrix for velocity measurements.  If the input map
+            arrays have a total of :math:`N_{\rm spax}` spaxels, the shape of
+            the covariance array must be :math:`(N_{\rm spax}, N_{\rm spax})`.
+            If None, all spaxels are independent.
         x (`numpy.ndarray`_, `numpy.ma.MaskedArray`_, optional):
             The on-sky Cartesian :math:`x` coordinates of each
             velocity measurement. Units are irrelevant, but they
@@ -77,6 +82,14 @@ class Kinematics:
             A boolean array with the bad-pixel mask (pixels to ignore
             have ``mask==True``) for the surface-brightness
             measurements. If None, all pixels are considered valid.
+        sb_covar (`numpy.ndarray`_, `scipy.sparse.csr_matrix`_, optional):
+            Covariance matrix for surface-brightness measurements.  If the input
+            map arrays have a total of :math:`N_{\rm spax}` spaxels, the shape
+            of the covariance array must be :math:`(N_{\rm spax}, N_{\rm
+            spax})`.  If None, all spaxels are independent.
+        sb_anr (`numpy.ndarray`_, optional):
+            For emission-line data, this is the amplitude-to-noise ratio.
+            Ignored if not provided.
         sig (`numpy.ndarray`_, `numpy.ma.MaskedArray`_, optional):
             The velocity dispersion of the kinematic tracer. Ignored
             if None.
@@ -88,6 +101,11 @@ class Kinematics:
             have ``mask==True``) for the velocity-dispersion
             measurements. If None, all measurements are considered
             valid.
+        sig_covar (`numpy.ndarray`_, `scipy.sparse.csr_matrix`_, optional):
+            Covariance matrix for velocity-dispersion measurements.  If the
+            input map arrays have a total of :math:`N_{\rm spax}` spaxels, the
+            shape of the covariance array must be :math:`(N_{\rm spax}, N_{\rm
+            spax})`.  If None, all spaxels are independent.
         sig_corr (`numpy.ndarray`_, optional):
             A quadrature correction for the velocity dispersion
             measurements. If None, velocity dispersions are assumed
@@ -150,8 +168,13 @@ class Kinematics:
         fwhm (:obj:`float`, optional):
             The FWHM of the PSF of the galaxy in the same units as :attr:`x` and
             :attr:`y`.
+        image (`numpy.ndarray`_, optional):
+            Galaxy image, typically from a PNG, and only used for plotting.  For
+            format, see matplotlib.images.imread.
         phot_inc (:obj:`float`, optional):
             Photometric inclination in degrees.
+        phot_pa (:obj:`float`, optional):
+            Photometric position angle in degrees.
         maxr (:obj:`float`, optional):
             Maximum radius of useful data in effective radii.
         positive_definite (:obj:`bool`, optional):
@@ -168,7 +191,9 @@ class Kinematics:
             neither, or if ``binid`` is provided but ``grid_x`` or
             ``grid_y`` is None.
     """
-    # TODO: Update the doc string to reflect changes in the calling sequence!
+    # TODO: We should change sb_anr to be just a generic S/N ratio.  I.e.,
+    # Kinematics shouldn't care about the type of tracer.
+    # TODO: Remove arguments that are redundant with the GlobalPar class?
     def __init__(self, vel, vel_ivar=None, vel_mask=None, vel_covar=None, x=None, y=None, sb=None,
                  sb_ivar=None, sb_mask=None, sb_covar=None, sb_anr=None, sig=None, sig_ivar=None,
                  sig_mask=None, sig_covar=None, sig_corr=None, psf_name=None, psf=None,
@@ -258,8 +283,8 @@ class Kinematics:
         # ivar and covar and they are not consistent
         self.update_sigma()
 
-    # TODO: Adding was a way of avoiding crashes in other parts of the code, but
-    # we should figure out which of these we actually need?
+    # TODO: Adding these properties was a way of avoiding crashes in other parts
+    # of the code, but we should figure out which of these we actually need?
     @property
     def nspax(self):
         return self.binner.nbin

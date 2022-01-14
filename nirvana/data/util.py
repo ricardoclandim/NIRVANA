@@ -21,8 +21,6 @@ from ..models import geometry
 # would make all the positive-definite + tracking easier.
 
 
-# TODO: Build a Bin2D class to handle all the binning methods.
-
 # TODO: Add a set of weights?
 def get_map_bin_transformations(spatial_shape=None, binid=None):
     r"""

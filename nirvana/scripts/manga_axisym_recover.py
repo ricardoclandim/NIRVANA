@@ -17,9 +17,9 @@ from ..data import manga
 from ..data.bin2d import Bin2D, VoronoiBinning
 from ..models import axisym
 from ..models import oned
+from ..models import twod
 from ..models import geometry
 from ..models.beam import gauss2d_kernel, ConvolveFFTW
-from ..models import twod
 from ..util import fileio
 
 import warnings
@@ -293,7 +293,7 @@ def main(args):
     # Initialize the table output
     disk_par_names = disk.par_names(short=True)
     metadata = fileio.init_record_array(args.nsim, _fit_meta_dtype(disk_par_names))
-    # TODO: Instead of adding single values to the header of the output file,
+    # NOTE: Instead of adding single values to the header of the output file,
     # these quantities are kept and repeated in the table to facilitate
     # concatenation of tables from multiple simulations.
     metadata['MAPN'] = n
@@ -389,102 +389,3 @@ def main(args):
         fileio.compress_file(_ofile, overwrite=True)
         os.remove(_ofile)
 
-
-# def main_nodisp(args):
-
-#     # Running the script behind a screen, so switch the matplotlib backend
-#     if args.screen:
-#         pyplot.switch_backend('agg')
-
-#     reff = 10.87
-#     sersic_n = 4.1
-#     ell = 0.31
-#     pa = 165.1
-#     p0 = np.array([-0.2, -0.08, 166.3, 53.0, 25.6, 217.0, 2.82]) #, 189.7, 16.2])
-#     disk = axisym.AxisymmetricDisk(rc=oned.HyperbolicTangent()) #, dc=oned.Exponential())
-
-#     n = 72
-#     ifusize = 32
-#     pixelscale = 0.5
-#     x = np.arange(n, dtype=float)[::-1] - n//2
-#     y = np.arange(n, dtype=float) - n//2
-#     x, y = np.meshgrid(pixelscale*x, pixelscale*y)
-#     cnvfftw = ConvolveFFTW(x.shape)
-#     sig2fwhm = np.sqrt(8*np.log(2))
-
-#     # TODO: Oversample to mimic integration over the size of the pixel?
-#     sb = twod.Sersic2D(1., reff, sersic_n, ellipticity=ell, position_angle=pa)(x,y)
-#     beam = gauss2d_kernel(n, 2.5/pixelscale/sig2fwhm)
-#     sb = cnvfftw(sb, beam)
-#     snr = np.sqrt(sb)
-#     scale_fac = 70./np.amax(snr)
-#     snr *= scale_fac
-#     # Not really necessary to scale the SB because the SB weighting only matters
-#     # in a relative sense.
-#     sb *= scale_fac**2
-
-#     ifu_mask = geometry.point_inside_polygon(geometry.hexagon_vertices(d=ifusize),
-#                                              np.column_stack((x.ravel(), y.ravel())))
-#     ifu_mask = np.logical_not(ifu_mask).reshape(x.shape)
-
-#     # Make a fake binid based on the ifu_mask
-#     binid = np.full(ifu_mask.shape, -1, dtype=int)
-#     gpm = np.logical_not(ifu_mask)
-#     binid[gpm] = np.arange(np.sum(gpm))
-
-#     binning = False
-#     if binning:
-#         # TODO: Come back to this
-
-#         binid, _, _, _, _, binsnr, _, _ \
-#                 = voronoi_2d_binning(x.ravel(), y.ravel(), sb.ravel(), (sb/snr).ravel(), 10.,
-#                                     plot=False)
-#         binid = binid.reshape(x.shape)
-
-#         _, _, _, grid_indx, bin_inverse, bin_transform = get_map_bin_transformations(binid=binid)
-#         _binned_sb = bin_transform.dot(sb.ravel())
-#         binned_sb = np.ma.MaskedArray(np.zeros(x.shape, dtype=float), mask=True)
-#         binned_sb[np.unravel_index(grid_indx, x.shape)] = _binned_sb[bin_inverse]
-#         binned_snr = np.ma.MaskedArray(np.zeros(x.shape, dtype=float), mask=True)
-#         binned_snr[np.unravel_index(grid_indx, x.shape)] = binsnr[bin_inverse]
-
-# #    vel, sig = disk.model(p0, x=x, y=y, beam=beam)
-# #    vel_ivar = np.ma.MaskedArray((snr/sig)**2, mask=ifu_mask)
-#     vel = disk.model(p0, x=x, y=y, beam=beam)
-#     vel_ivar = np.ma.MaskedArray((snr/100)**2, mask=ifu_mask)
-#     sig_ivar = None #np.ma.MaskedArray((snr/sig)**2, mask=ifu_mask)
-
-#     print('Generating Velocity Covariance')
-#     gpm, vel_covar = manga.manga_map_covar(vel_ivar, positive_definite=False, fill=True)
-#     print('Generating Sigma Covariance')
-# #    gpm, sig_covar = manga.manga_map_covar(sig_ivar, positive_definite=False, fill=True)
-#     sig_covar = None
-
-#     print('Noise-free Mock')
-#     noisefree_mock = disk.mock_observation(p0, x=x, y=y, sb=sb, binid=binid,
-#                                            vel_ivar=vel_ivar, vel_covar=vel_covar,
-#                                            vel_mask=ifu_mask, sig_ivar=sig_ivar,
-#                                            sig_covar=sig_covar, sig_mask=ifu_mask, beam=beam,
-#                                            cnvfftw=cnvfftw, positive_definite=True)
-
-#     nsim = 10
-#     vgpm, dv, sgpm, ds = noisefree_mock.deviate(size=nsim, ignore_sigma=disk.dc is None)
-#     _vel = noisefree_mock.vel.copy()
-# #    _sig = noisefree_mock.sig.copy()
-#     noisy_mock = noisefree_mock.copy()
-#     for i in range(nsim):
-#         noisy_mock.vel[vgpm] = _vel[vgpm] + dv[i]
-#         if disk.dc is not None:
-#             _sig[sgpm] += ds[i]
-#             noisy_mock.update_sigma(sig=_sig)
-#             _sig[sgpm] -= ds[i]
-
-#         disk.lsq_fit(noisy_mock, sb_wgt=True, p0=p0, scatter=None, verbose=0,
-#                      assume_posdef_covar=True, ignore_covar=True, cnvfftw=cnvfftw)
-
-#         embed()
-#         exit()
-
-#         pyplot.imshow(noisy_mock.remap('vel'), origin='lower', interpolation='nearest')
-#         pyplot.show()
-#     exit()

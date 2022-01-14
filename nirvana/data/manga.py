@@ -773,16 +773,6 @@ def manga_map_covar(ivar, binid=None, rho_sig=1.92, rlim=3.2, min_ivar=1e-10, rh
 
     return gpm, fill_matrix(cov, gpm.ravel())
 
-#    # Fill out the full covariance matrix so that its size matches the input
-#    # map size
-#    _cov = sparse.lil_matrix((ivar.size,ivar.size), dtype=float)
-#    # NOTE: scipy issues a SparseEfficiencyWarning suggesting the next
-#    # operation is more efficient using an lil_matrix instead of a csr_matrix;
-#    # that's the reason for the declaration above and the conversion in the
-#    # return type...
-#    _cov[np.ix_(gpm.ravel(),gpm.ravel())] = cov
-#    return gpm, _cov.tocsr()
-
 
 class MaNGAKinematics(Kinematics):
     """
