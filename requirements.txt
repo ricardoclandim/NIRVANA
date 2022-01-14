@@ -11,5 +11,6 @@ dynesty>=1.0
 pydl>=0.7.0
 tqdm>=4.57
 requests>=2.25
+vorbin==3.1.4
 
 

@@ -518,6 +518,70 @@ def point_inside_polygon(polygon, point):
     """
     return np.absolute(polygon_winding_number(polygon, point)) == 1
 
+
+def hexagon_vertices(d=1., incircle=False, close=False, orientation='horizontal'):
+    r"""
+    Construct the vertices of a hexagon.
+
+    Args:
+        d (:obj:`float`, optional):
+            The diameter of circumscribed circle.
+        incircle (:obj:`bool`, optional):
+            Use the provided diameter to set the incircle of the hexagon
+            instead of its circumscribed circle.
+        close (:obj:`bool`, optional):
+            "Close" the hexagon by repeating the first set of
+            coordinates at the end of the array of vertices.
+        orientation (:obj:`str`, :obj:`float`, optional):
+            Sets the orientation of the hexagon, must be either
+            'horizontal', 'vertical', or a rotation angle in degrees
+            relative to the horizontal orientation.  The horizontal and
+            vertical orientations set the long axis of the hexagon along
+            the Cartesian x and y axis, respectively.  The horizontal
+            orientation is equivalent to a rotation angle of 0 and a
+            vertical orientation is equivalent to a rotation angle of 30
+            degrees.  While the polar-coordinate ordering of the
+            vertices in the output array will change, note the shape
+            is degenerate with a periodicity of 60 degrees.
+
+    Returns:
+        `numpy.ndarray`_: An array with shape :math:`(6,2)`, or
+        :math:`(7,2)` if ``close`` is True, providing the x and y
+        Cartesian vertices of the hexagon.
+    """
+    if isinstance(orientation, str) and orientation not in ['horizontal', 'vertical']:
+        raise ValueError('Orientation must be horizontal, vertical, or a rotation in degrees.')
+
+    # Get the incircle radius
+    r = d/2/np.cos(np.pi/6) if incircle else d/2 
+    # Generate each vertex, in clockwise order
+    v = np.zeros((6,2), dtype=float)
+
+    v[0,0] = -r/2
+    v[1,0] = r/2
+    v[2,0] = r
+    v[3,0] = r/2
+    v[4,0] = -r/2
+    v[5,0] = -r
+
+    v[0,1] = r * np.sin(np.pi/3.0)
+    v[1,1] = r * np.sin(np.pi/3.0)
+    v[2,1] = 0.
+    v[3,1] = -r * np.sin(np.pi/3.0)
+    v[4,1] = -r * np.sin(np.pi/3.0)
+    v[5,1] = 0.
+
+    # Append the first point to close the shape
+    if close:
+        v = np.vstack((v,v[0]))
+
+    if orientation == 'horizontal' or orientation == 0.:
+        return v
+    v[:,0], v[:,1] = rotate(v[:,0], v[:,1],
+                            np.radians(30. if orientation == 'vertical' else orientation))
+    return v
+
+
 def proj_angle(angle, inc, pa):
     '''
     Take an angle in the plane of a galaxy and project it on sky.

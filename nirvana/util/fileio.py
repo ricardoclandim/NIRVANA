@@ -146,12 +146,13 @@ def create_symlink(ofile, symlink_dir, relative_symlink=True, overwrite=False, q
 
 
 # TODO: This is MaNGA specific and needs to be abstracted.
-def initialize_primary_header(galmeta):
+def initialize_primary_header(galmeta=None):
     hdr = fits.Header()
 
-    hdr['MANGADR'] = (galmeta.dr, 'MaNGA Data Release')
-    hdr['MANGAID'] = (galmeta.mangaid, 'MaNGA ID number')
-    hdr['PLATEIFU'] = (f'{galmeta.plate}-{galmeta.ifu}', 'MaNGA observation plate and IFU')
+    if galmeta is not None:
+        hdr['MANGADR'] = (galmeta.dr, 'MaNGA Data Release')
+        hdr['MANGAID'] = (galmeta.mangaid, 'MaNGA ID number')
+        hdr['PLATEIFU'] = (f'{galmeta.plate}-{galmeta.ifu}', 'MaNGA observation plate and IFU')
 
     # Add versioning
     hdr['VERSPY'] = ('.'.join([ str(v) for v in sys.version_info[:3]]), 'Python version')

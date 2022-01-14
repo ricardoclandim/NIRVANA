@@ -20,6 +20,7 @@ from .oned import HyperbolicTangent, Exponential, ExpBase, Const, PolyEx
 from .geometry import projected_polar, deriv_projected_polar
 from .beam import ConvolveFFTW, smear, deriv_smear
 from .util import cov_err
+from ..data.kinematics import Kinematics
 from ..data.scatter import IntrinsicScatter
 from ..data.util import impose_positive_definite, cinv, inverse, find_largest_coherent_region
 from ..data.util import select_major_axis, bin_stats, growth_lim, atleast_one_decade
@@ -29,6 +30,7 @@ from ..util import fileio
 
 #warnings.simplefilter('error', RuntimeWarning)
 
+# TODO: Make this a member function of AxisymmetricDisk?
 def disk_fit_reject(kin, disk, disp=None, ignore_covar=True, vel_mask=None, vel_sigma_rej=5,
                     show_vel=False, vel_plot=None, sig_mask=None, sig_sigma_rej=5, show_sig=False,
                     sig_plot=None, rej_flag='REJ_RESID', verbose=False):
@@ -710,12 +712,12 @@ class AxisymmetricDisk:
         _p0 = np.atleast_1d(p0)
         if _p0.size != self.np:
             raise ValueError('Incorrect number of model parameters.')
-        self.par = _p0
+        self.par = _p0.copy()
         self.par_err = None
         _free = np.ones(self.np, dtype=bool) if fix is None else np.logical_not(fix)
         if _free.size != self.np:
             raise ValueError('Incorrect number of model parameter fitting flags.')
-        self.free = _free
+        self.free = _free.copy()
         self.nfree = np.sum(self.free)
 
     def model(self, par=None, x=None, y=None, sb=None, beam=None, is_fft=False, cnvfftw=None,
@@ -957,6 +959,329 @@ class AxisymmetricDisk:
                                              sig=sig, dsig=dsig, cnvfftw=self.cnvfftw)
         return v, sig, dv, dsig
 
+    def mock_observation(self, par, kin=None, x=None, y=None, sb=None, binid=None,
+                         vel_ivar=None, vel_covar=None, vel_mask=None, sig_ivar=None,
+                         sig_covar=None, sig_mask=None, sig_corr=None, beam=None, is_fft=False,
+                         cnvfftw=None, ignore_beam=False, add_err=False, positive_definite=False,
+                         rng=None):
+        r"""
+        Construct a mock observation.
+
+        The mock data can be defined in one of two ways:
+
+            #. If a :class:`~nirvana.data.kinematics.Kinematics` object is
+               provided using the ``kin`` keyword, all other keyword arguments
+               are ignored and the mock data are meant to explicitly mimic the
+               real observations.
+
+            #. Otherwise, most of the other keywords are used to instantiate a
+               mock :class:`~nirvana.data.kinematics.Kinematics` object.  Just
+               like when instantiating a
+               :class:`~nirvana.data.kinematics.Kinematics` object, the provided
+               data arrays *must* be 2D and all have the same shape.
+
+        The mock observation is constructed by sampling the model exactly as
+        done when fitting real observations.  If errors are provided and
+        ``add_err`` is True, Gaussian error is added to the model values.
+
+        .. warning::
+
+            - Unlike :func:`model`, this method does *not* use any pre-existing
+              attributes in place of keyword arguments that are not directly
+              provided.  For example, if ``beam`` is None on input,
+              :attr:`beam_fft` will *not* be used even if available.  Instead,
+              this method calls :func:`reinit` to reinitialize the object such
+              that the mock observation is built from the provided arguments
+              only.
+
+            - Covariance matrices are expected to be positive-definite on input!
+
+            - When adding error, masked elements are ignored (i.e., no error is
+              added to them).
+
+        Args:
+            par (array-like):
+                The list of model parameters to use. Length must be :attr:`np`.
+            kin (:class:`~nirvana.data.kinematics.Kinematics`, optional):
+                Object with the kinematic data to mimic.  If None, must provide
+                at least ``x``, ``y``, and ``vel_ivar``.
+            x (`numpy.ndarray`_, optional):
+                The 2D x-coordinates at which to evaluate the model. Ignored if
+                ``kin`` is provided.
+            y (`numpy.ndarray`_, optional):
+                The 2D y-coordinates at which to evaluate the model.  Shape must
+                match ``x``.  Ignored if ``kin`` is provided.  
+            sb (`numpy.ndarray`_, optional):
+                2D array with the (nominally unbinned) surface brightness of the
+                object. This is used to weight the convolution of the kinematic
+                fields according to the luminosity distribution of the object.
+                Must have the same shape as ``x``. If None, the convolution is
+                unweighted.  If a convolution is not performed (``beam`` is None
+                or ``ignore_beam`` is True) or if ``kin`` is provided, this
+                array is ignored.
+            binid (`numpy.ndarray`_, optional):
+                2D integer array associating each measurement with a unique bin
+                ID number. Measurements not associated with any bin should have
+                a value of -1 in this array. If None, all unmasked measurements
+                (see ``vel_mask`` and ``sig_mask``) are considered unique.
+                Shape must match ``x``.  Ignored if ``kin`` is provided.
+            vel_ivar (`numpy.ndarray`_, `numpy.ma.MaskedArray`_, optional):
+                2D array with the inverse variance of the velocity measurements.
+                If both this and ``vel_covar`` are None, no errors are added to
+                the model data.  Shape must match ``x``, and all array elements
+                with the same bin ID should have the same value.  If both
+                ``vel_ivar`` and ``vel_covar`` are provided, the latter takes
+                precedence.  Ignored if ``kin`` is provided.
+            vel_covar (`numpy.ndarray`_, `scipy.sparse.csr_matrix`_):
+                Covariance matrix for the velocity measurements.  If both this
+                and ``vel_ivar`` are None, no errors are added to the model
+                data.  The array must be square, where the length along one side
+                matches the number elements in ``x``.  If both ``vel_ivar`` and
+                ``vel_covar`` are provided, the latter takes precedence.
+                Ignored if ``kin`` is provided.
+            vel_mask (`numpy.ndarray`_, optional):
+                2D boolean array with a bad-pixel mask for the velocity
+                measurements (a mask value of True is ignored).  If None, all
+                velocity values are considered valid.  Shape must match ``x``.
+                If ``vel_ivar`` is a `numpy.ma.MaskedArray`_, this mask is
+                *combined* with ``vel_ivar.mask``.  Ignored if ``kin`` is
+                provided.
+            sig_ivar (`numpy.ndarray`_, `numpy.ma.MaskedArray`_, optional):
+                2D array with the inverse variance of the velocity dispersion
+                measurements.  If ``kin`` is provided or no velocity dispersion
+                parameterization is defined (i.e., :attr:`dc` is None), this is
+                ignored.  If both this and ``sig_covar`` are None, no errors are
+                added to the model data.  Shape must match ``x``, and all array
+                elements with the same bin ID should have the same value.  If
+                both ``sig_ivar`` and ``sig_covar`` are provided, the latter
+                takes precedence.
+            sig_covar (`numpy.ndarray`_, `scipy.sparse.csr_matrix`_):
+                Covariance matrix for the velocity dispersion measurements.  If
+                ``kin`` is provided or no velocity dispersion parameterization
+                is defined (i.e., :attr:`dc` is None), this is ignored.  If both
+                this and ``sig_ivar`` are None, no errors are added to the model
+                data.  The array must be square, where the length along one side
+                matches the number elements in ``x``.  If both ``sig_ivar`` and
+                ``sig_covar`` are provided, the latter takes precedence.
+            sig_mask (`numpy.ndarray`_, optional):
+                2D boolean array with a bad-pixel mask for the velocity
+                dispersion measurements (a mask value of True is ignored).  If
+                ``kin`` is provided or no velocity dispersion parameterization
+                is defined (i.e., :attr:`dc` is None), this is ignored.  If
+                None, all velocity dispersion values are considered valid.
+                Shape must match ``x``.  If ``sig_ivar`` is a
+                `numpy.ma.MaskedArray`_, this mask is *combined* with
+                ``sig_ivar.mask``.
+            sig_corr (`numpy.ndarray`_, optional):
+                A quadrature correction for the velocity dispersion
+                measurements. If None, velocity dispersions are assumed to be
+                the *astrophysical* Doppler broadening of the kinematic tracer.
+                If provided, the observed velocity dispersion used to construct
+                the mock :class:`~nirvana.data.kinematics.Kinematics` object is:
+
+                .. math::
+                    \sigma_{\rm obs}^2 = \sigma^2 + \sigma_{\rm corr}^2,
+
+                where the model is used to calculate :math:`\sigma`.
+            beam (`numpy.ndarray`_, optional):
+                The 2D rendering of the beam-smearing kernel, or its Fast
+                Fourier Transform (FFT).  If ``kin`` is provided, this is
+                ignored.  If not provided, no beam convolution is performed when
+                constructing the mock observations.
+            is_fft (:obj:`bool`, optional):
+                The provided ``beam`` object is already the FFT of the
+                beam-smearing kernel.  Ignored if ``kin`` is provided or
+                ``beam`` is not provided.
+            cnvfftw (:class:`~nirvana.models.beam.ConvolveFFTW`, optional):
+                An object that expedites the convolutions using
+                FFTW/pyFFTW. If None, the convolution is done using numpy
+                FFT routines.
+            ignore_beam (:obj:`bool`, optional):
+                Regardless of the availability of the beam profile, ignore it
+                and do not include it in the returned object.
+            add_err (:obj:`bool`, optional):
+                If provided by either ``kin`` or the method keyword arguments,
+                use the error distributions to add error to the mock model data.
+                Nominally, error should be added to mock observations, but it's
+                more efficient to create a noiseless dataset and then create
+                many noise realizations (see
+                :func:`~nirvana.data.kinematics.Kinematics.deviate`).  This
+                keyword only results in a single noise realization.
+            rng (`numpy.random.Generator`, optional):
+                Generator object to use.  If None, a new Generator is
+                instantiated; see :func:`~nirvana.data.util.gaussian_deviates`.
+
+        Returns:
+            :class:`~nirvana.data.kinematics.Kinematics`:  Object providing the
+            mock observations.  This object can be fit, e.g., with
+            :func:`lsq_fit`, as would be done with real observations.
+        """
+
+        # Get the input errors.  This is done first for the checks that follow.
+        if kin is None:
+            _vel_ivar = vel_ivar
+            _vel_covar = vel_covar
+            _sig_ivar = sig_ivar
+            _sig_covar = sig_covar
+        else:
+            _vel_ivar = None if kin.vel_ivar is None \
+                        else kin.remap('vel_ivar', masked=False, fill_value=0.)
+            _vel_covar = None if kin.vel_covar is None else kin.remap_covar('vel_covar')
+            _sig_ivar = None if self.dc is None or kin.sig_ivar is None \
+                        else kin.remap('sig_ivar', masked=False, fill_value=0.)
+            _sig_covar = None if self.dc is None or kin.sig_covar is None \
+                            else kin.remap_covar('sig_covar')
+
+        if add_err:
+            # Check: Dispersion model not defined but error and mask provided
+            if self.dc is None and any([s is not None for s in [_sig_ivar, _sig_covar, _sig_mask]]):
+                warnings.warn('AxisymmetricDisk instance does not include dispersion profile '
+                                'model.  Ignoring provided dispersion errors and mask.')
+            # Check: Dispersion model available and mismatch between availability of errors
+            if self.dc is not None and (_vel_ivar is not None and _sig_ivar is None \
+                                        or _vel_ivar is None and _sig_ivar is not None \
+                                        or _vel_covar is not None and _sig_covar is None \
+                                        or _vel_covar is None and _sig_covar is not None):
+                raise ValueError('When adding error, must add error to both vel and sigma.')
+
+        # Instantiate the mock Kinematics object
+        if kin is None:
+            # Revert the fft to get the spatial representation of the beam profile
+            _beam = None if beam is None or ignore_beam \
+                        else (np.fft.fftshift(np.fft.ifftn(beam).real) if is_fft else beam)
+
+            vel = np.zeros(x.shape, dtype=float)
+            sig = None if self.dc is None else np.zeros(x.shape, dtype=float)
+            _kin = Kinematics(vel, vel_ivar=_vel_ivar, vel_mask=vel_mask, vel_covar=_vel_covar,
+                              x=x, y=y, sb=sb, sig=sig, sig_ivar=_sig_ivar, sig_mask=sig_mask,
+                              sig_covar=_sig_covar, sig_corr=sig_corr, psf=_beam, binid=binid,
+                              grid_x=x, grid_y=y, grid_sb=sb, positive_definite=positive_definite)
+        else:
+            _kin = kin.copy()
+
+        # Reinitialize
+        self.reinit()
+
+        # TODO: Should rename the "_fit_prep" function!!
+        # Initialize internals for generating models.  Set "ignore_covar" to
+        # true because the handling of the covariance in the _fit_prep function
+        # is not needed here.
+        #                         fix, scat, sb_wgt, posdef, ignore_covar
+        self._fit_prep(_kin, par, None, None, True, True, True, cnvfftw)
+
+        # Generate and bin the model data.  NOTE: Call above to _fit_prep sets
+        # _kin to self.kin, which is used by _binned_model...
+        _kin.vel, _sig = self._binned_model(par)
+        # If available, include the dispersion correction
+        if _kin.sig_corr is not None:
+            _sig = np.sqrt(_sig**2 + _kin.sig_corr**2)
+
+        # Set whether or not to add Gaussian noise
+        if not add_err or _vel_ivar is None and _vel_covar is None:
+            _kin.update_sigma(sig=_sig)
+            return _kin
+
+        # Get the deviates
+        sigma_method = 'ignore' if self.dc is None else 'draw' 
+        vgpm, dv, sgpm, ds = _kin.deviate(sigma=sigma_method, rng=rng)
+        # Add the velocity error
+        _kin.vel[vgpm] += dv
+        # Add the dispersion error and update the dispersion values
+        if self.dc is not None:
+            _sig[sgpm] += ds
+            _kin.update_sigma(sig=_sig)
+
+        return _kin
+
+    def fisher_matrix(self, par, kin, fix=None, sb_wgt=False, scatter=None,
+                      assume_posdef_covar=False, ignore_covar=True, cnvfftw=None,
+                      inverse=False):
+        r"""
+        Construct the Fisher Information Matrix (FIM) at a specific position in
+        parameter space for a set of observational constraints.
+
+        The FIM is calculated using the derivatives of the fit metric with
+        respect to the model parameters (the Jacobian), just as done during the
+        least-squares minimization.  The shape of the Jacobian is :math:`(N,M)`,
+        where :math:`N` is the number of data points and :math:`M` is the number
+        of model parameters.  The FIM, :math:`\mathbf{I}(\theta)`, is the
+        :math:`(M,M)` matrix defined as:
+
+        .. math::
+
+            \mathbf{I}(\theta) = \mathbf{J}^T \mathbf{J}
+
+        Importantly, the Jacobian and the FIM are both *independent of the
+        measurements*, but not independent of the statistical uncertainties in
+        those measurements.
+
+        .. warning::
+
+            Currently, this class *does not construct a model of the
+            surface-brightness distribution*.  Instead, any weighting of the
+            model during convolution with the beam profile uses the as-observed
+            surface-brightness distribution, instead of a model of the intrinsic
+            surface brightness distribution.  See ``sb_wgt``.
+
+        Args:
+            par (array-like):
+                The list of model parameters at which to calculate the FIM.
+                I.e., the FIM is dependent on the position in parameter space.
+                Length must be :attr:`np`.
+            kin (:class:`~nirvana.data.kinematics.Kinematics`):
+                Object with the kinematic data.  This provides the measurement
+                uncertainties needed for the construction of the FIM, and it
+                also provides the grid on which to compute the model, the
+                surface-brightness weighting, the beam-smearing kernel, and the
+                binning function.
+            fix (`numpy.ndarray`_, optional):
+                A boolean array selecting the parameters that are fixed.  These
+                parameters are excluded from the FIM.
+            sb_wgt (:obj:`bool`, optional):
+                Flag to use the surface-brightness data provided by ``kin`` to
+                weight the model when applying the beam-smearing.  **See the
+                warning above**.
+            scatter (:obj:`float`, array-like, optional):
+                Introduce a fixed intrinsic-scatter term into the model. The 
+                scatter is added in quadrature to all measurement errors in the
+                calculation of the merit function. If no errors are available,
+                this has the effect of renormalizing the unweighted merit
+                function by 1/scatter.  Can be None, which means no intrinsic
+                scatter is added.  If both velocity and velocity dispersion are
+                being fit, this can be a single number applied to both datasets
+                or a 2-element vector that provides different intrinsic scatter
+                measurements for each kinematic moment (ordered velocity then
+                velocity dispersion).
+            assume_posdef_covar (:obj:`bool`, optional):
+                If the :class:`~nirvana.data.kinematics.Kinematics` include
+                covariance matrices, this forces the code to proceed assuming
+                the matrices are positive definite.
+            ignore_covar (:obj:`bool`, optional):
+                If the :class:`~nirvana.data.kinematics.Kinematics` include
+                covariance matrices, ignore them and just use the inverse
+                variance.
+            cnvfftw (:class:`~nirvana.models.beam.ConvolveFFTW`, optional):
+                An object that expedites the convolutions using FFTW/pyFFTW.  If
+                provided, the shape *must* match ``kin.spatial_shape``.  If
+                None, a new :class:`~nirvana.models.beam.ConvolveFFTW` instance
+                is constructed to perform the convolutions.  If the class cannot
+                be constructed because the user doesn't have pyfftw installed,
+                then the convolutions fall back to numpy routines.
+            inverse (:obj:`bool`, optional):
+                Return the inverse of the FIM, which is equivalent to the
+                covariance matrix in the model parameters.
+
+        Returns:
+            `numpy.ndarray`_: The :math:`(M,M)` Fisher Information Matrix, or
+            its inverse, at the selected position in parameter space.
+        """
+        self._fit_prep(kin, par, fix, scatter, sb_wgt, assume_posdef_covar, ignore_covar,
+                       cnvfftw)
+        jac = self._get_jac()(self.par[self.free])
+        return cov_err(jac) if inverse else np.dot(jac.T,jac)
+
+    # This slew of "private" functions consolidate the velocity residual and
+    # chi-square calculations
     def _v_resid(self, vel):
         return self.kin.vel[self.vel_gpm] - vel[self.vel_gpm]
     def _deriv_v_resid(self, dvel):
@@ -970,6 +1295,8 @@ class AxisymmetricDisk:
     def _deriv_v_chisqr_covar(self, dvel):
         return np.dot(self._deriv_v_resid(dvel).T, self._v_ucov).T
 
+    # This slew of "private" functions consolidate the velocity dispersion
+    # residual and chi-square calculations
     def _s_resid(self, sig):
         return self.kin.sig_phys2[self.sig_gpm] - sig[self.sig_gpm]**2
     def _deriv_s_resid(self, sig, dsig):
@@ -982,6 +1309,75 @@ class AxisymmetricDisk:
         return np.dot(self._s_resid(sig), self._s_ucov)
     def _deriv_s_chisqr_covar(self, sig, dsig):
         return np.dot(self._deriv_s_resid(sig, dsig).T, self._s_ucov).T
+
+    def _binned_model(self, par):
+        """
+        Compute the binned model data.
+
+        Args:
+            par (`numpy.ndarray`_, optional):
+                The list of parameters to use. Length should be either
+                :attr:`np` or :attr:`nfree`. If the latter, the values of the
+                fixed parameters in :attr:`par` are used.
+
+        Returns:
+
+            :obj:`tuple`: Model velocity and velocity dispersion data.  The
+            latter is None if the model has no dispersion parameterization.
+        """
+        self._set_par(par)
+        if self.dc is None:
+            vel = self.model()
+            sig = None
+        else:
+            vel, sig = self.model()
+        return self.kin.bin_moments(self.sb, vel, sig)[1:]
+
+#       NOTE: LEAVE THIS OLD CODE HERE, in case we want to test the difference
+#       between the new and old approach.
+#        # TODO: This binning isn't exactly right...  Need to bin velocity and
+#        # velocity dispersion in the same way that we do the beam-smearing.
+#        # I.e., the binned velocity is sum_i w_i v_i / sum_i w_i, where w_i is
+#        # the luminosity weighting.  And the binned velocity dispersion should
+#        # be sqrt(sum_i w_i (v_i^2 + s_i^2) / sum_i w_i - bin_v^2)
+#        return (self.kin.bin(self.model()), None) if self.dc is None \
+#                        else map(lambda x : self.kin.bin(x), self.model())
+
+    def _deriv_binned_model(self, par):
+        """
+        Compute the binned model data and its derivatives.
+
+        Args:
+            par (`numpy.ndarray`_, optional):
+                The list of parameters to use. Length should be either
+                :attr:`np` or :attr:`nfree`. If the latter, the values of the
+                fixed parameters in :attr:`par` are used.
+
+        Returns:
+            :obj:`tuple`: Model velocity data, velocity dispersion data,
+            velocity derivative, and velocity dispersion derivative.  The
+            velocity dispersion components (2nd and 4th objects) are None if the
+            model has no dispersion parameterization.
+        """
+        self._set_par(par)
+        if self.dc is None:
+            vel, dvel = self.deriv_model()
+            sig, dsig = None, None
+        else:
+            vel, sig, dvel, dsig = self.deriv_model()
+        _, vel, sig, _, dvel, dsig \
+                = self.kin.deriv_bin_moments(self.sb, vel, sig, None, dvel, dsig)
+        return vel, sig, dvel, dsig
+
+#       NOTE: LEAVE THIS OLD CODE HERE, in case we want to test the difference
+#       between the new and old approach.
+#        if self.dc is None:
+#            vel, dvel = self.kin.deriv_bin(*self.deriv_model())
+#            return vel, None, dvel, None
+#        vel, sig, dvel, dsig = self.deriv_model()
+#        vel, dvel = self.kin.deriv_bin(vel, dvel)
+#        sig, dsig = self.kin.deriv_bin(sig, dsig)
+#        return vel, sig, dvel, dsig
 
     def _resid(self, par, sep=False):
         """
@@ -1002,9 +1398,7 @@ class AxisymmetricDisk:
             all data or as separate vectors for the velocity and velocity
             dispersion data (based on ``sep``).
         """
-        self._set_par(par)
-        vel, sig = (self.kin.bin(self.model()), None) if self.dc is None \
-                        else map(lambda x : self.kin.bin(x), self.model())
+        vel, sig = self._binned_model(par)
         vfom = self._v_resid(vel)
         sfom = numpy.array([]) if self.dc is None else self._s_resid(sig)
         return (vfom, sfom) if sep else np.append(vfom, sfom)
@@ -1024,20 +1418,15 @@ class AxisymmetricDisk:
                 residual derivatives, instead of appending them.
 
         Returns:
-            :obj:`tuple`, `numpy.ndarray`_: Dervatives in the difference between
-            the data and the model for all measurements, either returned as a
-            single array for all data or as separate arrays for the velocity and
-            velocity dispersion data (based on ``sep``).
+            :obj:`tuple`, `numpy.ndarray`_: Derivatives in the difference
+            between the data and the model for all measurements, either returned
+            as a single array for all data or as separate arrays for the
+            velocity and velocity dispersion data (based on ``sep``).
         """
-        self._set_par(par)
+        vel, sig, dvel, dsig = self._deriv_binned_model(par)
         if self.dc is None:
-            vel, dvel = self.kin.deriv_bin(*self.deriv_model())
             return (self._deriv_v_resid(dvel), numpy.array([])) \
                         if sep else self._deriv_v_resid(dvel)
-
-        vel, sig, dvel, dsig = self.deriv_model()
-        vel, dvel = self.kin.deriv_bin(vel, dvel)
-        sig, dsig = self.kin.deriv_bin(sig, dsig)
         resid = (self._deriv_v_resid(vel), self._deriv_s_resid(sig, dsig))
         return resid if sep else np.vstack(resid)
 
@@ -1061,9 +1450,7 @@ class AxisymmetricDisk:
             returned as a single vector for all data or as separate vectors for
             the velocity and velocity dispersion data (based on ``sep``).
         """
-        self._set_par(par)
-        vel, sig = (self.kin.bin(self.model()), None) if self.dc is None \
-                        else map(lambda x : self.kin.bin(x), self.model())
+        vel, sig = self._binned_model(par)
         if self.has_covar:
             vfom = self._v_chisqr_covar(vel)
             sfom = np.array([]) if self.dc is None else self._s_chisqr_covar(sig)
@@ -1093,24 +1480,15 @@ class AxisymmetricDisk:
             array for all data or as separate arrays for the velocity and
             velocity dispersion data (based on ``sep``).
         """
-        self._set_par(par)
+        vel, sig, dvel, dsig = self._deriv_binned_model(par)
         vf = self._deriv_v_chisqr_covar if self.has_covar else self._deriv_v_chisqr
         if self.dc is None:
-            vel, dvel = self.kin.deriv_bin(*self.deriv_model())
             return (vf(dvel), numpy.array([])) if sep else vf(dvel)
 
         sf = self._deriv_s_chisqr_covar if self.has_covar else self._deriv_s_chisqr
-        vel, sig, dvel, dsig = self.deriv_model()
-        vel, dvel = self.kin.deriv_bin(vel, dvel)
-        sig, dsig = self.kin.deriv_bin(sig, dsig)
-
-#        print(f'{np.all(np.isfinite(dvel)):>5} {np.amin(dvel):.1f} {np.amax(dvel):.1f}'
-#              f'{np.all(np.isfinite(dsig)):>5} {np.amin(dsig):.1f} {np.amax(dsig):.1f}')
-
         dchisqr = (vf(dvel), sf(sig, dsig))
         if not np.all(np.isfinite(dchisqr[0])) or not np.all(np.isfinite(dchisqr[1])):
             raise ValueError('Error in derivative computation.')
-
         return dchisqr if sep else np.vstack(dchisqr)
 
     def _fit_prep(self, kin, p0, fix, scatter, sb_wgt, assume_posdef_covar, ignore_covar, cnvfftw):
@@ -1386,7 +1764,7 @@ class AxisymmetricDisk:
             result = optimize.least_squares(fom, p, # method='lm', #xtol=None,
                                             x_scale='jac', method='trf', xtol=1e-12,
                                             bounds=(lb[self.free], ub[self.free]), 
-                                            verbose=verbose, **jac_kwargs)
+                                            verbose=max(verbose,0), **jac_kwargs)
             try:
                 pe = np.sqrt(np.diag(cov_err(result.jac)))
             except:
@@ -1421,8 +1799,9 @@ class AxisymmetricDisk:
             self.par_err = np.zeros(self.np, dtype=float)
             self.par_err[self.free] = pe
 
-        # Always show the report, regardless of verbosity
-        self.report(fit_message=result.message)
+        # Print the report
+        if verbose > -1:
+            self.report(fit_message=result.message)
 
     def report(self, fit_message=None):
         """
@@ -1726,7 +2105,7 @@ def axisym_fit_data(galmeta, kin, p0, disk, ofile, vmask, smask):
 
     # Build the output fits extension (base) headers
     #   - Primary header
-    prihdr = fileio.initialize_primary_header(galmeta)
+    prihdr = fileio.initialize_primary_header(galmeta=galmeta)
     #   - Add the model types to the primary header
     prihdr['MODELTYP'] = ('AxisymmetricDisk', 'nirvana class used to fit the data')
     prihdr['RCMODEL'] = (disk.rc.__class__.__name__, 'Rotation curve parameterization')
@@ -1796,7 +2175,7 @@ def axisym_fit_data(galmeta, kin, p0, disk, ofile, vmask, smask):
                                                         err=True, bm=disk.mbm),
                           name='SIGSQR_MASK'),
             fits.ImageHDU(data=sig_mod,
-                          header=fileio.finalize_header(maphdr, 'SIG_MOD',bunit='km/s'),
+                          header=fileio.finalize_header(maphdr, 'SIG_MOD', bunit='km/s'),
                           name='SIG_MOD'),
             fits.ImageHDU(data=sig_mod_intr,
                           header=fileio.finalize_header(maphdr, 'SIG_MODI', bunit='km/s'),

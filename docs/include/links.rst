@@ -36,6 +36,8 @@
 .. _numpy.dtype: https://numpy.org/doc/stable/reference/generated/numpy.dtype.html
 .. _numpy.float64: https://numpy.org/doc/stable/reference/arrays.scalars.html
 .. _numpy.cosh: https://numpy.org/doc/stable/reference/generated/numpy.cosh.html
+.. _numpy.random.Generator.multivariate_normal: https://numpy.org/doc/stable/reference/random/generated/numpy.random.Generator.multivariate_normal.html#numpy.random.Generator.multivariate_normal
+.. _numpy.random.Generator: https://numpy.org/doc/stable/reference/random/generator.html
 
 .. scipy
 

@@ -7,6 +7,7 @@ Submodules
 .. toctree::
    :maxdepth: 4
 
+   nirvana.data.bin2d
    nirvana.data.fitargs
    nirvana.data.kinematics
    nirvana.data.manga

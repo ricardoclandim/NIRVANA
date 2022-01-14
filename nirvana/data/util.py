@@ -164,8 +164,8 @@ def impose_positive_definite(mat, min_eigenvalue=1e-10, renormalize=True):
         - Impose a minimum eigenvalue (see ``min_eigenvalue``)
         - Reconstruct the input matrix using the eigenvectors and the
           adjusted eigenvalues
-        - Renormalize the reconstructed matrix such its diagonal is identical
-          to the input matrix, if requested.
+        - Renormalize the reconstructed matrix such that its diagonal is
+          identical to the input matrix, if requested.
 
     Args:
         mat (`scipy.sparse.csr_matrix`_):
@@ -204,7 +204,7 @@ def impose_positive_definite(mat, min_eigenvalue=1e-10, renormalize=True):
     return sparse.csr_matrix(_mat * np.outer(t,t) * np.sqrt(np.outer(d,d)))
 
 
-def is_positive_definite(mat, quiet=True):
+def is_positive_definite(mat, quiet=True, quick=True):
     r"""
     Check if a matrix is positive definite.
 
@@ -214,18 +214,35 @@ def is_positive_definite(mat, quiet=True):
     :func:`impose_positive_definite`.
 
     Args:
-        mat (`scipy.sparse.csr_matrix`_):
+        mat (`numpy.ndarray`_, `scipy.sparse.csr_matrix`_):
             The matrix to check.
         quiet (:obj:`bool`, optional):
             Suppress terminal output.
+        quick (:obj:`bool`, optional):
+            Use the quick method, which is to try to use Cholesky decomposition
+            and check if it throws a LinAlgError.  The slow way is to determine
+            the eigenvalues and check if they are all positive.  If True and
+            quiet is False, only the error reported by the Cholesky
+            decomposition is printed, instead of the full list of non-positive
+            eigenvalues.
 
     Returns:
         :obj:`bool`: Flag that matrix is positive definite.
     """
-    if not isinstance(mat, sparse.csr_matrix):
-        raise TypeError('Must provide a scipy.sparse.csr_matrix to is_positive_definite.')
+    _mat = mat.toarray() if isinstance(mat, sparse.csr.csr_matrix) else mat
+
+    if quick:
+        try:
+            cho = linalg.cholesky(_mat)
+        except linalg.LinAlgError as e:
+            if not quiet:
+                print(str(e))
+            return False
+        else:
+            return True
+
     # Get the eigenvalues/eigenvectors
-    w, v = map(lambda x : np.real(x), np.linalg.eig(mat.toarray()))
+    w, v = map(lambda x : np.real(x), np.linalg.eig(_mat))
     notpos = np.logical_not(w > 0)
     if not quiet:
         if np.any(notpos):
@@ -263,6 +280,47 @@ def cinv(mat, check_finite=False, upper=False):
     cho = linalg.solve_triangular(cho, np.identity(cho.shape[0]), check_finite=check_finite)
     # TODO: Make it a sparse matrix if upper?
     return cho if upper else np.dot(cho, cho.T)
+
+
+def boxcar_average(arr, boxcar):
+    """
+    Boxcar average an array.
+
+    Args:
+        arr (`numpy.ndarray`_):
+            Array to average.  Currently cannot be masked.
+        boxcar (:obj:`int`, :obj:`tuple`):
+            Integer number of pixels to average.  If a single integer,
+            all axes are averaged with the same size box.  If a
+            :obj:`tuple`, the integer is defined separately for each
+            array axis; length of tuple must match the number of array
+            dimensions.
+
+    Returns:
+        `numpy.ndarray`_: The averaged array.  If boxcar is a single
+        integer, the returned array shape is::
+            
+            tuple([s//boxcar for s in arr.shape])
+
+        A similar operation gives the shape when boxcar has elements
+        defined for each array dimension.  If the input array is not an
+        integer number of boxcar pixels along a given dimension, the
+        remainder of the array elements along that dimension are ignored
+        (i.e., pixels within the modulus of the array shape and boxcar
+        of the end of the array dimension are ignored).
+    """
+    # Check and configure the input
+    _boxcar = (boxcar,)*arr.ndim if isinstance(boxcar, int) else boxcar
+    if not isinstance(_boxcar, tuple):
+        raise TypeError('Input `boxcar` must be an integer or a tuple.')
+    if len(_boxcar) != arr.ndim:
+        raise ValueError('Must provide an integer or tuple with one number per array dimension.')
+
+    # Perform the boxcar average over each axis and return the result
+    _arr = arr.copy()
+    for axis, box in zip(range(arr.ndim), _boxcar):
+        _arr = numpy.add.reduceat(_arr, numpy.arange(0, _arr.shape[axis], box), axis=axis)/box
+    return _arr
 
 
 def boxcar_replicate(arr, boxcar):
@@ -1035,6 +1093,117 @@ def gaussian_fill(img, sigma=1., mask=None, threshold=0.1, maxiter=None, debug=F
 
     return _img.filled(0.0)
 
+
+def fill_matrix(a, gpm):
+    """
+    Fill a square matrix with zero-valued rows and columns.
+    
+    The good-pixel masks indicates where the rows/columns in the input matrix
+    should be placed in the output matrix.  I.e., the number of True values in
+    the good-pixel mask must match the size of the input matrix along one axis.
+
+    Args:
+        a (`numpy.ndarray`_, `scipy.sparse.csr_matrix`_):
+            Input array to expand.  Must be 2D and square.
+        gpm (`numpy.ndarray`_):
+            Boolean vector (must be 1D) that indicates which rows/columns in the
+            output matrix to set to the input matrix.  The ordering of the input
+            matrix is maintained.
+
+    Returns:
+        `scipy.sparse.csr_matrix`_: A matrix of size ``(gpm.size,gpm.size)``
+        with the values of ``a`` in the rows/columns where ``gpm`` is true.
+
+    Raises:
+        ValueError:
+            Raised if the input ``a`` is not 2D or square, or if the number of
+            True elements in ``gpm`` does not match the length of one axis in
+            ``a``.
+    """
+    if gpm.ndim != 1:
+        raise ValueError('Input good-pixel mask must be 1D.')
+    if a.ndim != 2:
+        raise ValueError('Input array must be 2D!')
+    if a.shape[0] != a.shape[1]:
+        raise ValueError('Input array must be square!')
+    ngp = np.sum(gpm)
+    if a.shape[0] != ngp:
+        raise ValueError('Input array shape does not match number of good pixels!')
+    _a = sparse.lil_matrix((gpm.size,gpm.size), dtype=float)
+    # NOTE: scipy issues a SparseEfficiencyWarning suggesting the next
+    # operation is more efficient using an lil_matrix instead of a csr_matrix;
+    # that's the reason for the declaration above and the conversion in the
+    # return type...
+    _a[np.ix_(gpm,gpm)] = a
+    return _a.tocsr()
+
+
+def gaussian_deviates(ivar=None, mask=None, covar=None, size=None, rng=None):
+    """
+    Draw Gaussian deviates from the provided characterization of the error
+    distributions.
+
+    One deviate is draw for each of the unmasked measurements.  Multiple sets of
+    deviates can be drawn using ``size``.
+
+    If both are provided, ``covar`` takes precedence over ``ivar``.  If neither
+    are provided, the function returns a tuple of two None values.
+
+    .. warning::
+
+        Draws from `numpy.random.Generator.multivariate_normal`_ will issue a
+        RuntimeWarning if the provided covariance matrix is not
+        positive-semidefinite.
+
+    Args:
+        ivar (`numpy.ndarray`_, optional):
+            1D array with inverse variances of the error distribution.
+        mask (`numpy.ndarray`_, optional):
+            Bad-pixel mask for the variance data.  If None, all data is
+            considered good.  If provided, no data is drawn for data flagged as
+            bad.  Shape must match ``ivar`` or one axis of ``covar``.
+        covar (`scipy.sparse.csr_matrix`_):
+            Covariance matrix.  If provided, takes precedence over inverse
+            variance vector.
+        size (:obj:`int`, optional):
+            Number of realizations to draw.  None is identical to ``size=1``.
+        rng (`numpy.random.Generator`_, optional):
+            Random number generator instance.  If None, a new one will be
+            instantiated.
+    
+    Returns:
+        :obj:`tuple`: A tuple of two `numpy.ndarray`_ objects with a good-pixel
+        mask selecting the data with a drawn deviate from the provided array(s)
+        and the set of Gaussian deviates.  The shape of the latter is
+        ``(ngood,)``, if ``size=1``, or ``(size,ngood)``, where ``ngood`` is the
+        number of good data values and ``size`` is the provided keyword
+        argument.  If both ``ivar`` and ``covar`` are None, the returned value
+        is ``(None, None)``.
+    """
+    if ivar is None and covar is None:
+        # Nothing to do
+        return None, None
+
+    if rng is None:
+        # Instantiate a new random number generator
+        rng = np.random.default_rng()
+
+    # Deal with the mask
+    n = covar.shape[0] if ivar is None else ivar.size
+    gpm = np.ones(n, dtype=bool) if mask is None else np.logical_not(mask)
+
+    if covar is None:
+        # Return independent draws
+        if size is not None and size > 1:
+            return gpm, rng.normal(size=(size, np.sum(gpm))) / np.sqrt(ivar[gpm])[None,:]
+        return gpm, rng.normal(size=np.sum(gpm)) / np.sqrt(ivar[gpm])
+
+    # Return draws from a multivariate Gaussian
+    return gpm, rng.multivariate_normal(np.zeros(np.sum(gpm), dtype=float),
+                                        covar[np.ix_(gpm, gpm)].toarray(),
+                                        size=size if size is not None and size > 1 else None)
+
+
 def fig2data(fig):
     """
     Convert a figure to an ARGB array.
@@ -1049,7 +1218,6 @@ def fig2data(fig):
         `numpy.ndarray`_: ARGB array representing figure
 
     """
-
     # draw the renderer
     fig.canvas.draw( )
  
@@ -1061,6 +1229,7 @@ def fig2data(fig):
     # canvas.tostring_argb give pixmap in ARGB mode. Roll the ALPHA channel to have it in RGBA mode
     buf = np.roll(buf, 3, axis=2)
     return buf
+
 
 def unpack(params, args, jump=None, bound=False, relative_pab=False):
     """
@@ -1090,12 +1259,12 @@ def unpack(params, args, jump=None, bound=False, relative_pab=False):
         :obj:`dict`: Dictionary with keys for inclination `inc`, first order
         position angle `pa`, second order position angle `pab`, systemic
         velocity `vsys`, x and y center coordinates `xc` and `yc`,
-        `np.ndarray`_ of first order tangential velocities `vt`,
-        `np.ndarray`_ objects of second order tangential and radial
-        velocities `v2t` and `v2r`, and `np.ndarray`_ of velocity
-        dispersions `sig`. Arrays have lengths that are the same as the
-        number of bins (determined automatically or from `jump`). All angles
-        are in degrees and all velocities must be in consistent units.
+        `numpy.ndarray`_ of first order tangential velocities `vt`,
+        `numpy.ndarray`_ objects of second order tangential and radial
+        velocities `v2t` and `v2r`, and `numpy.ndarray`_ of velocity dispersions
+        `sig`. Arrays have lengths that are the same as the number of bins
+        (determined automatically or from `jump`). All angles are in degrees and
+        all velocities must be in consistent units.
     """
     paramdict = {}
 

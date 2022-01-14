@@ -5,7 +5,7 @@ model.
 .. include common links, assuming primary doc root is up one directory
 .. include:: ../include/links.rst
 """
-
+import copy
 from IPython import embed
 
 import numpy as np
@@ -15,13 +15,13 @@ from astropy.stats import sigma_clip
 import matplotlib.pyplot as plt
 import warnings
 
-from .util import get_map_bin_transformations, impose_positive_definite
-
+from .bin2d import Bin2D
+from .util import gaussian_deviates
 from ..models.beam import construct_beam, ConvolveFFTW, smear
 from ..models.geometry import projected_polar
-from ..models import oned
 
-class Kinematics():
+# TODO: Make Kinematics a subclass of Bin2D?
+class Kinematics:
     r"""
     Base class to hold data fit by the kinematic model.
 
@@ -50,6 +50,11 @@ class Kinematics():
             None, all pixels are considered valid. If ``vel`` is
             provided as a masked array, this mask is combined with
             ``vel.mask``.
+        vel_covar (`numpy.ndarray`_, `scipy.sparse.csr_matrix`_, optional):
+            Covariance matrix for velocity measurements.  If the input map
+            arrays have a total of :math:`N_{\rm spax}` spaxels, the shape of
+            the covariance array must be :math:`(N_{\rm spax}, N_{\rm spax})`.
+            If None, all spaxels are independent.
         x (`numpy.ndarray`_, `numpy.ma.MaskedArray`_, optional):
             The on-sky Cartesian :math:`x` coordinates of each
             velocity measurement. Units are irrelevant, but they
@@ -77,6 +82,14 @@ class Kinematics():
             A boolean array with the bad-pixel mask (pixels to ignore
             have ``mask==True``) for the surface-brightness
             measurements. If None, all pixels are considered valid.
+        sb_covar (`numpy.ndarray`_, `scipy.sparse.csr_matrix`_, optional):
+            Covariance matrix for surface-brightness measurements.  If the input
+            map arrays have a total of :math:`N_{\rm spax}` spaxels, the shape
+            of the covariance array must be :math:`(N_{\rm spax}, N_{\rm
+            spax})`.  If None, all spaxels are independent.
+        sb_anr (`numpy.ndarray`_, optional):
+            For emission-line data, this is the amplitude-to-noise ratio.
+            Ignored if not provided.
         sig (`numpy.ndarray`_, `numpy.ma.MaskedArray`_, optional):
             The velocity dispersion of the kinematic tracer. Ignored
             if None.
@@ -88,7 +101,11 @@ class Kinematics():
             have ``mask==True``) for the velocity-dispersion
             measurements. If None, all measurements are considered
             valid.
-
+        sig_covar (`numpy.ndarray`_, `scipy.sparse.csr_matrix`_, optional):
+            Covariance matrix for velocity-dispersion measurements.  If the
+            input map arrays have a total of :math:`N_{\rm spax}` spaxels, the
+            shape of the covariance array must be :math:`(N_{\rm spax}, N_{\rm
+            spax})`.  If None, all spaxels are independent.
         sig_corr (`numpy.ndarray`_, optional):
             A quadrature correction for the velocity dispersion
             measurements. If None, velocity dispersions are assumed
@@ -97,10 +114,10 @@ class Kinematics():
             dispersion is:
 
             .. math::
+
                 \sigma^2 = \sigma_{\rm obs}^2 - \sigma_{\rm corr}^2
 
             where :math:`\sigma_{\rm obs}` is provided by ``sig``.
-
         psf_name (:obj:`str`, optional):
             Identifier for the psf used. For example, this can be the
             wavelength band where the PSF was measured. If provided, this
@@ -151,10 +168,20 @@ class Kinematics():
         fwhm (:obj:`float`, optional):
             The FWHM of the PSF of the galaxy in the same units as :attr:`x` and
             :attr:`y`.
+        image (`numpy.ndarray`_, optional):
+            Galaxy image, typically from a PNG, and only used for plotting.  For
+            format, see matplotlib.images.imread.
         phot_inc (:obj:`float`, optional):
             Photometric inclination in degrees.
+        phot_pa (:obj:`float`, optional):
+            Photometric position angle in degrees.
         maxr (:obj:`float`, optional):
             Maximum radius of useful data in effective radii.
+        positive_definite (:obj:`bool`, optional):
+            Use :func:`~nirvana.data.util.impose_positive_definite` to force
+            the provided covariance matrix to be positive definite.
+        quiet (:obj:`bool`, optional):
+            Suppress message output.
 
     Raises:
         ValueError:
@@ -164,6 +191,9 @@ class Kinematics():
             neither, or if ``binid`` is provided but ``grid_x`` or
             ``grid_y`` is None.
     """
+    # TODO: We should change sb_anr to be just a generic S/N ratio.  I.e.,
+    # Kinematics shouldn't care about the type of tracer.
+    # TODO: Remove arguments that are redundant with the GlobalPar class?
     def __init__(self, vel, vel_ivar=None, vel_mask=None, vel_covar=None, x=None, y=None, sb=None,
                  sb_ivar=None, sb_mask=None, sb_covar=None, sb_anr=None, sig=None, sig_ivar=None,
                  sig_mask=None, sig_covar=None, sig_corr=None, psf_name=None, psf=None,
@@ -225,53 +255,47 @@ class Kinematics():
         else:
             self.sig_corr = sig_corr
 
-        # The following are arrays used to convert between arrays
-        # holding the data for the unique bins to arrays with the full
+        # The following arrays and Bin2D object are used to convert between
+        # arrays holding the data for the unique bins to arrays with the full
         # data map.
         self.grid_x = grid_x
         self.grid_y = grid_y
         self.grid_wcs = grid_wcs
-        self.binid, self.nspax, self.bin_indx, self.grid_indx, self.bin_inverse, \
-            self.bin_transform \
-                = get_map_bin_transformations(spatial_shape=self.spatial_shape, binid=binid)
+        self.binner = Bin2D(binid=binid)
 
         # Unravel and select the valid values for all arrays
         for attr in ['x', 'y', 'sb', 'sb_ivar', 'sb_mask', 'vel', 'vel_ivar', 'vel_mask', 'sig', 
                      'sig_ivar', 'sig_mask', 'sig_corr', 'sb_anr']:
             if getattr(self, attr) is not None:
-                setattr(self, attr, getattr(self, attr).ravel()[self.bin_indx])
+                setattr(self, attr, self.binner.unique(getattr(self, attr)))
 
         # Set the surface-brightness grid.  This needs to be after the
         # unraveling of the attributes done in the lines above so that I can use
         # self.remap in the case that grid_sb is not provided directly.
         self.grid_sb = self.remap('sb').filled(0.0) if grid_sb is None else grid_sb
 
-        # Calculate the square of the astrophysical velocity
-        # dispersion. This is just the square of the velocity
-        # dispersion if no correction is provided. The error
-        # calculation assumes there is no error on the correction.
-        # TODO: Change this to sig2 or sigsqr
-        # TODO: Need to keep track of mask...
-        self.sig_phys2 = self.sig**2 if self.sig_corr is None else self.sig**2 - self.sig_corr**2
-        self.sig_phys2_ivar = None if self.sig_ivar is None \
-                                    else self.sig_ivar/(2*self.sig + (self.sig == 0.0))**2
-
         # Ingest the covariance matrices, if they're provided
         self.vel_covar = self._ingest_covar(vel_covar, positive_definite=positive_definite)
         self.sb_covar = self._ingest_covar(sb_covar, positive_definite=False) #positive_definite)
         self.sig_covar = self._ingest_covar(sig_covar, positive_definite=positive_definite)
 
-        # Construct the covariance in the square of the astrophysical velocity
-        # dispersion.
-        if self.sig_covar is None:
-            self.sig_phys2_covar = None
-        else:
-            jac = sparse.diags(2*self.sig, format='csr')
-            self.sig_phys2_covar = jac.dot(self.sig_covar.dot(jac.T))
-
         # TODO: Should issue a some warning/error if the user has provided both
         # ivar and covar and they are not consistent
+        self.update_sigma()
 
+    # TODO: Adding these properties was a way of avoiding crashes in other parts
+    # of the code, but we should figure out which of these we actually need?
+    @property
+    def nspax(self):
+        return self.binner.nbin
+
+    @property
+    def binid(self):
+        return self.binner.ubinid
+
+    @property
+    def nbin(self):
+        return self.binner.nbin.size
 
     def _set_beam(self, psf, aperture):
         """
@@ -371,7 +395,7 @@ class Kinematics():
 
         return _data, _ivar, _mask
 
-    def _ingest_covar(self, covar, positive_definite=True, quiet=False):
+    def _ingest_covar(self, covar, mask=None, positive_definite=True, quiet=False):
         """
         Ingest an input covariance matrix for use when fitting the data.
 
@@ -406,12 +430,12 @@ class Kinematics():
                     else sparse.csr_matrix(covar)
 
         # It should be the case that, on input, the covariance matrix should
-        # demonstrate that the map values that are part of the same bin by being
-        # perfectly correlated. The matrix operation below constructs the
-        # covariance in the *binned* data, but you should also be able to
-        # obtain this just by selecting the appropriate rows/columns of the
-        # covariance matrix. You should be able to recover the input covariance
-        # matrix (or at least the populated regions of it) like so:
+        # demonstrate that map values in the same bin are perfectly correlated.
+        # The matrix operation below constructs the covariance in the *binned*
+        # data, but you should also be able to obtain this just by selecting the
+        # appropriate rows/columns of the covariance matrix. You should be able
+        # to recover the input covariance matrix (or at least the populated
+        # regions of it) like so:
 
         #   # Covariance matrix of the binned data
         #   vc = self.bin_transform.dot(vel_covar.dot(self.bin_transform.T))
@@ -423,7 +447,7 @@ class Kinematics():
         #   assert np.allclose(ivc.toarray(),
         #                      vel_covar[np.ix_(gpm.ravel(), gpm.ravel())].toarray())
 
-        _covar = self.bin_transform.dot(_covar.dot(self.bin_transform.T))
+        _covar = self.binner.bin_covar(_covar)
 
         # Deal with possible numerical error
         # - Force it to be positive
@@ -432,6 +456,116 @@ class Kinematics():
         _covar = (_covar + _covar.T)/2
         # - Force it to be positive definite if requested
         return impose_positive_definite(_covar) if positive_definite else _covar
+
+    def copy(self):
+        """
+        Perform a *deep* copy of the instance.
+
+        .. warning::
+            
+            I'm generally wary of ``deepcopy``, but using it is so much faster
+            than trying to instantiate a new object using the internal data, and
+            it avoids numerical error for the covariance matrix, which can lead
+            to them not being positive definite.
+
+        """
+        return copy.deepcopy(self)
+
+    def update_sigma(self, sig=None, sig_ivar=None, sig_covar=None, sqr=False):
+        """
+        Update both the measured and corrected velocity dispersions and errors.
+
+        .. warning::
+
+            This method primarily exists for creating/handling mock
+            observations.  It should should never be called with real data once
+            the object is instantiated.
+
+        Args:
+            sig (`numpy.ndarray`_, optional):
+                New velocity dispersion values.  If None, the velocity
+                dispersions remain unchanged.  Shape must match the current
+                number of bins (:attr:`nbin`).
+            sig_ivar (`numpy.ndarray`_, optional):
+                New velocity dispersion inverse variance.  If None, the inverse
+                variance remain unchanged.  Shape must match the current number
+                of bins (:attr:`nbin`).
+            sig_covar (`scipy.sparse.csr_matrix`_, optional):
+                New velocity dispersion covariance.  If None, the covariance
+                remains unchanged.  Shape must match the current number of bins
+                (:attr:`nbin`) along each axis.
+            sqr (:obj:`bool`, optional):
+                The provided values are for sigma-square, not sigma
+        """
+        if sig is not None:
+            if sig.size != self.nbin:
+                raise ValueError('Provided velocity dispersion has incorrect shape!')
+            if sqr:
+                self.sig_phys2 = sig.ravel().copy()
+            else:
+                self.sig = sig.ravel().copy()
+        if sig_ivar is not None:
+            if sig_ivar.size != self.nbin:
+                raise ValueError('Provided dispersion inv. variance has incorrect shape!')
+            if sqr:
+                self.sig_phys2_ivar = sig_ivar.ravel().copy()
+            else:
+                self.sig_ivar = sig_ivar.ravel().copy()
+        if sig_covar is not None:
+            if sig_covar.shape != (self.nbin,self.nbin):
+                raise ValueError('Provided dispersion covariance has incorrect shape!')
+            if not isinstance(sig_covar, sparse.csr_matrix):
+                raise TypeError('Covariance matrix must have type scipy.sparse.csr_matrix')
+            if sqr:
+                self.sig_phys2_covar = sig_covar.copy()
+            else:
+                self.sig_covar = sig_covar.copy()
+
+        if sqr:
+            # The provided data is actually of sig_phys2, not observed sigma.
+            if self.sig_phys2 is None:
+                self.sig = None
+                self.sig_ivar = None
+                self.sig_covar = None
+                return
+
+            # Calculate the observed sigma
+            self.sig_mask |= self.sig_phys2 < 0.
+            self.sig = np.ma.sqrt(self.sig_phys2 if self.sig_corr is None \
+                                    else self.sig_phys2 + self.sig_corr**2).filled(0.0)
+            # Its inverse variance
+            self.sig_ivar = 4 * self.sig**2 * self.sig_phys2_ivar
+            # And its covariance, if available
+            if self.sig_phys2_covar is None:
+                self.sig_covar = None
+            else:
+                jac = sparse.diags(1/(2*self.sig + (self.sig == 0.0))**2, format='csr')
+                self.sig_covar = jac.dot(self.sig_phys2_covar.dot(jac.T))
+            return
+
+        if self.sig is None:
+            self.sig_phys2 = None
+            self.sig_phys2_ivar = None
+            self.sig_phys2_covar = None
+            return
+
+        # Calculate the square of the astrophysical velocity dispersion. This is
+        # just the square of the velocity dispersion if no correction is
+        # provided. The error calculation assumes there is no error on the
+        # correction.
+        # TODO: Change this to sig2 or sigsqr
+        # TODO: Need to keep track of mask...
+        self.sig_phys2 = self.sig**2 if self.sig_corr is None else self.sig**2 - self.sig_corr**2
+        self.sig_phys2_ivar = None if self.sig_ivar is None \
+                                    else self.sig_ivar/(2*self.sig + (self.sig == 0.0))**2
+
+        # Construct the covariance in the square of the astrophysical velocity
+        # dispersion.
+        if self.sig_covar is None:
+            self.sig_phys2_covar = None
+        else:
+            jac = sparse.diags(2*self.sig, format='csr')
+            self.sig_phys2_covar = jac.dot(self.sig_covar.dot(jac.T))
 
     def remap(self, data, mask=None, masked=True, fill_value=0):
         """
@@ -497,131 +631,146 @@ class Kinematics():
             d = data
             m = mask
 
-        # Check the shapes (overkill if the user selected an attribute...)    
-        if d.shape != self.vel.shape:
-            raise ValueError('To remap, data must have the same shape as the internal data '
-                             'attributes: {0}'.format(self.vel.shape))
-        if m is not None and m.shape != self.vel.shape:
-            raise ValueError('To remap, mask must have the same shape as the internal data '
-                             'attributes: {0}'.format(self.vel.shape))
+        return self.binner.remap(d, mask=m, masked=masked, fill_value=fill_value)
 
-        # Construct the output map
-#        _data = np.ma.masked_all(self.spatial_shape, dtype=d.dtype)
-        # NOTE: np.ma.masked_all sets the initial data array to
-        # 2.17506892e-314, which just leads to trouble. I've replaced this with
-        # the line below to make sure that the initial value is just 0.
-        _data = np.ma.MaskedArray(np.zeros(self.spatial_shape, dtype=d.dtype), mask=True)
-        _data[np.unravel_index(self.grid_indx, self.spatial_shape)] = d[self.bin_inverse]
-        if m is not None:
-            np.ma.getmaskarray(_data)[np.unravel_index(self.grid_indx, self.spatial_shape)] \
-                    = m[self.bin_inverse]
-        # Return a masked array if requested; otherwise, fill the masked values
-        # with the equivalent of 0. WARNING: this will be False for a boolean
-        # array...
-        return _data if masked else _data.filled(d.dtype.type(fill_value))
+    def remap_covar(self, covar):
+        """
+        Remap a covariance matrix from the binned data to the individual
+        spaxels.
 
-    # TODO: Include an optional weight map.  E.g., to mimic the luminosity
-    # weighting of the kinematics in data.
+        Spaxels in the same bin are perfectly correlated.
+
+        This is a simple wrapper for :func:`~nirvana.util.bin2d.Bin2D.remap_covar` using
+        the :class:`~nirvana.util.bin2d.Bin2D` instance :attr:`binner`.
+
+        Args:
+            covar (`numpy.ndarray`_, `scipy.sparse.csr_matrix`_, :obj:`str`):
+                Covariance matrix to remap.  If a string is provided, it should
+                directly map to one of the class attributes (e.g.,
+                ``'vel_covar'``).
+
+        Returns:
+            `scipy.sparse.csr_matrix`_: A sparse matrix for the remapped
+            covariance.
+        """
+        _covar = getattr(self, covar) if isinstance(covar, str) else covar
+        return None if _covar is None else self.binner.remap_covar(_covar)
+
     def bin(self, data):
         """
         Provided a set of mapped data, rebin it to match the internal vectors.
 
-        This method is most often used to bin maps of model data to match the
-        binning of the kinematic data.  The operation takes the average of
-        ``data`` within a bin defined by the kinematic data.  For unbinned data,
-        this operation simply selects and reorders the data from the input map
-        to match the internal vectors with the kinematic data.
-        
-        Args:
-            data (`numpy.ndarray`_):
-                Data to rebin. Shape must match :attr:`spatial_shape`.
-
-        Returns:
-            `numpy.ndarray`_: A vector with the data rebinned to match the
-            number of unique measurements available.
-
-        Raises:
-            ValueError:
-                Raised if the shape of the input array is incorrect.
+        This is a simple wrapper for :func:`~nirvana.util.bin2d.Bin2D.bin` using
+        the :class:`~nirvana.util.bin2d.Bin2D` instance :attr:`binner`.
         """
-        if data.shape != self.spatial_shape:
-            raise ValueError('Data to rebin has incorrect shape; expected {0}, found {1}.'.format(
-                              self.spatial_shape, data.shape))
-        return self.bin_transform.dot(data.ravel())
+        return self.binner.bin(data)
 
-    # TODO: Include an optional weight map.  E.g., to mimic the luminosity
-    # weighting of the kinematics in data.
     def deriv_bin(self, data, deriv):
         """
-        Provided a set of mapped data, rebin it to match the internal vectors.
+        Provided a set of mapped data, rebin it to match the internal vectors
+        and propagate the derivatives in the data.
 
-        This method is most often used to bin maps of model data to match the
-        binning of the kinematic data.  The operation takes the average of
-        ``data`` within a bin defined by the kinematic data.  For unbinned data,
-        this operation simply selects and reorders the data from the input map
-        to match the internal vectors with the kinematic data.
+        This is a simple wrapper for :func:`~nirvana.util.bin2d.Bin2D.deriv_bin`
+        using the :class:`~nirvana.util.bin2d.Bin2D` instance :attr:`binner`.
+        """
+        return self.binner.deriv_bin(data, deriv)
 
-        This method is identical to :func:`bin`, except that it allows for
-        propagation of derivatives of the provided model with respect to its
-        parameters.  The propagation of derivatives for any single parameter is
-        identical to calling :func:`bin` on that derivative map.
-        
+    # TODO: Include error calculations?
+    def bin_moments(self, norm, center, stddev):
+        r"""
+        Bin a set of Gaussian moments.
+
+        Assuming the provided data are the normalization, mean, and standard
+        deviation of a set of Gaussian profiles, this method performs a nominal
+        calculation of the moments of the summed Gaussian profile.
+
+        This is a simple wrapper for
+        :func:`~nirvana.util.bin2d.Bin2D.bin_moments` using the
+        :class:`~nirvana.util.bin2d.Bin2D` instance :attr:`binner`.
+
+        .. note::
+
+            Any of the input arguments can be None, but at least one of them
+            cannot be!
+
         Args:
-            data (`numpy.ndarray`_):
-                Data to rebin. Shape must match :attr:`spatial_shape`.
-            deriv (`numpy.ndarray`_):
-                If the input data is a kinematic model, this provides the
-                derivatives of model w.r.t. its parameters.  The first two axes
-                of the array must have a shape that matches
+            norm (`numpy.ndarray`_):
+                Gaussian normalization.  Shape must match :attr:`spatial_shape`.
+            center (`numpy.ndarray`_):
+                Gaussian center.  Shape must match :attr:`spatial_shape`.
+            stddev (`numpy.ndarray`_, optional):
+                Gaussian standard deviation.  Shape must match
                 :attr:`spatial_shape`.
 
         Returns:
-            :obj:`tuple`: Two `numpy.ndarray`_ arrays.  The first provides the
-            vector with the data rebinned to match the number of unique
-            measurements available, and the second is a 2D array with the binned
-            derivatives for each model parameter.
-
-        Raises:
-            ValueError:
-                Raised if the spatial shapes of the input arrays are incorrect.
+            :obj:`tuple`: A tuple of three `numpy.ndarray`_ objects with the
+            binned normalization, mean, and standard deviation of the summed
+            profile.  If ``norm`` is None on input, the returned 0th moment is 1
+            everywhere.  If ``center`` is None on input, the returned 1st moment
+            is 0 everywhere.  If ``stddev`` is None on input, the returned 2nd
+            moment is 1 everywhere.
         """
-        if data.shape != self.spatial_shape:
-            raise ValueError('Data to rebin has incorrect shape; expected {0}, found {1}.'.format(
-                              self.spatial_shape, data.shape))
-        if deriv.shape[:2] != self.spatial_shape:
-            raise ValueError('Derivative shape is incorrect; expected {0}, found {1}.'.format(
-                              self.spatial_shape, deriv.shape[:2]))
-        return self.bin_transform.dot(data.ravel()), \
-                    np.stack(tuple([self.bin_transform.dot(deriv[...,i].ravel())
-                                    for i in range(deriv.shape[-1])]), axis=-1)
+        return self.binner.bin_moments(norm, center, stddev)
+
+    def deriv_bin_moments(self, norm, center, stddev, dnorm, dcenter, dstddev):
+        r"""
+        Bin a set of Gaussian moments and propagate the calculation for the
+        derivatives.
+
+        This method is identical to :func:`bin_moments`, except it includes the
+        propagation of the derivatives.
+
+        .. note::
+
+            Any of the first three input arguments can be None, but at least one of them
+            cannot be!
+
+        This is a simple wrapper for
+        :func:`~nirvana.util.bin2d.Bin2D.deriv_bin_moments` using the
+        :class:`~nirvana.util.bin2d.Bin2D` instance :attr:`binner`.
+
+        Args:
+            norm (`numpy.ndarray`_):
+                Gaussian normalization.  Shape must match :attr:`spatial_shape`.
+                Can be None.
+            center (`numpy.ndarray`_):
+                Gaussian center.  Shape must match :attr:`spatial_shape`.  Can
+                be None.
+            stddev (`numpy.ndarray`_, optional):
+                Gaussian standard deviation.  Shape must match
+                :attr:`spatial_shape`.  Can be None.
+            dnorm (`numpy.ndarray`_):
+                Derivative of the Gaussian normalization with respect to model
+                parameters.  Shape of the first two axes must match
+                :attr:`spatial_shape`.  Can be None.
+            dcenter (`numpy.ndarray`_):
+                Derivative of the Gaussian center with respect to model
+                parameters.  Shape of the first two axes must match
+                :attr:`spatial_shape`.  Can be None.
+            dstddev (`numpy.ndarray`_, optional):
+                Derivative of the Gaussian standard deviation with respect to
+                model parameters.  Shape of the first two axes must match
+                :attr:`spatial_shape`.  Can be None.
+
+        Returns:
+            :obj:`tuple`: A tuple of three `numpy.ndarray`_ objects with the
+            binned normalization, mean, and standard deviation of the summed
+            profile.  If ``norm`` is None on input, the returned 0th moment is 1
+            everywhere.  If ``center`` is None on input, the returned 1st moment
+            is 0 everywhere.  If ``stddev`` is None on input, the returned 2nd
+            moment is 1 everywhere.
+        """
+        return self.binner.deriv_bin_moments(norm, center, stddev, dnorm, dcenter, dstddev)
 
     def unique(self, data):
         """
-        Provided a set of binned and remapped data (i.e., each element in a
-        bin has the same value in the map), select the unique values from the
-        map.
+        Provided a 2D array of binned data, select and return the unique values
+        from the map.
 
-        This is the same operation performed on the input 2D maps of data to
-        extract the unique data vectors; e.g.,::
-
-            assert np.array_equal(self.vel, self.unique(self.remap('vel', masked=False)))
-
-        Args:
-            data (`numpy.ndarray`_):
-                The 2D data array from which to extract the unique data.
-                Shape must be :attr:`spatial_shape`.
-
-        Returns:
-            `numpy.ndarray`_: The 1D vector with the unique data.
-
-        Raises:
-            ValueError:
-                Raised if the spatial shape is wrong.
+        This is a simple wrapper for :func:`~nirvana.util.bin2d.Bin2D.unique`
+        using the :class:`~nirvana.util.bin2d.Bin2D` instance :attr:`binner`.
         """
-        if data.shape != self.spatial_shape:
-            raise ValueError(f'Input has incorrect shape; found {data.shape}, '
-                             f'expected {self.spatial_shape}.')
-        return data.flat[self.bin_indx]
+        return self.binner.unique(data)
 
     def max_radius(self):
         """
@@ -749,3 +898,88 @@ class Kinematics():
                      snr < min_sig_snr)
         self.reject(vel_rej=vel_rej, sig_rej=sig_rej)
         return vel_rej, sig_rej
+
+    def deviate(self, size=None, rng=None, sigma='draw'):
+        r"""
+        Draw Gaussian deviates from the velocity and velocity dispersion error
+        distributions.
+
+        This is basically a wrapper for
+        :func:`~nirvana.data.util.gaussian_deviates`.  One deviate is drawn for
+        each of the valid velocity and velocity dispersion measurements.
+        Multiple sets of deviates can be drawn using ``size``.
+
+        This function is primarily for use with mock observations.  For example,
+        if you have a :class:`Kinematics` object (``kin``) with an observed set
+        of data, you can generate a mock dataset based on the
+        :class:`~nirvana.models.axisym.AxisymmetricDisk`::
+
+            import numpy
+            from nirvana.models.oned import HyperbolicTangent, Exponential
+            from nirvana.models.axisym import AxisymmetricDisk
+            disk = AxisymmetricDisk(rc=HyperbolicTangent(), dc=Exponential())
+            p0 = numpy.array([-0.2, -0.08, 166.3, 53.0, 25.6, 217.0, 2.82, 189.7, 16.2])
+            noisefree_mock = disk.mock_observation(p0, kin=kin)
+
+        And then generate deviates using this method and add them to a new
+        kinematics object::
+
+            # Generate 10 sets of deviates
+            vgpm, dv, sgpm, ds \
+                    = noisefree_mock.deviate(size=10, sigma='ignore' if disk.dc is None else 'draw')
+            # Use them in a simulation of fitting the mock data
+            _vel = noisefree_mock.vel.copy()
+            _sig = noisefree_mock.sig.copy()
+            noisy_mock = noisefree_mock.copy()
+            for i in range(10):
+                noisy_mock.vel[vgpm] = _vel[vgpm] + dv[i]
+                if disk.dc is not None:
+                    _sig[sgpm] += ds[i]
+                    noisy_mock.update_sigma(sig=_sig)
+                    _sig[sgpm] -= ds[i]
+                disk.lsq_fit(noisy_mock)
+        
+        Args:
+            size (:obj:`int`, optional):
+                The number of draws to make.  Each draw generates a deviate for
+                each of the valid measurements.  None is identical to
+                ``size=1``.
+            rng (`numpy.random.Generator`, optional):
+                Generator object to use.  If None, a new Generator is
+                instantiated.
+            sigma (:obj:`str`, optional):
+                Treatment for the velocity dispersion.  Options are:
+
+                    - 'draw': Draw Gaussian deviates from ``sig_ivar`` or
+                      ``sig_covar``, if they exist.
+                    - 'drawsqr': Draw Gaussian deviates from ``sig_phys2_ivar``
+                      or ``sig_phys2_covar``, if they exist.
+                    - 'ignore': Do not draw any deviates for the dispersion,
+                      even if the error distributions exist.
+                
+        Returns:
+            :obj:`tuple`: Good-value masks and deviates for the velocity and
+            velocity dispersion, respectively.  If neither :attr:`vel_ivar` nor
+            `vel_covar` are available, the first two objects returned are None;
+            similarly for the second two objects if dispersion errors are not
+            available or ignored.  The shape of the good pixel masks is always
+            the same as the internal velocity and dispersion arrays.  The shape
+            of the returned deviate arrays is ``(size,n_good)``, where ``size``
+            is the provided keyword argument and ``n_good`` is the number of
+            valid kinematic measurements.
+        """
+        if sigma == 'ignore':
+            s_ret = (None, None)
+        elif sigma == 'draw':
+            s_ret = gaussian_deviates(ivar=self.sig_ivar, mask=self.sig_mask, covar=self.sig_covar,
+                                      size=size, rng=rng)
+        elif sigma == 'drawsqr':
+            s_ret = gaussian_deviates(ivar=self.sig_phys2_ivar, mask=self.sig_mask,
+                                      covar=self.sig_phys2_covar, size=size, rng=rng)
+        else:
+            raise ValueError('Value for sigma must be ignore, draw, or drawsqr.')
+        return gaussian_deviates(ivar=self.vel_ivar, mask=self.vel_mask, covar=self.vel_covar,
+                                 size=size, rng=rng) + s_ret
+
+
+

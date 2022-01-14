@@ -671,7 +671,7 @@ def imagefits(f, galmeta, gal=None, outfile=None, padding=20, remotedir=None, ou
               'I','I','S','f4','20f4','f4','f4','20?','20?','I','I','8f4','8f4']
 
     #add parameters to the header
-    hdr = initialize_primary_header(galmeta)
+    hdr = initialize_primary_header(galmeta=galmeta)
     maphdr = add_wcs(hdr, args.kin)
     psfhdr = hdr.copy()
     psfhdr['PSFNAME'] = (args.kin.psf_name, 'Original PSF name')
