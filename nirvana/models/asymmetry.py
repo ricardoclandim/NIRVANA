@@ -1,7 +1,7 @@
 """
 Functions for parameterizing asymmetry.
 
-..inclde:: ../include/links.rst
+.. include:: ../include/links.rst
 """
 
 import numpy as np
@@ -28,7 +28,7 @@ def asymmetry(args, pa, vsys, xc=0, yc=0, maxd=.5):
     major and minor axes.
 
     Args:
-        args (:class:`_nirvana.data.fitargs.FitArgs`):
+        args (:class:`~nirvana.data.fitargs.FitArgs`):
             Object containing all of the data and fit parameters for the galaxy
         pa (:obj:`float`):
             Position angle of galaxy (in degrees)

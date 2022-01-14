@@ -10,17 +10,6 @@ Subpackages
    nirvana.data
    nirvana.models
 
-Submodules
-----------
-
-.. toctree::
-   :maxdepth: 4
-
-   nirvana.fitting
-   nirvana.galaxy
-   nirvana.output
-   nirvana.plotting
-
 Module contents
 ---------------
 

@@ -1259,12 +1259,12 @@ def unpack(params, args, jump=None, bound=False, relative_pab=False):
         :obj:`dict`: Dictionary with keys for inclination `inc`, first order
         position angle `pa`, second order position angle `pab`, systemic
         velocity `vsys`, x and y center coordinates `xc` and `yc`,
-        `np.ndarray`_ of first order tangential velocities `vt`,
-        `np.ndarray`_ objects of second order tangential and radial
-        velocities `v2t` and `v2r`, and `np.ndarray`_ of velocity
-        dispersions `sig`. Arrays have lengths that are the same as the
-        number of bins (determined automatically or from `jump`). All angles
-        are in degrees and all velocities must be in consistent units.
+        `numpy.ndarray`_ of first order tangential velocities `vt`,
+        `numpy.ndarray`_ objects of second order tangential and radial
+        velocities `v2t` and `v2r`, and `numpy.ndarray`_ of velocity dispersions
+        `sig`. Arrays have lengths that are the same as the number of bins
+        (determined automatically or from `jump`). All angles are in degrees and
+        all velocities must be in consistent units.
     """
     paramdict = {}
 
