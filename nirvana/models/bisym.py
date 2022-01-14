@@ -1,5 +1,5 @@
 """
-Module with classes and functions used to fit an axisymmetric disk to a set of kinematics.
+Module with classes and functions used to fit an bisymmetric disk to a set of kinematics.
 
 .. include common links, assuming primary doc root is up one directory
 .. include:: ../include/links.rst
@@ -736,11 +736,6 @@ class BisymmetricDisk:
         print('-'*50)
 
 
-
-"""
-
-.. include:: ../include/links.rst
-"""
 
 import multiprocessing as mp
 

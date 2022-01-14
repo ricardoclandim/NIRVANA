@@ -13,7 +13,7 @@ from nirvana.tests.util import remote_data_file, requires_remote
 #from nirvana.models.oned import HyperbolicTangent, Exponential
 from nirvana.models.bisym import BisymmetricDisk
 
-
+"""
 def test_disk():
     disk = BisymmetricDisk()
     disk.par[:2] = 0.           # Ensure that the center is at 0,0
@@ -42,8 +42,8 @@ def test_disk():
 
     embed()
     exit()
+"""
 
 
-if __name__ == '__main__':
-    test_disk()
+#test_disk()
 
