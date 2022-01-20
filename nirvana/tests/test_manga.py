@@ -107,7 +107,7 @@ def test_covar_fake():
 
 @requires_remote
 def test_inv_covar():
-    maps_file = remote_data_file('manga-8138-12704-MAPS-{0}.fits.gz'.format(dap_test_daptype))
+    maps_file = remote_data_file('manga-8078-12703-MAPS-{0}.fits.gz'.format(dap_test_daptype))
     kin = manga.MaNGAGasKinematics(maps_file, covar=True)
 
     # Force the covariance matrix to be positive definite

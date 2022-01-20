@@ -12,17 +12,18 @@ from nirvana.data import scatter
 from nirvana.tests.util import remote_data_file, requires_remote
 #from nirvana.models.oned import HyperbolicTangent, Exponential
 from nirvana.models.bisym import BisymmetricDisk
+from nirvana.models.beam import gauss2d_kernel, ConvolveFFTW
 
-"""
+
 def test_disk():
     disk = BisymmetricDisk()
     disk.par[:2] = 0.           # Ensure that the center is at 0,0
 
     disk.par[2] = 45.       # Position angle
     disk.par[3] = 60.       # Inclination
-    disk.par[4] = 75.       # Position angle of the bisymmetric feature
+    disk.par[4] = 0.        # Systemic velocity
+    disk.par[5] = 75.       # Position angle of the bisymmetric feature
                             # relative to the major axis position angle
-    disk.par[5] = 0.        # Systemic velocity
 
     disk.par[6] = 150.      # *Projected* asymptotic rotation speed
     disk.par[7] = 5.        # Rotation scale
@@ -38,12 +39,12 @@ def test_disk():
     y = (numpy.arange(n) - n//2).astype(float)
     x, y = numpy.meshgrid(x, y)
 
-    v = disk.model(x=x, y=y)
+    vel = disk.model(x=x, y=y)
+    beam = gauss2d_kernel(n, 3.)
+    _vel = disk.model(x=x, y=y, beam=beam)
 
-    embed()
-    exit()
-"""
+    assert numpy.isclose(vel[n//2,n//2], _vel[n//2,n//2]), 'Smearing moved the center.'
 
 
-#test_disk()
+test_disk()
 

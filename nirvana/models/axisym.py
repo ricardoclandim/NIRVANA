@@ -695,7 +695,7 @@ class AxisymmetricDisk:
 
     def _init_par(self, p0, fix):
         """
-        Initialize the relevant parameter vectors that track the full set of
+        Initialize the relevant parameter vectors that tracks the full set of
         model parameters and which of those are freely fit by the model.
 
         Args:
