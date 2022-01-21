@@ -186,6 +186,11 @@ def main(args):
                                vel_mask=vel_mask, vel_plot=dv_plot, sig_mask=sig_mask,
                                sig_plot=ds_plot) 
 
+    # Plot the fit asymmetry
+    asym_plot = os.path.join(args.odir, f'{oroot}-asym.png')
+    kin.asymmetry_plot(galmeta=galmeta, xc=disk.par[0], yc=disk.par[1], pa=disk.par[2],
+                       vsys=disk.par[4], fwhm=galmeta.psf_fwhm[1], ofile=asym_plot)
+
     # Create the final fit plot
     fit_plot = os.path.join(args.odir, f'{oroot}-fit.png')
     axisym.axisym_fit_plot(galmeta, kin, disk, fix=fix, ofile=fit_plot)

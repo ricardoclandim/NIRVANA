@@ -1,6 +1,7 @@
 """
 Module for testing the geometry module.
 """
+import os
 
 from IPython import embed
 
@@ -185,8 +186,8 @@ def test_bisymmetric_asymmetry_maps():
 #    pyplot.plot(_th, _vt_t - _v2t_t - _v2r_t, linestyle='-', color='k')
 #    pyplot.show()
 
-    v_x, v_y, v_xy = asymmetry.onsky_asymmetry_maps(x-disk.par[0], y-disk.par[1], v, disk.par[2],
-                                                    odd=True, maxd=0.4)
+    v_x, v_y, v_xy = asymmetry.onsky_asymmetry_maps(x-disk.par[0], y-disk.par[1], v,
+                                                    pa=disk.par[2], odd=True, maxd=0.4)
 
     # 180 deg symmetry should be 0 for unmasked pixels.
     assert numpy.isclose(numpy.ma.std(v_xy), 0.), 'Bad 180 deg symmetry value'
@@ -259,5 +260,37 @@ def test_asymmetry_data_with_err():
     assert not numpy.array_equal(v_x_err, _v_x_err), \
             'Calculations with and without covariance should not be identical'
 
+@requires_remote
+def test_asymmetry_plot():
+
+    # Read the data to fit
+    data_root = remote_data_file()
+    ofile = remote_data_file('test.png')
+    if os.path.isfile(ofile):
+        os.remove(ofile)
+    
+    plate = 8078
+    ifu = 12703
+    xc = 0.
+    yc = 0.
+    pa = 5.7
+    vsys = 3.4
+#    plate = 8138
+#    ifu = 12704
+#    xc = 0.
+#    yc = 0.
+#    pa = 165.9
+#    vsys = 27.1
+
+    maps_file, cube_file, image_file \
+            = manga.manga_files_from_plateifu(plate, ifu, cube_path=data_root,
+                                              image_path=data_root, maps_path=data_root)
+
+    galmeta = manga.MaNGAGlobalPar(plate, ifu, drpall_path=data_root)
+    kin = manga.MaNGAGasKinematics(maps_file, cube_file=cube_file, image_file=image_file)
+    kin.asymmetry_plot(galmeta=galmeta, xc=xc, yc=yc, pa=pa, vsys=vsys, fwhm=galmeta.psf_fwhm[1],
+                       ofile=ofile)
+
+    os.remove(ofile)
 
 
