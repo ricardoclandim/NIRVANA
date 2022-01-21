@@ -1990,8 +1990,10 @@ def _fit_meta_dtype(par_names):
             # Same as VCHI2, but for the velocity dispersion instead of the
             # velocity.
             ('SCHI2', np.float),
-            # Same as VASYM but for the velocity dispersion squared, instead of
-            # the velocity.
+            # Same as VASYM but for the velocity dispersion, instead of the
+            # velocity.  Note that sigma is calculated as sigma/sqrt(abs(sigma))
+            # as a way of calculating the sqrt while maintaining the sign.
+            # TODO: Revisit the sigma asymmetry calculations!
             ('SASYM', np.float, (3,3)),
             # The total chi-square of the fit, includeing the intrinsic scatter
             # modification of the error.
@@ -2050,7 +2052,7 @@ def axisym_fit_data(galmeta, kin, p0, disk, ofile, vmask, smask):
     vel_ivar = kin.remap('vel_ivar', masked=False, fill_value=0.)
     vel_mask = kin.remap(vmask, masked=False, fill_value=didnotuse)
     vel_x, vel_y, vel_xy = asymmetry.onsky_asymmetry_maps(kin.grid_x-disk.par[0],
-                                                          kin.grid_y-disk.par[1], vel,
+                                                          kin.grid_y-disk.par[1], vel-disk.par[4],
                                                           pa=disk.par[2], mask=vel_mask>0,
                                                           odd=True, maxd=0.4)
     vel_asym = np.array([vel_x.filled(0.0), vel_y.filled(0.0), vel_xy.filled(0.0)])
@@ -2062,21 +2064,22 @@ def axisym_fit_data(galmeta, kin, p0, disk, ofile, vmask, smask):
         sigsqr = None
         sigsqr_ivar = None
         sigsqr_mask = None
-        sigsqr_asym = None
-        sigsqr_asym_mask = None
+        sig_asym = None
+        sig_asym_mask = None
     else:
         sigsqr = kin.remap('sig_phys2', masked=False, fill_value=0.)
         sigsqr_ivar = kin.remap('sig_phys2_ivar', masked=False,fill_value=0.)
         sigsqr_mask = None if smask is None \
                         else kin.remap(smask, masked=False, fill_value=didnotuse)
-        sigsqr_x, sigsqr_y, sigsqr_xy \
+        sig = sigsqr/np.sqrt(np.absolute(sigsqr))
+        sig_x, sig_y, sig_xy \
                 = asymmetry.onsky_asymmetry_maps(kin.grid_x-disk.par[0], kin.grid_y-disk.par[1],
-                                                 sigsqr, pa=disk.par[2], mask=sigsqr_mask>0,
+                                                 sig, pa=disk.par[2], mask=sigsqr_mask>0,
                                                  maxd=0.4)
-        sigsqr_asym = np.array([sigsqr_x.filled(0.0), sigsqr_y.filled(0.0), sigsqr_xy.filled(0.0)])
-        sigsqr_asym_mask = np.array([np.ma.getmaskarray(sigsqr_x).copy(),
-                                     np.ma.getmaskarray(sigsqr_y).copy(),
-                                     np.ma.getmaskarray(sigsqr_xy).copy()])
+        sig_asym = np.array([sig_x.filled(0.0), sig_y.filled(0.0), sig_xy.filled(0.0)])
+        sig_asym_mask = np.array([np.ma.getmaskarray(sig_x).copy(),
+                                  np.ma.getmaskarray(sig_y).copy(),
+                                  np.ma.getmaskarray(sig_xy).copy()])
 
     # Instantiate the single-row table with the metadata:
     disk_par_names = disk.par_names(short=True)
@@ -2174,7 +2177,7 @@ def axisym_fit_data(galmeta, kin, p0, disk, ofile, vmask, smask):
 
         metadata['SASYM'] = np.array([np.percentile(np.absolute(a[np.logical_not(m)]),
                                                     [50., 80., 90.])
-                                for a, m in zip(sigsqr_asym, sigsqr_asym_mask)])
+                                for a, m in zip(sig_asym, sig_asym_mask)])
         
     # Total fit chi-square. SCHI2 and SNFIT are 0 if sigma not fit because of
     # the instantiation value of init_record_array
@@ -2280,14 +2283,14 @@ def axisym_fit_data(galmeta, kin, p0, disk, ofile, vmask, smask):
             fits.ImageHDU(data=sig_mod_intr,
                           header=fileio.finalize_header(maphdr, 'SIG_MODI', bunit='km/s'),
                           name='SIG_MODI'),
-            fits.ImageHDU(data=sigsqr_asym,
-                          header=fileio.finalize_header(maphdr, 'SIGSQR_ASYM', bunit='(km/s)^2',
+            fits.ImageHDU(data=sig_asym,
+                          header=fileio.finalize_header(maphdr, 'SIG_ASYM', bunit='(km/s)^2',
                                                         qual=True),
-                          name='SIGSQR_ASYM'),
-            fits.ImageHDU(data=vel_asym_mask.astype(np.uint8),
-                          header=fileio.finalize_header(maphdr, 'SIGSQR_ASYM', hduclas2='QUALITY',
+                          name='SIG_ASYM'),
+            fits.ImageHDU(data=sig_asym_mask.astype(np.uint8),
+                          header=fileio.finalize_header(maphdr, 'SIG_ASYM', hduclas2='QUALITY',
                                                         bit_type=np.uint8),
-                          name='SIGSQR_ASYM_MASK')]
+                          name='SIG_ASYM_MASK')]
 
     if kin.beam is not None:
         hdus += [fits.ImageHDU(data=kin.beam,

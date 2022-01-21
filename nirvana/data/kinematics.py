@@ -986,7 +986,8 @@ class Kinematics:
     # TODO:
     #   - Allow the plot to be constructed from the fits file written by
     #     axisym_fit_data
-    def asymmetry_plot(self, galmeta=None, xc=0., yc=0., pa=0., vsys=0., fwhm=None, ofile=None):
+    def asymmetry_plot(self, galmeta=None, xc=0., yc=0., pa=0., vsys=0., fwhm=None, vel_mask=None,
+                       sig_mask=None, ofile=None):
         """
         Construct a plot showing reflective asymmetries in the velocity and
         velocity dispersion.
@@ -1002,17 +1003,38 @@ class Kinematics:
                 Position angle of the major axis, from N through E in degrees.
             vsys (:obj:`float`, optional):
                 Systemic velocity.
+            fwhm (:obj:`float`, optional):
+                FWHM of the PSF in arcsec.  If provided, this is used to add the
+                nominal beam size to the map plots.
+            vel_mask (`numpy.ndarray`_, optional):
+                A boolean bad-value mask (True is bad) for the velocity
+                measurements to use *instead* of the internal :attr:`vel_mask`.
+                If None, the internal :attr:`vel_mask` is used.  If provided,
+                the shape must be the same as :attr:`vel`.
+            sig_mask (`numpy.ndarray`_, optional):
+                A boolean bad-value mask (True is bad) for the velocity
+                dispersion measurements to use *instead* of the internal
+                :attr:`sig_mask`.  If None, the internal :attr:`sig_mask` is
+                used.  If provided, the shape must be the same as :attr:`sig`.
+                Ignored if :attr:`sig` is None.
             ofile (:obj:`str`, optional):
                 Output filename for the plot.  If None, the plot is shown to the
                 screen.
         """
-        logformatter = plot.get_logformatter()
+        # Check the input
+        if vel_mask is not None and vel_mask.shape != self.vel.shape:
+            raise ValueError(f'Provided vel_mask has incorrect shape; found {vel_mask.shape}, '
+                             f'expected {self.vel.shape}.')
+        if self.sig is not None and sig_mask is not None and sig_mask.shape != self.sig.shape:
+            raise ValueError(f'Provided sig_mask has incorrect shape; found {sig_mask.shape}, '
+                             f'expected {self.sig.shape}.')
 
         # Change the style
+        logformatter = plot.get_logformatter()
         rc('font', size=8)
 
         # Get the velocity maps
-        vel = self.remap('vel')
+        vel = self.remap('vel', mask=self.vel_mask if vel_mask is None else vel_mask)
         vel_x, vel_y, vel_xy = asymmetry.onsky_asymmetry_maps(self.grid_x-xc, self.grid_y-yc,
                                                               vel.data-vsys, pa=pa, mask=vel.mask,
                                                               odd=True, maxd=0.4)
@@ -1021,7 +1043,7 @@ class Kinematics:
         if self.sig is None:
             sig, sig_x, sig_y, sig_xy = [None]*4
         else:
-            sigsqr = self.remap('sig_phys2')
+            sigsqr = self.remap('sig_phys2', mask=self.sig_mask if sig_mask is None else sig_mask)
             sig = sigsqr/np.sqrt(np.absolute(sigsqr))
             sig_x, sig_y, sig_xy = asymmetry.onsky_asymmetry_maps(self.grid_x-xc, self.grid_y-yc,
                                                                   sig.data, pa=pa, mask=sig.mask,
