@@ -206,8 +206,7 @@ def symmetric_reflection_map(x, y, rotation=None, reflect='all'):
         rotation (:obj:`float`, optional):
             In the frame of the provided coordinate system, this is the
             counter-clockwise rotation of the new Cartesian :math:`x` axis to
-            use for the refelections.  For on-sky images, this is the same as
-            the position angle.
+            use for the reflections.
         reflect (:obj:`str`, :obj:`list`, optional):
             The type of reflections to apply.  See descriptions above.  Multiple
             reflections can be applied using a list of strings, however
@@ -357,7 +356,7 @@ def onsky_asymmetry_maps(x, y, data, pa=0., ivar=None, mask=None, covar=None, ma
     ones = np.ones(x.size, dtype=float)
     sign = np.full(x.size, -1. if odd else 1., dtype=float)
 
-    # Create the 3 symmetry maps and there errors (if possible)
+    # Create the 3 symmetry maps and their errors (if possible)
     map_diff = []
     if ivar is None and covar is None:
         _covar = None

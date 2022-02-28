@@ -1003,6 +1003,16 @@ class BisymmetricDisk:
         self.free = _free.copy()
         self.nfree = np.sum(self.free)
 
+    def in_disk_bar_angle(self, par=None):
+        # Reset the parameter values
+        if par is not None:
+            self._set_par(par)
+        inc = np.radians(self.par[3])
+        pab = np.radians(self.par[5])
+        #   - Calculate the in-plane angle relative to the bisymmetric flow axis
+        _pab = (pab + np.pi/2) % np.pi - np.pi/2        # Impose a range of [-pi/2, pi/2]
+        return np.degrees(np.arctan(np.tan(_pab)/np.cos(inc)))
+
     def model(self, par=None, x=None, y=None, sb=None, beam=None, is_fft=False, cnvfftw=None,
               ignore_beam=False):
         """

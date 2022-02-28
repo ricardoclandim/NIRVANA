@@ -139,6 +139,21 @@ def deriv_rotate(x, y, rot, dxdp=None, dydp=None, drotdp=None, clockwise=False):
     return xr, yr, dxrdp, dyrdp
 
 
+def disk_ellipse(r, pa, inc, xc=0., yc=0., num=100):
+    r"""
+    Construct an ellipse of constant disk radius, projected into the sky plane.
+
+    Args:
+
+
+    """
+    theta = np.linspace(-np.pi, np.pi, num=num)
+    xd = r*np.cos(theta)
+    yd = r*np.sin(theta)*np.cos(inc)
+    xd, yd = rotate(xd, yd, np.pi/2-pa)
+    return xd + xc, yd + yc
+
+
 def projected_polar(x, y, pa, inc):
     r"""
     Calculate the in-plane polar coordinates of an inclined plane.
