@@ -484,7 +484,8 @@ def test_mock_err():
     vremap = kin.remap(bv, mask=kin.vel_mask)
     sremap = kin.remap(bs, mask=kin.sig_mask)
 
-    mock_kin = disk.mock_observation(p0, kin=kin, add_err=True)
+    rng = numpy.random.default_rng(seed=909)
+    mock_kin = disk.mock_observation(p0, kin=kin, add_err=True, rng=rng)
     mock_vremap = mock_kin.remap('vel')
     mock_sremap = mock_kin.remap(numpy.sqrt(mock_kin.sig_phys2), mask=kin.sig_mask)
 
@@ -547,7 +548,7 @@ def test_fisher():
         # diagonal)
         indx = numpy.triu_indices(rho.shape[0], k=1)
 
-        # Get the indices of the parameters with the 5 strongest correlation coefficients
+        # Get the indices of the parameters with the 4 strongest correlation coefficients
         srt = numpy.argsort(numpy.absolute(rho[indx]))[::-1][:4]
 
         # Check the result.  The strongest correlations should be between:
