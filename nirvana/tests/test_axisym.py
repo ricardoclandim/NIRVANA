@@ -484,7 +484,8 @@ def test_mock_err():
     vremap = kin.remap(bv, mask=kin.vel_mask)
     sremap = kin.remap(bs, mask=kin.sig_mask)
 
-    mock_kin = disk.mock_observation(p0, kin=kin, add_err=True)
+    rng = numpy.random.default_rng(seed=909)
+    mock_kin = disk.mock_observation(p0, kin=kin, add_err=True, rng=rng)
     mock_vremap = mock_kin.remap('vel')
     mock_sremap = mock_kin.remap(numpy.sqrt(mock_kin.sig_phys2), mask=kin.sig_mask)
 
