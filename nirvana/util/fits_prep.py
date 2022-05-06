@@ -165,7 +165,7 @@ def profs(samp, args, plot=None, stds=False, jump=None, **kwargs):
 
 def fileprep(f, plate=None, ifu=None, smearing=None, stellar=False, maxr=None,
         cen=True, fixcent=True, clip=True, remotedir=None,
-        gal=None, galmeta=None):
+        gal=None, galmeta=None, rootdir=None):
     """
     Function to turn any nirvana output file into useful objects.
 
@@ -242,10 +242,16 @@ def fileprep(f, plate=None, ifu=None, smearing=None, stellar=False, maxr=None,
 
         #get galaxy object
         if gal is None:
-            if resdict['type'] == 'Stars':
-                kin = MaNGAStellarKinematics.from_plateifu(resdict['plate'],resdict['ifu'], ignore_psf=not smearing, remotedir=remotedir)
+            if rootdir is not None:
+                analysispath = f'{rootdir}/analysis/'
+                reduxpath = f'{rootdir}/redux/'
             else:
-                kin = MaNGAGasKinematics.from_plateifu(resdict['plate'],resdict['ifu'], ignore_psf=not smearing, remotedir=remotedir)
+                analysispath, reduxpath = (None, None)
+
+            if resdict['type'] == 'Stars':
+                kin = MaNGAStellarKinematics.from_plateifu(resdict['plate'],resdict['ifu'], ignore_psf=not smearing, remotedir=remotedir, analysis_path=analysispath, redux_path=reduxpath)
+            else:
+                kin = MaNGAGasKinematics.from_plateifu(resdict['plate'],resdict['ifu'], ignore_psf=not smearing, remotedir=remotedir, analysis_path=analysispath, redux_path=reduxpath)
             scatter = ('vel_scatter' in resdict.keys()) and (resdict['vel_scatter'] != 0)
         else:
             kin = gal
@@ -329,6 +335,14 @@ def fileprep(f, plate=None, ifu=None, smearing=None, stellar=False, maxr=None,
         resdict['type'] = 'Stars' if stellar else 'Gas'
     else:
         args.edges = resdict['bin_edges'][~resdict['velmask']]
+        with fits.open(f) as fitsfile:
+            args.kin.vel = args.kin.bin(fitsfile['vel'].data)
+            args.kin.vel_ivar = args.kin.bin(fitsfile['vel_ivar'].data)
+            args.kin.sig_phys2 = args.kin.bin(fitsfile['sigsqr'].data)
+            args.kin.sig = args.kin.bin(fitsfile['sig_ivar'].data)
+            args.kin.sb = args.kin.bin(fitsfile['sb'].data)
+            args.kin.sb_ivar = args.kin.bin(fitsfile['sb_ivar'].data)
+            args.kin.vel_mask = np.array(args.kin.bin(fitsfile['vel_mask'].data), dtype=bool)
 
     args.getguess(galmeta=galmeta)
     args.getasym()
@@ -492,12 +506,12 @@ def dictformatting(d, drp=None, dap=None, padding=20, fill=-9999, drpalldir='.',
 
     #failure for empty dict
     except Exception as e:
-        print(e)
+        print(traceback.format_exc())
         data = None
 
     return data
 
-def makealltable(fname='', dir='.', vftype='', outfile=None):
+def makealltable(fname='', datadir='.', vftype='', outfile=None, mangadir=None):
     '''
     Combine the fit parameter tables for all of the FITS files in a given
     directory of a given velocity field type into one table.
@@ -526,13 +540,16 @@ def makealltable(fname='', dir='.', vftype='', outfile=None):
     '''
 
     #load dapall and drpall
-    drp = fits.open('/data/manga/spectro/redux/MPL-11/drpall-v3_1_1.fits')[1].data
-    dap = fits.open('/data/manga/spectro/analysis/MPL-11/dapall-v3_1_1-3.1.0.fits')[1].data
+    if mangadir is None:
+        raise ValueError('Must specify path for MaNGA data')
+    else:
+        drp = fits.open(mangadir + '/spectro/redux/DR17/drpall-v3_1_1.fits')[1].data
+        dap = fits.open(mangadir + '/spectro/analysis/DR17/dapall-v3_1_1-3.1.0.fits')[1].data
 
     #look for fits files
-    fs = glob(f'{dir}/{fname}*{vftype}.fits')
+    fs = glob(f'{datadir}/{fname}*{vftype}.fits')
     if len(fs) == 0:
-        raise FileNotFoundError(f'No matching FITS files found in directory "{dir}"')
+        raise FileNotFoundError(f'No matching FITS files found in directory "{datadir}"')
     else:
         print(len(fs), 'files found...')
 
@@ -540,9 +557,8 @@ def makealltable(fname='', dir='.', vftype='', outfile=None):
     tables = []
     for f in tqdm(fs):
         try: 
-            fi = fits.open(f)
-            tables += [fi[1].data]
-            fi.close()
+            with fits.open(f, memmap=False) as fi:
+                tables += [fi[1].data]
         except Exception as e: print(f, 'failed:', e)
 
     #make names and dtypes for columns
@@ -661,6 +677,8 @@ def imagefits(f, galmeta, gal=None, outfile=None, padding=20, remotedir=None, ou
 
     #pad rotation curves
     data = dictformatting(resdict, padding=padding, drpalldir=drpalldir, dapalldir=dapalldir)
+    if data is None:
+        raise ValueError('dictformatting failed, data not defined.')
     data += [*np.delete(args.bounds.T, slice(7,-1), axis=1)]
 
     #define column names and data types in order of resdict

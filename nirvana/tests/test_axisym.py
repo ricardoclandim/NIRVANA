@@ -414,7 +414,7 @@ def test_lsq_with_covar():
     sig, rej, gpm = scat.iter_fit(fititer=5) #, verbose=2)
     # Check
     assert sig > 8., 'Different intrinsic scatter'
-    assert numpy.sum(rej) == 19, 'Different number of pixels were rejected'
+    assert numpy.sum(rej) == 21, 'Different number of pixels were rejected'
 
     # Refit with new mask, include scatter and covariance
     kin.vel_mask = numpy.logical_not(gpm)
@@ -484,7 +484,8 @@ def test_mock_err():
     vremap = kin.remap(bv, mask=kin.vel_mask)
     sremap = kin.remap(bs, mask=kin.sig_mask)
 
-    mock_kin = disk.mock_observation(p0, kin=kin, add_err=True)
+    rng = numpy.random.default_rng(seed=909)
+    mock_kin = disk.mock_observation(p0, kin=kin, add_err=True, rng=rng)
     mock_vremap = mock_kin.remap('vel')
     mock_sremap = mock_kin.remap(numpy.sqrt(mock_kin.sig_phys2), mask=kin.sig_mask)
 
@@ -547,8 +548,8 @@ def test_fisher():
         # diagonal)
         indx = numpy.triu_indices(rho.shape[0], k=1)
 
-        # Get the indices of the parameters with the 5 strongest correlation coefficients
-        srt = numpy.argsort(numpy.absolute(rho[indx]))[::-1][:5]
+        # Get the indices of the parameters with the 4 strongest correlation coefficients
+        srt = numpy.argsort(numpy.absolute(rho[indx]))[::-1][:4]
 
         # Check the result.  The strongest correlations should be between:
         #   (7,8) - The two sigma parameters
@@ -557,7 +558,7 @@ def test_fisher():
         #   (5,6) - The two rotation curve parameters
         #   (0,1) - The center coordinates
         for correlated_pair in zip(indx[0][srt], indx[1][srt]):
-            assert correlated_pair in [(7,8), (1,4), (3,5), (5,6), (0,1)], \
+            assert correlated_pair in [(7,8), (1,4), (3,5), (5,6)], \
                 'Unexpected pair with strong correlation'
 
 
