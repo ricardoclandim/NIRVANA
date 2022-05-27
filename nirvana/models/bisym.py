@@ -26,8 +26,8 @@ except:
 
 import dynesty
 
-from .beam import smear, ConvolveFFTW
-from .geometry import projected_polar
+from .geometry import projected_polar, deriv_projected_polar
+from .beam import ConvolveFFTW, smear, deriv_smear
 from ..data.manga import MaNGAGasKinematics, MaNGAStellarKinematics
 from ..data.util import trim_shape, unpack, cinv
 from ..data.fitargs import FitArgs
@@ -600,7 +600,7 @@ class BisymmetricDisk:
 
         # Number of "base" parameters
         self.nbp = 6
-        # Total number parameters
+        # Total number of parameters
         self.np = self.nbp + self.vt.np + self.v2t.np + self.v2r.np
         if self.dc is not None:
             self.np += self.dc.np
@@ -1109,25 +1109,131 @@ class BisymmetricDisk:
                 - self.v2r.sample(r, par=self.par[self._v2r_slice()]) * np.sin(theta) \
                     * np.sin(2*theta_b)
 
-        # High-order terms only
-#        _vel = self.v2t.sample(r, par=self.par[self._v2t_slice()]) * cost * np.cos(2*theta_b) \
-#                + self.v2r.sample(r, par=self.par[self._v2r_slice()]) * np.sin(theta) \
-#                    * np.sin(2*theta_b)
-
         if self.dc is None:
-            # Only fitting the velocity field
+            # Only modeling the velocity field
             return vel if self.beam_fft is None or ignore_beam \
                         else smear(vel, self.beam_fft, beam_fft=True, sb=self.sb,
                                    cnvfftw=cnvfftw)[1]
 
-        # Fitting both the velocity and velocity-dispersion field
+        # Modeling both the velocity and velocity-dispersion field
         sig = self.dc.sample(r, par=self.par[self._dc_slice()])
         return (vel, sig) if self.beam_fft is None or ignore_beam \
                         else smear(vel, self.beam_fft, beam_fft=True, sb=self.sb, sig=sig,
                                    cnvfftw=cnvfftw)[1:]
 
-#    def deriv_model(self, par=None, x=None, y=None, sb=None, beam=None, is_fft=False, cnvfftw=None,
-#                    ignore_beam=False):
+    def deriv_model(self, par=None, x=None, y=None, sb=None, beam=None, is_fft=False, cnvfftw=None,
+                    ignore_beam=False):
+        """
+        """
+        # Initialize the coordinates (this does nothing if both x and y are None)
+        self._init_coo(x, y)
+        # Initialize the surface brightness (this does nothing if sb is None)
+        self._init_sb(sb)
+        # Initialize the convolution kernel (this does nothing if beam is None)
+        self._init_beam(beam, is_fft, cnvfftw)
+        if self.beam_fft is not None and not ignore_beam:
+            # Initialize the surface brightness, only if it would be used
+            self._init_sb(sb)
+        # Check that the model can be calculated
+        if self.x is None or self.y is None:
+            raise ValueError('No coordinate grid defined.')
+        # Reset the parameter values
+        if par is not None:
+            self._set_par(par)
+
+        # Initialize the derivative arrays needed for the coordinate calculation
+        dx = np.zeros(self.x.shape+(self.np,), dtype=float)
+        dy = np.zeros(self.x.shape+(self.np,), dtype=float)
+        dpa = np.zeros(self.np, dtype=float)
+        dinc = np.zeros(self.np, dtype=float)
+
+        dx[...,0] = -1.
+        dy[...,1] = -1.
+        dpa[2] = np.radians(1.)
+        dinc[3] = np.radians(1.)
+
+        pa, inc = np.radians(self.par[2:4])
+        r, theta, dr, dtheta = deriv_projected_polar(self.x - self.par[0], self.y - self.par[1],
+                                                     pa, inc, dxdp=dx, dydp=dy, dpadp=dpa,
+                                                     dincdp=dinc)
+
+        # Calculate the in-plane angle relative to the bisymmetric flow axis and its derivative
+        dpab = np.zeros(self.np, dtype=float)
+        dpab[5] = np.radians(1.)
+        pab = np.radians(self.par[5])
+        # - Intermediate calculation
+        _pab = (pab + np.pi/2) % np.pi - np.pi/2        # Impose a range of [-pi/2, pi/2]
+        c = np.tan(_pab)/np.cos(inc)
+        dc = dpab / np.cos(inc) / np.cos(_pab)**2 \
+                + np.tan(_pab) * np.sin(inc) / np.cos(inc)**2 * dinc
+        # - Finish the calculation
+        theta_b = theta - np.arctan(c)
+        dtheta_b = dtheta - (dc / (1 + c**2))[None,...]
+
+        # Calculate the rotation speed and its parameter derivatives
+        dvt = np.zeros(self.x.shape+(self.np,), dtype=float)
+        slc = self._vt_slice()
+        vt, dvt[...,slc] = self.vt.deriv_sample(r, par=self.par[slc])
+        dvt += self.vt.ddx(r, par=self.par[slc])[...,None]*dr
+
+        # Calculate the 2nd-order tangential speed and its parameter derivatives
+        dv2t = np.zeros(self.x.shape+(self.np,), dtype=float)
+        slc = self._v2t_slice()
+        v2t, dv2t[...,slc] = self.v2t.deriv_sample(r, par=self.par[slc])
+        dv2t += self.v2t.ddx(r, par=self.par[slc])[...,None]*dr
+
+        # Calculate the 2nd-order radial speed and its parameter derivatives
+        dv2r = np.zeros(self.x.shape+(self.np,), dtype=float)
+        slc = self._v2r_slice()
+        v2r, dv2r[...,slc] = self.v2r.deriv_sample(r, par=self.par[slc])
+        dv2r += self.v2r.ddx(r, par=self.par[slc])[...,None]*dr
+
+        # Construct the line-of-sight velocities and parameter derivatives.
+        # NOTE: All velocity component amplitudes are projected; i.e., the
+        # sin(inclination) terms are absorbed into the velocity amplitudes.
+        cost = np.cos(theta)
+        sint = np.sin(theta)
+        cos2tb = np.cos(2*theta_b)
+        sin2tb = np.sin(2*theta_b)
+
+        v = self.par[4] \
+                + vt * cost \
+                - v2t * cos2tb * cost \
+                - v2r * sin2tb * sint
+
+        dv = dvt * cost[...,None] - (vt*sint)[...,None]*dtheta \
+                - dv2t * (cos2tb*cost)[...,None] + 2 * (v2t*sin2tb*cost)[...,None] * dtheta_b \
+                    + (v2t*cos2tb*sint)[...,None] * dtheta \
+                - dv2r * (sin2tb*sint)[...,None] - 2 * (v2r*cos2tb*sint)[...,None] * dtheta_b \
+                    - (v2r*sin2tb*cost)[...,None] * dtheta
+        dv[...,4] = 1.
+
+        if self.dc is None:
+            # Only modeling the velocity field
+            if self.beam_fft is None or ignore_beam:
+                # Not smearing
+                return v, dv
+            # Smear and propagate through the derivatives
+            _, v, _, _, dv, _ = deriv_smear(v, dv, self.beam_fft, beam_fft=True, sb=self.sb,
+                                            cnvfftw=self.cnvfftw)
+            return v, dv
+
+        # Modeling both the velocity and velocity-dispersion field. Calculate
+        # the dispersion profile and its parameter derivatives
+        slc = self._dc_slice()
+        dsig = np.zeros(self.x.shape+(self.np,), dtype=float)
+        sig, dsig[...,slc] = self.dc.deriv_sample(r, par=self.par[slc])
+        dsig += self.dc.ddx(r, par=self.par[slc])[...,None]*dr
+        if self.beam_fft is None or ignore_beam:
+            # Not smearing
+            return v, sig, dv, dsig
+
+        # Smear and propagate through the derivatives
+        _, v, sig, _, dv, dsig = deriv_smear(v, dv, self.beam_fft, beam_fft=True, sb=self.sb,
+                                             sig=sig, dsig=dsig, cnvfftw=self.cnvfftw)
+        return v, sig, dv, dsig
+
+
 
 #    def mock_observation(self, par, kin=None, x=None, y=None, sb=None, binid=None,
 #                         vel_ivar=None, vel_covar=None, vel_mask=None, sig_ivar=None,
@@ -1135,9 +1241,15 @@ class BisymmetricDisk:
 #                         cnvfftw=None, ignore_beam=False, add_err=False, positive_definite=False,
 #                         rng=None):
 
-#    def fisher_matrix(self, par, kin, fix=None, sb_wgt=False, scatter=None,
-#                      assume_posdef_covar=False, ignore_covar=True, cnvfftw=None,
-#                      inverse=False):
+    def fisher_matrix(self, par, kin, fix=None, sb_wgt=False, scatter=None,
+                      assume_posdef_covar=False, ignore_covar=True, cnvfftw=None,
+                      inverse=False):
+        """
+        """
+        self._fit_prep(kin, par, fix, scatter, sb_wgt, assume_posdef_covar, ignore_covar,
+                       cnvfftw)
+        jac = self._get_jac()(self.par[self.free])
+        return cov_err(jac) if inverse else np.dot(jac.T,jac)
 
     # This slew of "private" functions consolidate the velocity residual and
     # chi-square calculations
@@ -1169,6 +1281,55 @@ class BisymmetricDisk:
     def _deriv_s_chisqr_covar(self, sig, dsig):
         return np.dot(self._deriv_s_resid(sig, dsig).T, self._s_ucov).T
 
+    def _binned_model(self, par):
+        """
+        Compute the binned model data.
+
+        Args:
+            par (`numpy.ndarray`_, optional):
+                The list of parameters to use. Length should be either
+                :attr:`np` or :attr:`nfree`. If the latter, the values of the
+                fixed parameters in :attr:`par` are used.
+
+        Returns:
+
+            :obj:`tuple`: Model velocity and velocity dispersion data.  The
+            latter is None if the model has no dispersion parameterization.
+        """
+        self._set_par(par)
+        if self.dc is None:
+            vel = self.model()
+            sig = None
+        else:
+            vel, sig = self.model()
+        return self.kin.bin_moments(self.sb, vel, sig)[1:]
+
+    def _deriv_binned_model(self, par):
+        """
+        Compute the binned model data and its derivatives.
+
+        Args:
+            par (`numpy.ndarray`_, optional):
+                The list of parameters to use. Length should be either
+                :attr:`np` or :attr:`nfree`. If the latter, the values of the
+                fixed parameters in :attr:`par` are used.
+
+        Returns:
+            :obj:`tuple`: Model velocity data, velocity dispersion data,
+            velocity derivative, and velocity dispersion derivative.  The
+            velocity dispersion components (2nd and 4th objects) are None if the
+            model has no dispersion parameterization.
+        """
+        self._set_par(par)
+        if self.dc is None:
+            vel, dvel = self.deriv_model()
+            sig, dsig = None, None
+        else:
+            vel, sig, dvel, dsig = self.deriv_model()
+        _, vel, sig, _, dvel, dsig \
+                = self.kin.deriv_bin_moments(self.sb, vel, sig, None, dvel, dsig)
+        return vel, sig, dvel, dsig
+
     def _resid(self, par, sep=False):
         """
         Calculate the residuals between the data and the current model.
@@ -1186,12 +1347,37 @@ class BisymmetricDisk:
             `numpy.ndarray`_: Difference between the data and the model for
             all measurements.
         """
-        self._set_par(par)
-        vel, sig = (self.kin.bin(self.model()), None) if self.dc is None \
-                        else map(lambda x : self.kin.bin(x), self.model())
+        vel, sig = self._binned_model(par)
         vfom = self._v_resid(vel)
         sfom = numpy.array([]) if self.dc is None else self._s_resid(sig)
         return (vfom, sfom) if sep else np.append(vfom, sfom)
+
+    def _deriv_resid(self, par, sep=False):
+        """
+        Calculate the derivative of the fit residuals w.r.t. all the *free*
+        model parameters.
+
+        Args:
+            par (`numpy.ndarray`_, optional):
+                The list of parameters to use. Length should be either
+                :attr:`np` or :attr:`nfree`. If the latter, the values of the
+                fixed parameters in :attr:`par` are used.
+            sep (:obj:`bool`, optional):
+                Return separate vectors for the velocity and velocity dispersion
+                residual derivatives, instead of appending them.
+
+        Returns:
+            :obj:`tuple`, `numpy.ndarray`_: Derivatives in the difference
+            between the data and the model for all measurements, either returned
+            as a single array for all data or as separate arrays for the
+            velocity and velocity dispersion data (based on ``sep``).
+        """
+        vel, sig, dvel, dsig = self._deriv_binned_model(par)
+        if self.dc is None:
+            return (self._deriv_v_resid(dvel), numpy.array([])) \
+                        if sep else self._deriv_v_resid(dvel)
+        resid = (self._deriv_v_resid(vel), self._deriv_s_resid(sig, dsig))
+        return resid if sep else np.vstack(resid)
 
     def _chisqr(self, par, sep=False):
         """
@@ -1211,9 +1397,7 @@ class BisymmetricDisk:
             `numpy.ndarray`_: Difference between the data and the model for
             all measurements, normalized by their errors.
         """
-        self._set_par(par)
-        vel, sig = (self.kin.bin(self.model()), None) if self.dc is None \
-                        else map(lambda x : self.kin.bin(x), self.model())
+        vel, sig = self._binned_model(par)
         if self.has_covar:
             vfom = self._v_chisqr_covar(vel)
             sfom = np.array([]) if self.dc is None else self._s_chisqr_covar(sig)
@@ -1222,7 +1406,39 @@ class BisymmetricDisk:
             sfom = np.array([]) if self.dc is None else self._s_chisqr(sig)
         return (vfom, sfom) if sep else np.append(vfom, sfom)
 
-    def _fit_prep(self, kin, p0, fix, scatter, sb_wgt, assume_posdef_covar, ignore_covar):
+    def _deriv_chisqr(self, par, sep=False):
+        """
+        Calculate the derivatives of the error-normalized residuals (close to
+        the signed chi-square metric) w.r.t. the *free* model parameters.
+
+        Args:
+            par (`numpy.ndarray`_, optional):
+                The list of parameters to use. Length should be either
+                :attr:`np` or :attr:`nfree`. If the latter, the values of the
+                fixed parameters in :attr:`par` are used.
+            sep (:obj:`bool`, optional):
+                Return separate vectors for the velocity and velocity
+                dispersion residuals, instead of appending them.
+
+        Returns:
+            :obj:`tuple`, `numpy.ndarray`_: Derivatives of the error-normalized
+            difference between the data and the model for all measurements
+            w.r.t. the *free* model parameters, either returned as a single
+            array for all data or as separate arrays for the velocity and
+            velocity dispersion data (based on ``sep``).
+        """
+        vel, sig, dvel, dsig = self._deriv_binned_model(par)
+        vf = self._deriv_v_chisqr_covar if self.has_covar else self._deriv_v_chisqr
+        if self.dc is None:
+            return (vf(dvel), numpy.array([])) if sep else vf(dvel)
+
+        sf = self._deriv_s_chisqr_covar if self.has_covar else self._deriv_s_chisqr
+        dchisqr = (vf(dvel), sf(sig, dsig))
+        if not np.all(np.isfinite(dchisqr[0])) or not np.all(np.isfinite(dchisqr[1])):
+            raise ValueError('Error in derivative computation.')
+        return dchisqr if sep else np.vstack(dchisqr)
+
+    def _fit_prep(self, kin, p0, fix, scatter, sb_wgt, assume_posdef_covar, ignore_covar, cnvfftw):
         """
         Prepare the object for fitting the provided kinematic data.
 
@@ -1253,20 +1469,16 @@ class BisymmetricDisk:
                 covariance matrices, ignore them and just use the inverse
                 variance.
         """
+        # Initialize the fit parameters
         self._init_par(p0, fix)
+        # Initialize the data to fit
         self.kin = kin
-        self.x = self.kin.grid_x
-        self.y = self.kin.grid_y
-        # TODO: This should be changed for binned data. I.e., we should be
-        # weighting by the *unbinned* surface-brightness map.
-        self.sb = self.kin.remap('sb').filled(0.0) if sb_wgt else None
-        self.beam_fft = self.kin.beam_fft
+        self._init_coo(self.kin.grid_x, self.kin.grid_y)
+        self._init_sb(self.kin.grid_sb if sb_wgt else None)
         self.vel_gpm = np.logical_not(self.kin.vel_mask)
         self.sig_gpm = None if self.dc is None else np.logical_not(self.kin.sig_mask)
-
-#        print(f'N good vel: {np.sum(self.vel_gpm)}')
-#        if self.sig_gpm is not None:
-#            print(f'N good sig: {np.sum(self.sig_gpm)}')
+        # Initialize the beam kernel
+        self._init_beam(self.kin.beam_fft, True, cnvfftw)
 
         # Determine which errors were provided
         self.has_err = self.kin.vel_ivar is not None if self.dc is None \
@@ -1319,26 +1531,20 @@ class BisymmetricDisk:
         if self.has_covar:
             # Construct the matrices used to calculate the merit function in
             # the presence of covariance.
+            vel_pd_covar = self.kin.vel_covar[np.ix_(self.vel_gpm,self.vel_gpm)]
+            sig_pd_covar = None if self.dc is None \
+                            else self.kin.sig_phys2_covar[np.ix_(self.sig_gpm,self.sig_gpm)]
             if not assume_posdef_covar:
                 # Force the matrices to be positive definite
                 print('Forcing vel covar to be pos-def')
-                vel_pd_covar = impose_positive_definite(self.kin.vel_covar[
-                                                                np.ix_(self.vel_gpm,self.vel_gpm)])
-                # TODO: This needs to be fixed to be for sigma**2, not sigma
+                vel_pd_covar = impose_positive_definite(vel_pd_covar)
                 print('Forcing sig covar to be pos-def')
-                sig_pd_covar = None if self.dc is None \
-                                    else impose_positive_definite(self.kin.sig_covar[
-                                                                np.ix_(self.sig_gpm,self.sig_gpm)])
-                
-            else:
-                vel_pd_covar = self.kin.vel_covar[np.ix_(self.vel_gpm,self.vel_gpm)]
-                sig_pd_covar = None if self.dc is None \
-                                else self.kin.sig_covar[np.ix_(self.vel_gpm,self.vel_gpm)]
+                sig_pd_covar = None if self.dc is None else impose_positive_definite(sig_pd_covar)
 
             if self.scatter is not None:
-                # A diagonal matrix with only positive values is, by
-                # definition, positive difinite; and the sum of two positive
-                # definite matrices is also positive definite.
+                # A diagonal matrix with only positive values is, by definition,
+                # positive definite; and the sum of two positive-definite
+                # matrices is also positive definite.
                 vel_pd_covar += np.diag(np.full(vel_pd_covar.shape[0], self.scatter[0]**2,
                                                 dtype=float))
                 if self.dc is not None:
@@ -1358,61 +1564,33 @@ class BisymmetricDisk:
         """
         return self._chisqr if self.has_err or self.has_covar else self._resid
 
+    def _get_jac(self):
+        """
+        Return the Jacobian function to use given the availability of errors.
+        """
+        return self._deriv_chisqr if self.has_err or self.has_covar else self._deriv_resid
+
     def lsq_fit(self, kin, sb_wgt=False, p0=None, fix=None, lb=None, ub=None, scatter=None,
-                verbose=0, assume_posdef_covar=False, ignore_covar=True):
+                verbose=0, assume_posdef_covar=False, ignore_covar=True, cnvfftw=None,
+                analytic_jac=True, maxiter=5):
         """
-        Use `scipy.optimize.least_squares`_ to fit the model to the provided
-        kinematics.
-
-        Once complete, the best-fitting parameters are saved to :attr:`par`
-        and the parameter errors (estimated by the parameter covariance
-        matrix constructed as a by-product of the least-squares fit) are
-        saved to :attr:`par_err`.
-
-        Args:
-            kin (:class:`~nirvana.data.kinematics.Kinematics`):
-                Object with the kinematic data to fit.
-            sb_wgt (:obj:`bool`, optional):
-                Flag to use the surface-brightness data provided by ``kin``
-                to weight the model when applying the beam-smearing.
-            p0 (`numpy.ndarray`_, optional):
-                The initial parameters for the model. Length must be
-                :attr:`np`.
-            fix (`numpy.ndarray`_, optional):
-                A boolean array selecting the parameters that should be fixed
-                during the model fit.
-            lb (`numpy.ndarray`_, optional):
-                The lower bounds for the parameters. If None, the defaults
-                are used (see :func:`par_bounds`). The length of the vector
-                must match the total number of parameters, even if some of
-                the parameters are fixed.
-            ub (`numpy.ndarray`_, optional):
-                The upper bounds for the parameters. If None, the defaults
-                are used (see :func:`par_bounds`). The length of the vector
-                must match the total number of parameters, even if some of
-                the parameters are fixed.
-            scatter (:obj:`float`, `numpy.ndarray`_, optional):
-                Introduce a fixed intrinsic-scatter term into the model. This
-                single value per kinematic moment (v, sigma) is added in
-                quadrature to all measurement errors in the calculation of
-                the merit function. If no errors are available, this has the
-                effect of renormalizing the unweighted merit function by
-                1/scatter.
-            verbose (:obj:`int`, optional):
-                Verbosity level to pass to `scipy.optimize.least_squares`_.
-            assume_posdef_covar (:obj:`bool`, optional):
-                If the :class:`~nirvana.data.kinematics.Kinematics` includes
-                covariance matrices, this forces the code to proceed assuming
-                the matrices are positive definite.
-            ignore_covar (:obj:`bool`, optional):
-                If the :class:`~nirvana.data.kinematics.Kinematics` includes
-                covariance matrices, ignore them and just use the inverse
-                variance.
         """
+        if maxiter is None:
+            raise ValueError('Maximum number of iterations cannot be None.')
+
         # Prepare to fit the data.
-        self._fit_prep(kin, p0, fix, scatter, sb_wgt, assume_posdef_covar, ignore_covar)
-        # Get the method used to generate the figure-of-merit.
+        self._fit_prep(kin, p0, fix, scatter, sb_wgt, assume_posdef_covar, ignore_covar,
+                       cnvfftw)
+        
+        # Get the method used to generate the figure-of-merit and the Jacobian
+        # matrix.
         fom = self._get_fom()
+        # If the analytic Jacobian matrix is not used, the derivative of the
+        # merit function wrt each parameter is determined by a 1% change in each
+        # parameter.
+        jac_kwargs = {'jac': self._get_jac()} if analytic_jac \
+                        else {'diff_step': np.full(self.np, 0.01, dtype=float)[self.free]}
+
         # Parameter boundaries
         _lb, _ub = self.par_bounds()
         if lb is None:
@@ -1422,28 +1600,59 @@ class BisymmetricDisk:
         if len(lb) != self.np or len(ub) != self.np:
             raise ValueError('Length of one or both of the bound vectors is incorrect.')
 
-        # This means the derivative of the merit function wrt each parameter is
-        # determined by a 1% change in each parameter.
-        diff_step = np.full(self.np, 0.01, dtype=float)
-        # Run the optimization
-        result = optimize.least_squares(fom, self.par[self.free], method='trf',
-                                        bounds=(lb[self.free], ub[self.free]), 
-                                        diff_step=diff_step[self.free], verbose=verbose)
+        # Set the random number generator with a fixed seed so that the result
+        # is deterministic.
+        rng = np.random.default_rng(seed=909)
+        _p0 = self.par[self.free]
+        p = _p0.copy()
+        pe = None
+        niter = 0
+        while niter < maxiter:
+            # Run the optimization
+            result = optimize.least_squares(fom, p, # method='lm', #xtol=None,
+                                            x_scale='jac', method='trf', xtol=1e-12,
+                                            bounds=(lb[self.free], ub[self.free]), 
+                                            verbose=max(verbose,0), **jac_kwargs)
+            try:
+                pe = np.sqrt(np.diag(cov_err(result.jac)))
+            except:
+                warnings.warn('Unable to compute parameter errors from precision matrix.')
+                pe = None
+
+            # The fit should change the input parameters.
+            if np.all(np.absolute(p-result.x) > 1e-3):
+                break
+
+            # If it doesn't, something likely went wrong with the fit.  Perturb
+            # the input guesses a bit and retry.
+            p = _p0 + rng.normal(size=self.nfree)*(pe if pe is not None else 0.1*p0)
+            p = np.clip(p, lb[self.free], ub[self.free])
+            niter += 1
+
+        # TODO: Add something to the fit status/success flags that tests if
+        # niter == maxiter and/or if the input parameters are identical to the
+        # final best-fit prameters?  Note that the input parameters, p0, may not
+        # be identical to the output parameters because of the iterations mean
+        # that p != p0 !
+
+        # Save the fit status
+        self.fit_status = result.status
+        self.fit_success = result.success
+
         # Save the best-fitting parameters
         self._set_par(result.x)
-        try:
-            # Calculate the nominal parameter errors using the precision matrix
-            cov = cov_err(result.jac)
-            self.par_err = np.zeros(self.np, dtype=float)
-            self.par_err[self.free] = np.sqrt(np.diag(cov))
-        except:
-            warnings.warn('Unable to compute parameter errors from precision matrix.')
+        if pe is None:
             self.par_err = None
+        else:
+            self.par_err = np.zeros(self.np, dtype=float)
+            self.par_err[self.free] = pe
 
-        # Always show the report, regardless of verbosity
-        self.report()
+        # Print the report
+        if verbose > -1:
+            self.report(fit_message=result.message)
 
-    def report(self):
+
+    def report(self, fit_message=None):
         """
         Report the current parameters of the model.
         """
@@ -1452,47 +1661,82 @@ class BisymmetricDisk:
             return
 
         vfom, sfom = self._get_fom()(self.par, sep=True)
+        parn = self.par_names()
+        max_parn_len = max([len(n) for n in parn])+4
 
-        print('-'*50)
-        print('-'*50)
+        print('-'*70)
+        print(f'{"Fit Result":^70}')
+        print('-'*70)
+        if fit_message is not None:
+            print(f'Fit status message: {fit_message}')
+        if self.fit_status is not None:
+            print(f'Fit status: {self.fit_status}')
+        print(f'Fit success: {"True" if self.fit_status else "False"}')
+        print('-'*10)
         print(f'Base parameters:')
-        print(f'                    x0: {self.par[0]:.1f}' 
-                + (f'' if self.par_err is None else f' +/- {self.par_err[0]:.1f}'))
-        print(f'                    y0: {self.par[1]:.1f}' 
-                + (f'' if self.par_err is None else f' +/- {self.par_err[1]:.1f}'))
-        print(f'        Position angle: {self.par[2]:.1f}' 
-                + (f'' if self.par_err is None else f' +/- {self.par_err[2]:.1f}'))
-        print(f'           Inclination: {self.par[3]:.1f}' 
-                + (f'' if self.par_err is None else f' +/- {self.par_err[3]:.1f}'))
-        print(f'     Systemic Velocity: {self.par[4]:.1f}' 
-                + (f'' if self.par_err is None else f' +/- {self.par_err[4]:.1f}'))
-        rcp = self.rc_par()
-        rcpe = self.rc_par(err=True)
-        print(f'Rotation curve parameters:')
-        for i in range(len(rcp)):
-            print(f'                Par {i+1:02}: {rcp[i]:.1f}'
-                  + (f'' if rcpe is None else f' +/- {rcpe[i]:.1f}'))
+        slc = self._base_slice()
+        ps = 0 if slc.start is None else slc.start
+        pe = slc.stop
+        for i in range(ps,pe):
+            print(('{0:>'+f'{max_parn_len}'+'}'+ f': {self.par[i]:.1f}').format(parn[i])
+                    + (f'' if self.par_err is None else f' +/- {self.par_err[i]:.1f}'))
+        print('-'*10)
+
+        print(f'First-order tangential speed parameters:')
+        slc = self._vt_slice()
+        ps = slc.start
+        pe = slc.stop
+        for i in range(ps,pe):
+            print(('{0:>'+f'{max_parn_len}'+'}'+ f': {self.par[i]:.1f}').format(parn[i])
+                    + (f'' if self.par_err is None else f' +/- {self.par_err[i]:.1f}'))
+
+        print(f'Second-order tangential speed parameters:')
+        slc = self._v2t_slice()
+        ps = slc.start
+        pe = slc.stop
+        for i in range(ps,pe):
+            print(('{0:>'+f'{max_parn_len}'+'}'+ f': {self.par[i]:.1f}').format(parn[i])
+                    + (f'' if self.par_err is None else f' +/- {self.par_err[i]:.1f}'))
+
+        print(f'Second-order radial speed parameters:')
+        slc = self._v2r_slice()
+        ps = slc.start
+        pe = slc.stop
+        for i in range(ps,pe):
+            print(('{0:>'+f'{max_parn_len}'+'}'+ f': {self.par[i]:.1f}').format(parn[i])
+                    + (f'' if self.par_err is None else f' +/- {self.par_err[i]:.1f}'))
+
+        if self.dc is None:
+            print('-'*10)
+            if self.scatter is not None:
+                print(f'Intrinsic Velocity Scatter: {self.scatter[0]:.1f}')
+            vchisqr = np.sum(vfom**2)
+            print(f'Velocity measurements: {len(vfom)}')
+            print(f'Velocity chi-square: {vchisqr}')
+            print(f'Reduced chi-square: {vchisqr/(len(vfom)-self.nfree)}')
+            print('-'*70)
+            return
+
+        print('-'*10)
+        print(f'Dispersion profile parameters:')
+        slc = self._dc_slice()
+        ps = slc.start
+        pe = slc.stop
+        for i in range(ps,pe):
+            print(('{0:>'+f'{max_parn_len}'+'}'+ f': {self.par[i]:.1f}').format(parn[i])
+                    + (f'' if self.par_err is None else f' +/- {self.par_err[i]:.1f}'))
+        print('-'*10)
         if self.scatter is not None:
             print(f'Intrinsic Velocity Scatter: {self.scatter[0]:.1f}')
         vchisqr = np.sum(vfom**2)
         print(f'Velocity measurements: {len(vfom)}')
         print(f'Velocity chi-square: {vchisqr}')
-        if self.dc is None:
-            print(f'Reduced chi-square: {vchisqr/(len(vfom)-self.nfree)}')
-            print('-'*50)
-            return
-        dcp = self.dc_par()
-        dcpe = self.dc_par(err=True)
-        print(f'Dispersion profile parameters:')
-        for i in range(len(dcp)):
-            print(f'                Par {i+1:02}: {dcp[i]:.1f}'
-                  + (f'' if dcpe is None else f' +/- {dcpe[i]:.1f}'))
         if self.scatter is not None:
             print(f'Intrinsic Dispersion**2 Scatter: {self.scatter[1]:.1f}')
         schisqr = np.sum(sfom**2)
         print(f'Dispersion measurements: {len(sfom)}')
         print(f'Dispersion chi-square: {schisqr}')
         print(f'Reduced chi-square: {(vchisqr + schisqr)/(len(vfom) + len(sfom) - self.nfree)}')
-        print('-'*50)
+        print('-'*70)
 
 
