@@ -144,8 +144,22 @@ def disk_ellipse(r, pa, inc, xc=0., yc=0., num=100):
     Construct an ellipse of constant disk radius, projected into the sky plane.
 
     Args:
+        r (:obj:`float`):
+            The semi-major axis radius of the ellipse
+        pa (:obj:`float`):
+            The position angle in degrees (from N through E)
+        inc (:obj:`float`):
+            Disk inclination in degrees (0 degree is face-on)
+        xc (:obj:`float`, optional):
+            The Cartesian x coordinate of the center
+        yc (:obj:`float`, optional):
+            The Cartesian y coordinate of the center
+        num (:obj:`int`, optional):
+            Number of samples evenly spaced between :math:`(-\pi,\pi)`.
 
-
+    Returns:
+        `numpy.ndarray`_: Array with ``num`` samples along an ellipse with
+        constant disk radius.
     """
     theta = np.linspace(-np.pi, np.pi, num=num)
     xd = r*np.cos(theta)
