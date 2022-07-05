@@ -55,7 +55,7 @@ def disk_fit_reject(kin, disk, disp=None, ignore_covar=True, vel_mask=None, vel_
         disp (:obj:`bool`, optional):
             Flag to include the velocity dispersion rejection in the
             iteration. If None, rejection is included if ``kin`` has velocity
-            dispersion data and ``disk`` has a disperion parameterization.
+            dispersion data and ``disk`` has a dispersion parameterization.
         ignore_covar (:obj:`bool`, optional):
             If ``kin`` provides the covariance between measurements, ignore it.
         vel_mask (`numpy.ndarray`_):
