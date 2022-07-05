@@ -12,7 +12,7 @@ import multiprocessing as mp
 from IPython import embed
 
 import numpy as np
-from scipy import stats, optimize
+from scipy import stats
 
 try:
     from tqdm import tqdm

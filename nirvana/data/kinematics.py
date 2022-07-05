@@ -16,7 +16,7 @@ from matplotlib import pyplot, rc, patches, ticker, colors
 import warnings
 
 from .bin2d import Bin2D
-from .util import gaussian_deviates, growth_lim
+from .util import gaussian_deviates, growth_lim, impose_positive_definite
 from ..util import plot
 from ..models import asymmetry
 from ..models.beam import construct_beam, ConvolveFFTW, smear

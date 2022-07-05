@@ -229,7 +229,7 @@ def is_positive_definite(mat, quiet=True, quick=True):
     Returns:
         :obj:`bool`: Flag that matrix is positive definite.
     """
-    _mat = mat.toarray() if isinstance(mat, sparse.csr.csr_matrix) else mat
+    _mat = mat.toarray() if isinstance(mat, sparse.csr_matrix) else mat
 
     if quick:
         try:
@@ -273,7 +273,7 @@ def cinv(mat, check_finite=False, upper=False):
         `numpy.ndarray`_: Inverse or upper-triangle decomposition of the input
         matrix, depending on ``upper``.
     """
-    _mat = mat.toarray() if isinstance(mat, sparse.csr.csr_matrix) else mat
+    _mat = mat.toarray() if isinstance(mat, sparse.csr_matrix) else mat
     # This uses scipy.linalg, not numpy.linalg
     cho = linalg.cholesky(_mat, check_finite=check_finite)
     # Returns an upper triangle matrix that can be used to construct the inverse matrix (see below)
