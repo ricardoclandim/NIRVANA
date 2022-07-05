@@ -23,7 +23,6 @@ from ..data.kinematics import Kinematics
 from ..data.scatter import IntrinsicScatter
 from ..data.util import inverse, find_largest_coherent_region
 from ..data.util import select_major_axis, bin_stats, growth_lim, atleast_one_decade
-from ..util.bitmask import BitMask
 from ..util import plot
 from ..util import fileio
 
@@ -83,8 +82,8 @@ def disk_fit_reject(kin, disk, disp=None, ignore_covar=True, vel_mask=None, vel_
             Write the QA plot for the velocity dispersion rejection to this
             file (see :func:`~nirvana.data.scatter.IntrinsicScatter.show`).
         rej_flag (:obj:`str`, optional):
-            Rejection flag giving the reason these data were rejected. Must
-            be a valid flag for :class:`AxisymmetricDiskFitBitMask`.
+            Rejection flag giving the reason these data were rejected. Must be a
+            valid flag for :class:`~nirvana.models.thindisk.ThinDiskFitBitMask`.
         verbose (:obj:`bool`, optional):
             Verbose scatter fitting output.
 
@@ -274,41 +273,41 @@ def reset_to_base_flags(disk, kin, vel_mask, sig_mask):
         kin.sig_mask = disk.mbm.flagged(sig_mask, flag=disk.mbm.base_flags())
 
 
-class AxisymmetricDiskFitBitMask(BitMask):
-    """
-    Bin-by-bin mask used to track axisymmetric disk fit rejections.
-    """
-    def __init__(self):
-        # TODO: np.array just used for slicing convenience
-        mask_def = np.array([['DIDNOTUSE', 'Data not used because it was flagged on input.'],
-                             ['REJ_ERR', 'Data rejected because of its large measurement error.'],
-                             ['REJ_SNR', 'Data rejected because of its low signal-to-noise.'],
-                             ['REJ_UNR', 'Data rejected after first iteration and are so '
-                                         'discrepant from the other data that we expect the '
-                                         'measurements are unreliable.'],
-                             ['REJ_RESID', 'Data rejected due to iterative rejection process '
-                                           'of model residuals.'],
-                             ['DISJOINT', 'Data part of a smaller disjointed region, not '
-                                          'congruent with the main body of the measurements.']])
-        super().__init__(mask_def[:,0], descr=mask_def[:,1])
-
-    @staticmethod
-    def base_flags():
-        """
-        Return the list of "base-level" flags that are *always* ignored,
-        regardless of the fit iteration.
-        """
-        return ['DIDNOTUSE', 'REJ_ERR', 'REJ_SNR', 'REJ_UNR', 'DISJOINT']
-
-
-class AxisymmetricDiskGlobalBitMask(BitMask):
-    """
-    Fit-wide quality flag.
-    """
-    def __init__(self):
-        # NOTE: np.array just used for slicing convenience
-        mask_def = np.array([['LOWINC', 'Fit has an erroneously low inclination']])
-        super().__init__(mask_def[:,0], descr=mask_def[:,1])
+#class AxisymmetricDiskFitBitMask(BitMask):
+#    """
+#    Bin-by-bin mask used to track axisymmetric disk fit rejections.
+#    """
+#    def __init__(self):
+#        # TODO: np.array just used for slicing convenience
+#        mask_def = np.array([['DIDNOTUSE', 'Data not used because it was flagged on input.'],
+#                             ['REJ_ERR', 'Data rejected because of its large measurement error.'],
+#                             ['REJ_SNR', 'Data rejected because of its low signal-to-noise.'],
+#                             ['REJ_UNR', 'Data rejected after first iteration and are so '
+#                                         'discrepant from the other data that we expect the '
+#                                         'measurements are unreliable.'],
+#                             ['REJ_RESID', 'Data rejected due to iterative rejection process '
+#                                           'of model residuals.'],
+#                             ['DISJOINT', 'Data part of a smaller disjointed region, not '
+#                                          'congruent with the main body of the measurements.']])
+#        super().__init__(mask_def[:,0], descr=mask_def[:,1])
+#
+#    @staticmethod
+#    def base_flags():
+#        """
+#        Return the list of "base-level" flags that are *always* ignored,
+#        regardless of the fit iteration.
+#        """
+#        return ['DIDNOTUSE', 'REJ_ERR', 'REJ_SNR', 'REJ_UNR', 'DISJOINT']
+#
+#
+#class AxisymmetricDiskGlobalBitMask(BitMask):
+#    """
+#    Fit-wide quality flag.
+#    """
+#    def __init__(self):
+#        # NOTE: np.array just used for slicing convenience
+#        mask_def = np.array([['LOWINC', 'Fit has an erroneously low inclination']])
+#        super().__init__(mask_def[:,0], descr=mask_def[:,1])
 
 
 class AxisymmetricDisk(ThinDisk):
@@ -355,15 +354,15 @@ class AxisymmetricDisk(ThinDisk):
 
     """
 
-    gbm = AxisymmetricDiskGlobalBitMask()
-    """
-    Global bitmask.
-    """
-
-    mbm = AxisymmetricDiskFitBitMask()
-    """
-    Measurement-specific bitmask.
-    """
+#    gbm = AxisymmetricDiskGlobalBitMask()
+#    """
+#    Global bitmask.
+#    """
+#
+#    mbm = AxisymmetricDiskFitBitMask()
+#    """
+#    Measurement-specific bitmask.
+#    """
 
     def __init__(self, rc=None, dc=None):
         # Rotation curve
@@ -2242,6 +2241,11 @@ def axisym_iter_fit(galmeta, kin, rctype='HyperbolicTangent', dctype='Exponentia
                               vel_mask=vel_mask, vel_sigma_rej=_vel_sigma_rej[0], show_vel=debug,
                               sig_mask=sig_mask, sig_sigma_rej=_sig_sigma_rej[0], show_sig=debug,
                               rej_flag='REJ_UNR', verbose=verbose > 1)
+
+#        # Incorporate into mask
+#        if vel_mask is not None and np.any(vel_rej):
+#            vel_mask[vel_rej] = disk.mbm.turn_on(vel_mask[vel_rej], rej_flag)
+
     #   - Incorporate the rejection into the Kinematics object
     print(f'Rejecting {0 if vel_rej is None else np.sum(vel_rej)} velocity measurements.')
     if disk.dc is not None:

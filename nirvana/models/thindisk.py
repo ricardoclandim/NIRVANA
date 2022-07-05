@@ -20,8 +20,46 @@ from .util import cov_err
 from ..data.kinematics import Kinematics
 from ..data.util import impose_positive_definite, cinv, inverse
 from ..data.util import select_major_axis, bin_stats, growth_lim, atleast_one_decade
+from ..util.bitmask import BitMask
 
 #warnings.simplefilter('error', RuntimeWarning)
+
+class ThinDiskFitBitMask(BitMask):
+    """
+    Bin-by-bin mask used to track fit rejections.
+    """
+    def __init__(self):
+        # TODO: np.array just used for slicing convenience
+        mask_def = np.array([['DIDNOTUSE', 'Data not used because it was flagged on input.'],
+                             ['REJ_ERR', 'Data rejected because of its large measurement error.'],
+                             ['REJ_SNR', 'Data rejected because of its low signal-to-noise.'],
+                             ['REJ_UNR', 'Data rejected after first iteration and are so '
+                                         'discrepant from the other data that we expect the '
+                                         'measurements are unreliable.'],
+                             ['REJ_RESID', 'Data rejected due to iterative rejection process '
+                                           'of model residuals.'],
+                             ['DISJOINT', 'Data part of a smaller disjointed region, not '
+                                          'congruent with the main body of the measurements.']])
+        super().__init__(mask_def[:,0], descr=mask_def[:,1])
+
+    @staticmethod
+    def base_flags():
+        """
+        Return the list of "base-level" flags that are *always* ignored,
+        regardless of the fit iteration.
+        """
+        return ['DIDNOTUSE', 'REJ_ERR', 'REJ_SNR', 'REJ_UNR', 'DISJOINT']
+
+
+class ThinDiskGlobalBitMask(BitMask):
+    """
+    Fit-wide quality flag.
+    """
+    def __init__(self):
+        # NOTE: np.array just used for slicing convenience
+        mask_def = np.array([['LOWINC', 'Fit has an erroneously low inclination']])
+        super().__init__(mask_def[:,0], descr=mask_def[:,1])
+
 
 class ThinDisk:
     r"""
@@ -45,6 +83,17 @@ class ThinDisk:
         Describe the attributes
 
     """
+
+    gbm = ThinDiskGlobalBitMask()
+    """
+    Global bitmask.
+    """
+
+    mbm = ThinDiskFitBitMask()
+    """
+    Measurement-specific bitmask.
+    """
+
     def __init__(self, **kwargs):
         # Number of "base" parameters
         self.nbp = 5
@@ -1375,4 +1424,117 @@ class ThinDisk:
                 The status message returned by the fit optimization.
         """
         pass
+
+    # TODO: This currently requires errors.  Allow for rejection without
+    # errors...
+    def reject(self, disp=None, ignore_covar=True, vel_sigma_rej=5, show_vel=False, vel_plot=None,
+               sig_sigma_rej=5, show_sig=False, sig_plot=None, verbose=False):
+        """
+        Reject kinematic data based on the error-weighted residuals with respect
+        to the current disk.
+
+        The method requires that the kinematic data already be ingested
+        (:attr:`kin`) and that the model parameters have been set (:attr:`par`).
+
+        The rejection iteration is done using
+        :class:`~nirvana.data.scatter.IntrinsicScatter`, independently for the
+        velocity and velocity dispersion measurements (if the latter is selected
+        and/or available).
+
+        Note that you can both show the QA plots and have them written to a file
+        (e.g., ``show_vel`` can be True and ``vel_plot`` can provide a file).
+
+        Args:
+            disp (:obj:`bool`, optional):
+                Flag to include the velocity dispersion rejection in the
+                iteration.  If None, rejection is included if :attr:`kin` has
+                velocity dispersion data and a dispersion parameterization is
+                available (:attr:`dc`).
+            ignore_covar (:obj:`bool`, optional):
+                If :attr:`kin` provides the covariance between measurements,
+                ignore it when constructing the error-weighted residuals.
+            vel_sigma_rej (:obj:`float`, optional):
+                Rejection sigma for the velocity measurements.  If None, no data are
+                rejected and the function basically just measures the intrinsic
+                scatter.
+            show_vel (:obj:`bool`, optional):
+                Show the QA plot for the velocity rejection (see
+                :func:`~nirvana.data.scatter.IntrinsicScatter.show`).
+            vel_plot (:obj:`str`, optional):
+                Write the QA plot for the velocity rejection to this file (see
+                :func:`~nirvana.data.scatter.IntrinsicScatter.show`).
+            sig_sigma_rej (:obj:`float`, optional):
+                Rejection sigma for the dispersion measurements.  If None, no data
+                are rejected and the function basically just measures the intrinsic
+                scatter.
+            show_sig (:obj:`bool`, optional):
+                Show the QA plot for the velocity dispersion rejection (see
+                :func:`~nirvana.data.scatter.IntrinsicScatter.show`).
+            sig_plot (:obj:`str`, optional):
+                Write the QA plot for the velocity dispersion rejection to this
+                file (see :func:`~nirvana.data.scatter.IntrinsicScatter.show`).
+            verbose (:obj:`bool`, optional):
+                Verbose scatter fitting output.
+
+        Returns:
+            :obj:`tuple`: Returns two pairs of objects, one for each kinematic
+            moment. The first object is the vector flagging the data that should
+            be rejected and the second is the estimated intrinsic scatter about
+            the model. If the dispersion is not included in the rejection, the
+            last two objects returned are both None.
+        """
+
+        # Check input
+        if disp is None:
+            disp = kin.sig is not None and self.dc is not None
+        if disp and (kin.sig is None or self.dc is None):
+            raise ValueError('Cannot include dispersion if there is no dispersion data or if the '
+                             'dispersion data were not fit by the model.')
+        use_covar = not ignore_covar and kin.vel_covar is not None
+        if disp:
+            use_covar = use_covar and kin.sig_phys2_covar is not None
+
+        # Get the models; this assumes the parameters are already set!
+        models = self.model()
+        _verbose = 2 if verbose else 0
+
+        # Reject based on error-weighted residuals, accounting for intrinsic
+        # scatter
+        vmod = models[0] if len(models) == 2 else models
+        resid = kin.vel - kin.bin(vmod)
+        v_err_kwargs = {'covar': kin.vel_covar} if use_covar \
+                            else {'err': np.sqrt(inverse(kin.vel_ivar))}
+        scat = IntrinsicScatter(resid, gpm=disk.vel_gpm, npar=disk.nfree, **v_err_kwargs)
+        vel_sig, vel_rej, vel_gpm = scat.iter_fit(sigma_rej=vel_sigma_rej, fititer=5, verbose=_verbose)
+#        # Incorporate into mask
+#        if vel_mask is not None and np.any(vel_rej):
+#            vel_mask[vel_rej] = disk.mbm.turn_on(vel_mask[vel_rej], rej_flag)
+
+        # Show and/or plot the result, if requested
+        if show_vel:
+            scat.show()
+        if vel_plot is not None:
+            scat.show(ofile=vel_plot)
+
+        if not disp:
+            # Not rejecting dispersion so we're done
+            return vel_rej, vel_sig, None, None
+
+        # Reject based on error-weighted residuals, accounting for intrinsic
+        # scatter
+        resid = kin.sig_phys2 - kin.bin(models[1])**2
+        sig_err_kwargs = {'covar': kin.sig_phys2_covar} if use_covar \
+                            else {'err': np.sqrt(inverse(kin.sig_phys2_ivar))}
+        scat = IntrinsicScatter(resid, gpm=disk.sig_gpm, npar=disk.nfree, **sig_err_kwargs)
+        sig_sig, sig_rej, sig_gpm = scat.iter_fit(sigma_rej=sig_sigma_rej, fititer=5, verbose=_verbose)
+#        # Incorporate into mask
+#        if sig_mask is not None and np.any(sig_rej):
+#            sig_mask[sig_rej] = disk.mbm.turn_on(sig_mask[sig_rej], rej_flag)
+        # Show and/or plot the result, if requested
+        if show_sig:
+            scat.show()
+        if sig_plot is not None:
+            scat.show(ofile=sig_plot)
+
+        return vel_rej, vel_sig, sig_rej, sig_sig
 
