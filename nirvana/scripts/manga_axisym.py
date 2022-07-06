@@ -192,9 +192,8 @@ def main(args):
     # Plot the final residuals
     dv_plot = os.path.join(args.odir, f'{oroot}-vdist.png')
     ds_plot = os.path.join(args.odir, f'{oroot}-sdist.png')
-    axisym.disk_fit_resid_dist(kin, disk, disp=args.disp, ignore_covar=not args.covar,
-                               vel_mask=vel_mask, vel_plot=dv_plot, sig_mask=sig_mask,
-                               sig_plot=ds_plot) 
+    disk.reject(disp=args.disp, ignore_covar=not args.covar, vel_plot=dv_plot, sig_plot=ds_plot,
+                plots_only=True) 
 
     # Plot the fit asymmetry
     asym_plot = os.path.join(args.odir, f'{oroot}-asym.png')

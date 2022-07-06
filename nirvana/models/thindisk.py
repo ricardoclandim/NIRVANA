@@ -5,7 +5,6 @@ Base class for thin disk models.
 .. include:: ../include/links.rst
 """
 
-import os
 import warnings
 
 from IPython import embed
@@ -13,13 +12,11 @@ from IPython import embed
 import numpy as np
 from scipy import optimize
 
-from astropy.io import fits
-
-from .beam import ConvolveFFTW, smear, deriv_smear
+from .beam import ConvolveFFTW
 from .util import cov_err
 from ..data.kinematics import Kinematics
+from ..data.scatter import IntrinsicScatter
 from ..data.util import impose_positive_definite, cinv, inverse
-from ..data.util import select_major_axis, bin_stats, growth_lim, atleast_one_decade
 from ..util.bitmask import BitMask
 
 #warnings.simplefilter('error', RuntimeWarning)
@@ -1428,7 +1425,7 @@ class ThinDisk:
     # TODO: This currently requires errors.  Allow for rejection without
     # errors...
     def reject(self, disp=None, ignore_covar=True, vel_sigma_rej=5, show_vel=False, vel_plot=None,
-               sig_sigma_rej=5, show_sig=False, sig_plot=None, verbose=False):
+               sig_sigma_rej=5, show_sig=False, sig_plot=None, verbose=False, plots_only=False):
         """
         Reject kinematic data based on the error-weighted residuals with respect
         to the current disk.
@@ -1475,6 +1472,10 @@ class ThinDisk:
                 file (see :func:`~nirvana.data.scatter.IntrinsicScatter.show`).
             verbose (:obj:`bool`, optional):
                 Verbose scatter fitting output.
+            plots_only (:obj:`bool`, optional):
+                Do not perform any additional rejection, only construct the
+                plots.  The rejections are based on the existing rejections in
+                :attr:`kin` and the scatter is set by :attr:`scatter`.
 
         Returns:
             :obj:`tuple`: Returns two pairs of objects, one for each kinematic
@@ -1486,13 +1487,13 @@ class ThinDisk:
 
         # Check input
         if disp is None:
-            disp = kin.sig is not None and self.dc is not None
-        if disp and (kin.sig is None or self.dc is None):
+            disp = self.kin.sig is not None and self.dc is not None
+        if disp and (self.kin.sig is None or self.dc is None):
             raise ValueError('Cannot include dispersion if there is no dispersion data or if the '
                              'dispersion data were not fit by the model.')
-        use_covar = not ignore_covar and kin.vel_covar is not None
+        use_covar = not ignore_covar and self.kin.vel_covar is not None
         if disp:
-            use_covar = use_covar and kin.sig_phys2_covar is not None
+            use_covar = use_covar and self.kin.sig_phys2_covar is not None
 
         # Get the models; this assumes the parameters are already set!
         models = self.model()
@@ -1501,15 +1502,19 @@ class ThinDisk:
         # Reject based on error-weighted residuals, accounting for intrinsic
         # scatter
         vmod = models[0] if len(models) == 2 else models
-        resid = kin.vel - kin.bin(vmod)
-        v_err_kwargs = {'covar': kin.vel_covar} if use_covar \
-                            else {'err': np.sqrt(inverse(kin.vel_ivar))}
-        scat = IntrinsicScatter(resid, gpm=disk.vel_gpm, npar=disk.nfree, **v_err_kwargs)
-        vel_sig, vel_rej, vel_gpm = scat.iter_fit(sigma_rej=vel_sigma_rej, fititer=5, verbose=_verbose)
-#        # Incorporate into mask
-#        if vel_mask is not None and np.any(vel_rej):
-#            vel_mask[vel_rej] = disk.mbm.turn_on(vel_mask[vel_rej], rej_flag)
-
+        resid = self.kin.vel - self.kin.bin(vmod)
+        v_err_kwargs = {'covar': self.kin.vel_covar} if use_covar \
+                            else {'err': np.sqrt(inverse(self.kin.vel_ivar))}
+        scat = IntrinsicScatter(resid, gpm=self.vel_gpm, npar=self.nfree, **v_err_kwargs)
+        if plots_only:
+            scat.sig = 0. if self.scatter is None else self.scatter[0]
+            scat.rej = np.zeros(resid.size, dtype=bool) \
+                            if self.kin.vel_mask is None else self.kin.vel_mask.copy()
+            vel_rej = None
+            vel_sig = scat.sig
+        else:
+            vel_sig, vel_rej, vel_gpm \
+                    = scat.iter_fit(sigma_rej=vel_sigma_rej, fititer=5, verbose=_verbose)
         # Show and/or plot the result, if requested
         if show_vel:
             scat.show()
@@ -1522,14 +1527,19 @@ class ThinDisk:
 
         # Reject based on error-weighted residuals, accounting for intrinsic
         # scatter
-        resid = kin.sig_phys2 - kin.bin(models[1])**2
-        sig_err_kwargs = {'covar': kin.sig_phys2_covar} if use_covar \
-                            else {'err': np.sqrt(inverse(kin.sig_phys2_ivar))}
-        scat = IntrinsicScatter(resid, gpm=disk.sig_gpm, npar=disk.nfree, **sig_err_kwargs)
-        sig_sig, sig_rej, sig_gpm = scat.iter_fit(sigma_rej=sig_sigma_rej, fititer=5, verbose=_verbose)
-#        # Incorporate into mask
-#        if sig_mask is not None and np.any(sig_rej):
-#            sig_mask[sig_rej] = disk.mbm.turn_on(sig_mask[sig_rej], rej_flag)
+        resid = self.kin.sig_phys2 - self.kin.bin(models[1])**2
+        sig_err_kwargs = {'covar': self.kin.sig_phys2_covar} if use_covar \
+                            else {'err': np.sqrt(inverse(self.kin.sig_phys2_ivar))}
+        scat = IntrinsicScatter(resid, gpm=self.sig_gpm, npar=self.nfree, **sig_err_kwargs)
+        if plots_only:
+            scat.sig = 0. if self.scatter is None else self.scatter[1]
+            scat.rej = np.zeros(resid.size, dtype=bool) \
+                            if self.kin.sig_mask is None else self.kin.sig_mask.copy()
+            sig_rej = None
+            sig_sig = scat.sig
+        else:
+            sig_sig, sig_rej, sig_gpm \
+                    = scat.iter_fit(sigma_rej=sig_sigma_rej, fititer=5, verbose=_verbose)
         # Show and/or plot the result, if requested
         if show_sig:
             scat.show()
