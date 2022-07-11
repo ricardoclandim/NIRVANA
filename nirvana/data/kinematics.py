@@ -1235,6 +1235,7 @@ class Kinematics:
         ax.axes.get_xaxis().set_visible(False)
         ax.axes.get_yaxis().set_visible(False)
 
+        # TODO: This is MaNGa specific!
         if galmeta is not None:
             ax.text(0.00, -0.05, 'MaNGA ID:', ha='left', va='center', transform=ax.transAxes,
                     fontsize=10)
@@ -1403,6 +1404,7 @@ class Kinematics:
                          None, None, None, None, \
                          None, None
 
+        # TODO: bin sigma^2 and then take sqrt instead?
         # Convert to corrected dispersion
         sig = np.sqrt(self.sig_phys2)
         sigwgt = 4*self.sig_phys2*self.sig_phys2_ivar

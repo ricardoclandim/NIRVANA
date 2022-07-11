@@ -125,6 +125,7 @@ class ThinDisk:
         self.vel_gpm = None         # "Good-pixel mask" for velocity measurements
         self.sig_gpm = None         # "Good-pixel mask" for dispersion measurements
         self.cnvfftw = None         # ConvolveFFTW object used to perform convolutions
+        # TODO: Set this to the bitmask dtype
         self.global_mask = 0        # Global bitmask value
         self.fit_status = None      # Status integer for a fit
         self.fit_success = None     # Flag that a fit was successful
@@ -1361,12 +1362,19 @@ class ThinDisk:
         if len(lb) != self.np or len(ub) != self.np:
             raise ValueError('Length of one or both of the bound vectors is incorrect.')
 
-        # Set the random number generator with a fixed seed so that the result
-        # is deterministic.
+        # Setup to iteratively fit, where the iterations are meant to ensure
+        # that the least-squares fit actually optimizes the parameters.
+        # - Set the random number generator with a fixed seed so that the
+        #   result is deterministic.
         rng = np.random.default_rng(seed=909)
+        # - Set the free parameters.  These are save to a new vector so that the
+        #   initial parameters can be tracked for each iteration without losing
+        #   the original input.
         _p0 = self.par[self.free]
         p = _p0.copy()
+        # - Reset any parameter errors
         pe = None
+        # - Start counting the iterations
         niter = 0
         while niter < maxiter:
             # Run the optimization
@@ -1374,6 +1382,7 @@ class ThinDisk:
                                             x_scale='jac', method='trf', xtol=1e-12,
                                             bounds=(lb[self.free], ub[self.free]), 
                                             verbose=max(verbose,0), **jac_kwargs)
+            # Attempt to calculate the errors
             try:
                 pe = np.sqrt(np.diag(cov_err(result.jac)))
             except:
@@ -1412,13 +1421,15 @@ class ThinDisk:
         if verbose > -1:
             self.report(fit_message=result.message)
 
-    def report(self, fit_message=None):
+    def report(self, fit_message=None, intro=True):
         """
         Report the current parameters of the model to the screen.
 
         Args:
             fit_message (:obj:`str`, optional):
                 The status message returned by the fit optimization.
+            intro (:obj:`bool`, optional):
+                Print the fit intro lines.
         """
         pass
 

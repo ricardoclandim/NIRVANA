@@ -404,13 +404,16 @@ class AxisymmetricDisk(ThinDisk):
                                              sig=sig, dsig=dsig, cnvfftw=self.cnvfftw)
         return v, sig, dv, dsig
 
-    def report(self, fit_message=None):
+    def report(self, fit_message=None, component=False):
         """
         Report the current parameters of the model to the screen.
 
         Args:
             fit_message (:obj:`str`, optional):
                 The status message returned by the fit optimization.
+            component (:obj:`bool`, optional):
+                Flag that the report is a component of a multi-disk fit report.
+                See :class:`~nirvana.multitrace.MultiTracerDisk`.
         """
         if self.par is None:
             print('No parameters to report.')
@@ -420,28 +423,44 @@ class AxisymmetricDisk(ThinDisk):
         parn = self.par_names()
         max_parn_len = max([len(n) for n in parn])+4
 
-        print('-'*70)
-        print(f'{"Fit Result":^70}')
-        print('-'*70)
-        if fit_message is not None:
-            print(f'Fit status message: {fit_message}')
-        if self.fit_status is not None:
-            print(f'Fit status: {self.fit_status}')
-        print(f'Fit success: {"True" if self.fit_status else "False"}')
-        print('-'*10)
-        ps = 0
-        pe = self.nbp
+        if not component:
+            print('-'*70)
+            print(f'{"Fit Result":^70}')
+            print('-'*70)
+            if fit_message is not None:
+                print(f'Fit status message: {fit_message}')
+            if self.fit_status is not None:
+                print(f'Fit status: {self.fit_status}')
+            print(f'Fit success: {str(self.fit_success)}')
+            print('-'*10)
+
+        slc = self._base_slice()
+        ps = 0 if slc.start is None else slc.start
+        pe = slc.stop
         print(f'Base parameters:')
         for i in range(ps,pe):
-            print(('{0:>'+f'{max_parn_len}'+'}'+ f': {self.par[i]:.1f}').format(parn[i])
-                    + (f'' if self.par_err is None else f' +/- {self.par_err[i]:.1f}'))
+            if not self.free[i]:
+                err = '*'
+            elif self.par_err is None:
+                err = ''
+            else:
+                err = f' +/- {self.par_err[i]:.1f}'
+            print(('{0:>'+f'{max_parn_len}'+'}'+ f': {self.par[i]:.1f}').format(parn[i]) + err)
+
         print('-'*10)
-        ps = self.nbp
-        pe = ps + self.rc.np
+        slc = self._rc_slice()
+        ps = 0 if slc.start is None else slc.start
+        pe = slc.stop
         print(f'Rotation curve parameters:')
         for i in range(ps,pe):
-            print(('{0:>'+f'{max_parn_len}'+'}'+ f': {self.par[i]:.1f}').format(parn[i])
-                    + (f'' if self.par_err is None else f' +/- {self.par_err[i]:.1f}'))
+            if not self.free[i]:
+                err = '*'
+            elif self.par_err is None:
+                err = ''
+            else:
+                err = f' +/- {self.par_err[i]:.1f}'
+            print(('{0:>'+f'{max_parn_len}'+'}'+ f': {self.par[i]:.1f}').format(parn[i]) + err)
+
         if self.dc is None:
             print('-'*10)
             if self.scatter is not None:
@@ -449,17 +468,26 @@ class AxisymmetricDisk(ThinDisk):
             vchisqr = np.sum(vfom**2)
             print(f'Velocity measurements: {len(vfom)}')
             print(f'Velocity chi-square: {vchisqr}')
-            print(f'Reduced chi-square: {vchisqr/(len(vfom)-self.nfree)}')
-            print('-'*70)
+            if not component:
+                print(f'Reduced chi-square: {vchisqr/(len(vfom)-self.nfree)}')
+                print('-'*70)
             return
+
         print('-'*10)
-        ps = self.nbp+self.rc.np
-        pe = ps + self.dc.np
+        slc = self._dc_slice()
+        ps = 0 if slc.start is None else slc.start
+        pe = slc.stop
         print(f'Dispersion profile parameters:')
         for i in range(ps,pe):
-            print(('{0:>'+f'{max_parn_len}'+'}'+ f': {self.par[i]:.1f}').format(parn[i])
-                    + (f'' if self.par_err is None else f' +/- {self.par_err[i]:.1f}'))
+            if not self.free[i]:
+                err = '*'
+            elif self.par_err is None:
+                err = ''
+            else:
+                err = f' +/- {self.par_err[i]:.1f}'
+            print(('{0:>'+f'{max_parn_len}'+'}'+ f': {self.par[i]:.1f}').format(parn[i]) + err)
         print('-'*10)
+
         if self.scatter is not None:
             print(f'Intrinsic Velocity Scatter: {self.scatter[0]:.1f}')
         vchisqr = np.sum(vfom**2)
@@ -470,8 +498,9 @@ class AxisymmetricDisk(ThinDisk):
         schisqr = np.sum(sfom**2)
         print(f'Dispersion measurements: {len(sfom)}')
         print(f'Dispersion chi-square: {schisqr}')
-        print(f'Reduced chi-square: {(vchisqr + schisqr)/(len(vfom) + len(sfom) - self.nfree)}')
-        print('-'*70)
+        if not component:
+            print(f'Reduced chi-square: {(vchisqr + schisqr)/(len(vfom) + len(sfom) - self.nfree)}')
+            print('-'*70)
 
 # TODO:
 #   - This is MaNGA-specific and needs to be abstracted
@@ -1739,6 +1768,49 @@ def reset_to_base_flags(disk, kin, vel_mask, sig_mask):
         kin.sig_mask = disk.mbm.flagged(sig_mask, flag=disk.mbm.base_flags())
 
 
+def axisym_init_model(galmeta, kin, rctype, dctype=None):
+
+    # Get the guess parameters and the model parameterizations
+    #   - Geometry
+    pa, vproj = galmeta.guess_kinematic_pa(kin.grid_x, kin.grid_y, kin.remap('vel'),
+                                           return_vproj=True)
+    p0 = np.array([0., 0., pa, galmeta.guess_inclination(lb=1., ub=89.), 0.])
+
+    #   - Rotation Curve
+    rc = None
+    if rctype == 'HyperbolicTangent':
+        # TODO: Maybe want to make the guess hrot based on the effective radius...
+        p0 = np.append(p0, np.array([min(900., vproj), 1.]))
+        rc = oned.HyperbolicTangent(lb=np.array([0., 1e-3]),
+                                    ub=np.array([1000., max(5., kin.max_radius())]))
+    elif rctype == 'PolyEx':
+        p0 = np.append(p0, np.array([min(900., vproj), 1., 0.1]))
+        rc = oned.PolyEx(lb=np.array([0., 1e-3, -1.]),
+                         ub=np.array([1000., max(5., kin.max_radius()), 1.]))
+    else:
+        raise ValueError(f'Unknown RC parameterization: {rctype}')
+
+    #   - Dispersion profile
+    dc = None
+    if dctype is not None:
+        sig0 = galmeta.guess_central_dispersion(kin.grid_x, kin.grid_y, kin.remap('sig'))
+        # For disks, 1 Re = 1.7 hr (hr = disk scale length). The dispersion
+        # e-folding length is ~2 hr, meaning that I use a guess of 2/1.7 Re for
+        # the dispersion e-folding length.
+        if dctype == 'Exponential':
+            p0 = np.append(p0, np.array([sig0, 2*galmeta.reff/1.7]))
+            dc = oned.Exponential(lb=np.array([0., 1e-3]), ub=np.array([1000., 3*galmeta.reff]))
+        elif dctype == 'ExpBase':
+            p0 = np.append(p0, np.array([sig0, 2*galmeta.reff/1.7, 1.]))
+            dc = oned.ExpBase(lb=np.array([0., 1e-3, 0.]),
+                              ub=np.array([1000., 3*galmeta.reff, 100.]))
+        elif dctype == 'Const':
+            p0 = np.append(p0, np.array([sig0]))
+            dc = oned.Const(lb=np.array([0.]), ub=np.array([1000.]))
+
+    return p0, AxisymmetricDisk(rc=rc, dc=dc)
+
+
 def axisym_iter_fit(galmeta, kin, rctype='HyperbolicTangent', dctype='Exponential', fitdisp=True,
                     ignore_covar=True, assume_posdef_covar=True, max_vel_err=None,
                     max_sig_err=None, min_vel_snr=None, min_sig_snr=None,
@@ -1923,59 +1995,58 @@ def axisym_iter_fit(galmeta, kin, rctype='HyperbolicTangent', dctype='Exponentia
     #---------------------------------------------------------------------------
     # Get the guess parameters and the model parameterizations
     print('Setting up guess parameters and parameterization classes.')
-    #   - Geometry
-    pa, vproj = galmeta.guess_kinematic_pa(kin.grid_x, kin.grid_y, kin.remap('vel'),
-                                           return_vproj=True)
-    p0 = np.array([0., 0., pa, galmeta.guess_inclination(lb=1., ub=89.), 0.])
-
-    #   - Rotation Curve
-    rc = None
-    if rctype == 'HyperbolicTangent':
-        # TODO: Maybe want to make the guess hrot based on the effective radius...
-        p0 = np.append(p0, np.array([min(900., vproj), 1.]))
-        rc = oned.HyperbolicTangent(lb=np.array([0., 1e-3]),
-                                    ub=np.array([1000., max(5., kin.max_radius())]))
-    elif rctype == 'PolyEx':
-        p0 = np.append(p0, np.array([min(900., vproj), 1., 0.1]))
-        rc = oned.PolyEx(lb=np.array([0., 1e-3, -1.]),
-                         ub=np.array([1000., max(5., kin.max_radius()), 1.]))
-    else:
-        raise ValueError(f'Unknown RC parameterization: {rctype}')
-
-    #   - Dispersion profile
-    dc = None
-    if fitdisp:
-        sig0 = galmeta.guess_central_dispersion(kin.grid_x, kin.grid_y, kin.remap('sig'))
-        # For disks, 1 Re = 1.7 hr (hr = disk scale length). The dispersion
-        # e-folding length is ~2 hr, meaning that I use a guess of 2/1.7 Re for
-        # the dispersion e-folding length.
-        if dctype == 'Exponential':
-            p0 = np.append(p0, np.array([sig0, 2*galmeta.reff/1.7]))
-            dc = oned.Exponential(lb=np.array([0., 1e-3]), ub=np.array([1000., 3*galmeta.reff]))
-        elif dctype == 'ExpBase':
-            p0 = np.append(p0, np.array([sig0, 2*galmeta.reff/1.7, 1.]))
-            dc = oned.ExpBase(lb=np.array([0., 1e-3, 0.]),
-                              ub=np.array([1000., 3*galmeta.reff, 100.]))
-        elif dctype == 'Const':
-            p0 = np.append(p0, np.array([sig0]))
-            dc = oned.Const(lb=np.array([0.]), ub=np.array([1000.]))
+    p0, disk = axisym_init_model(galmeta, kin, rctype, dctype=dctype if fitdisp else None)
+#    #   - Geometry
+#    pa, vproj = galmeta.guess_kinematic_pa(kin.grid_x, kin.grid_y, kin.remap('vel'),
+#                                           return_vproj=True)
+#    p0 = np.array([0., 0., pa, galmeta.guess_inclination(lb=1., ub=89.), 0.])
+#
+#    #   - Rotation Curve
+#    rc = None
+#    if rctype == 'HyperbolicTangent':
+#        # TODO: Maybe want to make the guess hrot based on the effective radius...
+#        p0 = np.append(p0, np.array([min(900., vproj), 1.]))
+#        rc = oned.HyperbolicTangent(lb=np.array([0., 1e-3]),
+#                                    ub=np.array([1000., max(5., kin.max_radius())]))
+#    elif rctype == 'PolyEx':
+#        p0 = np.append(p0, np.array([min(900., vproj), 1., 0.1]))
+#        rc = oned.PolyEx(lb=np.array([0., 1e-3, -1.]),
+#                         ub=np.array([1000., max(5., kin.max_radius()), 1.]))
+#    else:
+#        raise ValueError(f'Unknown RC parameterization: {rctype}')
+#
+#    #   - Dispersion profile
+#    dc = None
+#    if fitdisp:
+#        sig0 = galmeta.guess_central_dispersion(kin.grid_x, kin.grid_y, kin.remap('sig'))
+#        # For disks, 1 Re = 1.7 hr (hr = disk scale length). The dispersion
+#        # e-folding length is ~2 hr, meaning that I use a guess of 2/1.7 Re for
+#        # the dispersion e-folding length.
+#        if dctype == 'Exponential':
+#            p0 = np.append(p0, np.array([sig0, 2*galmeta.reff/1.7]))
+#            dc = oned.Exponential(lb=np.array([0., 1e-3]), ub=np.array([1000., 3*galmeta.reff]))
+#        elif dctype == 'ExpBase':
+#            p0 = np.append(p0, np.array([sig0, 2*galmeta.reff/1.7, 1.]))
+#            dc = oned.ExpBase(lb=np.array([0., 1e-3, 0.]),
+#                              ub=np.array([1000., 3*galmeta.reff, 100.]))
+#        elif dctype == 'Const':
+#            p0 = np.append(p0, np.array([sig0]))
+#            dc = oned.Const(lb=np.array([0.]), ub=np.array([1000.]))
 
     # Report
-    print(f'Rotation curve parameterization class: {rc.__class__.__name__}')
-    if fitdisp:
-        print(f'Dispersion profile parameterization class: {dc.__class__.__name__}')
+    print(f'Rotation curve parameterization class: {disk.rc.__class__.__name__}')
+    if disk.dc is not None:
+        print(f'Dispersion profile parameterization class: {disk.dc.__class__.__name__}')
     print('Input guesses:')
-    print(f'               Position angle: {pa:.1f}')
+    print(f'               Position angle: {p0[2]:.1f}')
     print(f'                  Inclination: {p0[3]:.1f}')
-    print(f'     Projected Rotation Speed: {vproj:.1f}')
-    if fitdisp:
-        print(f'  Central Velocity Dispersion: {sig0:.1f}')
+    print(f'     Projected Rotation Speed: {p0[disk.nbp]:.1f}')
+    if disk.dc is not None:
+        print(f'  Central Velocity Dispersion: {p0[disk.nbp+disk.rc.np]:.1f}')
     #---------------------------------------------------------------------------
 
     #---------------------------------------------------------------------------
     # Define the fitting object
-    disk = AxisymmetricDisk(rc=rc, dc=dc)
-
     # Constrain the center to be in the middle third of the map relative to the
     # photometric center. The mean in the calculation is to mitigate that some
     # galaxies can be off center, but the detail here and how well it works

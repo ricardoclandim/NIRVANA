@@ -1052,7 +1052,7 @@ class BisymmetricDisk(ThinDisk):
             print(f'Fit status message: {fit_message}')
         if self.fit_status is not None:
             print(f'Fit status: {self.fit_status}')
-        print(f'Fit success: {"True" if self.fit_status else "False"}')
+        print(f'Fit success: {str(self.fit_success)}')
         print('-'*10)
         print(f'Base parameters:')
         slc = self._base_slice()
