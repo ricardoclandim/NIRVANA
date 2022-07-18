@@ -72,5 +72,5 @@ def test_lsq_nopsf():
 #    assert 243. < disk.par[5] < 245., 'Projected rotation changed'
 
 
-test_lsq_nopsf()
+#test_lsq_nopsf()
 

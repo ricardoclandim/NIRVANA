@@ -43,5 +43,4 @@ def test_lsq_nopsf():
 
     disk.lsq_fit([gas_kin, stellar_kin], sb_wgt=True, p0=p0, fix=fix, verbose=2)
 
-test_lsq_nopsf()
 

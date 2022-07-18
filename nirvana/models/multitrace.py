@@ -431,7 +431,7 @@ class MultiTracerDisk:
 
         self._wrkspc_parslc = [self.disk_slice(i) for i in range(self.ntracer)]
         for i in range(self.ntracer):
-            self.disk[i]._init_par(p0[self._wrkspc_parslc[i]], None)
+            self.disk[i]._init_par(self.par[self.untie][self._wrkspc_parslc[i]], None)
             self.disk[i]._init_model(None, self.kin[i].grid_x, self.kin[i].grid_y,
                                      self.kin[i].grid_sb if sb_wgt else None,
                                      self.kin[i].beam_fft, True, None, False)
