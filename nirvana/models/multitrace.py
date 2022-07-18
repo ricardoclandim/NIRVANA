@@ -17,6 +17,7 @@ from .geometry import projected_polar
 from ..data.util import select_kinematic_axis, bin_stats, growth_lim, atleast_one_decade
 from .util import cov_err
 from ..util import plot
+from . import thindisk
 
 class MultiTracerDisk:
     """
@@ -49,6 +50,22 @@ class MultiTracerDisk:
             same number of parameters.  The length of this vector must match the
             number of disk model parameters *excluding* the base parameters.
     """
+
+    gbm = thindisk.ThinDiskGlobalBitMask()
+    """
+    Global bitmask.
+    """
+
+    mbm = thindisk.ThinDiskFitBitMask()
+    """
+    Measurement-specific bitmask.
+    """
+
+    pbm = thindisk.ThinDiskParBitMask()
+    """
+    Parameter-specific bitmask.
+    """
+
     def __init__(self, disk, tie_base=None, tie_disk=None):
 
         self.disk = np.atleast_1d(disk)
@@ -71,6 +88,7 @@ class MultiTracerDisk:
         # Setup the parameters
         self.par = None             # Holds the *unique* (untied) parameters
         self.par_err = None         # Holds any estimated parameter errors
+        self.par_mask = None        # Holds any parameter-specific masking
         # TODO: Set this to the bitmask dtype
         self.global_mask = 0        # Global bitmask value
         self.fit_status = None      # Detailed fit status
@@ -83,6 +101,12 @@ class MultiTracerDisk:
         self._wrkspc_ndata = None   #   ... Number of data points per dataset
         self._wrkspc_sdata = None   #   ... Starting indices of each dataset in the concatenation
         self._wrkspc_jac = None     #   ... Full fit Jacobian
+
+    def __getitem__(self, item):
+        return self.disk[item]
+
+    def __setitem__(self, item, value):
+        raise ValueError('Cannot change disk elements using direct access.')
 
     def update_tie_base(self, tie_base):
         """
@@ -277,7 +301,7 @@ class MultiTracerDisk:
             raise ValueError('Must provide {0} or {1} parameters.'.format(self.nup, self.nfree))
         self.par[self.free] = par.copy()
 
-    def _disk_slice(self, index):
+    def disk_slice(self, index):
         """
         Return the slice selecting parameters for the specified disk from the
         *full* parameter vector.
@@ -384,10 +408,18 @@ class MultiTracerDisk:
         if self.kin.size != self.ntracer:
             raise ValueError('Must provide the same number of kinematic databases as disks '
                              f'({self.ntracer}).')
-        _scatter = np.atleast_1d(scatter)
-        if _scatter.size not in [1, self.ntracer, 2*self.ntracer]:
-            raise ValueError(f'Number of scatter terms must be 1, {self.ntracer}, or '
-                             f'{2*self.ntracer}; found {_scatter.size}.')
+
+        if scatter is not None:
+            _scatter = np.atleast_1d(scatter)
+            if _scatter.size not in [1, self.ntracer, 2*self.ntracer]:
+                raise ValueError(f'Number of scatter terms must be 1, {self.ntracer}, or '
+                                f'{2*self.ntracer}; found {_scatter.size}.')
+            if _scatter.size == 1:
+                _scatter = np.repeat(_scatter, 2*self.ntracer).reshape(self.ntracer,-1)
+            elif _scatter.size == 2:
+                _scatter = np.tile(_scatter, (self.ntracer,1))
+            else:
+                _scatter = scatter.reshape(self.ntracer,-1)
 
         # Initialize the parameters.  This checks that the parameters have the
         # correct length.
@@ -397,16 +429,17 @@ class MultiTracerDisk:
         self.disk_fom = [None]*self.ntracer
         self.disk_jac = [None]*self.ntracer
 
+        self._wrkspc_parslc = [self.disk_slice(i) for i in range(self.ntracer)]
         for i in range(self.ntracer):
+            self.disk[i]._init_par(p0[self._wrkspc_parslc[i]], None)
             self.disk[i]._init_model(None, self.kin[i].grid_x, self.kin[i].grid_y,
                                      self.kin[i].grid_sb if sb_wgt else None,
                                      self.kin[i].beam_fft, True, None, False)
-            self.disk[i]._init_data(self.kin[i], None if scatter is None else scatter[i],
+            self.disk[i]._init_data(self.kin[i], None if scatter is None else _scatter[i],
                                     assume_posdef_covar, ignore_covar)
             self.disk_fom[i] = self.disk[i]._get_fom()
             self.disk_jac[i] = self.disk[i]._get_jac()
 
-        self._wrkspc_parslc = [self._disk_slice(i) for i in range(self.ntracer)]
         if analytic_jac:
             # Set the least_squares keywords
             jac_kwargs = {'jac': self.jac}
@@ -420,12 +453,13 @@ class MultiTracerDisk:
             jac_kwargs = {'diff_step': np.full(self.nup, 0.01, dtype=float)[self.free]}
 
         # Parameter boundaries
-        _lb, _ub = self.par_bounds()
-        if lb is None:
-            lb = _lb
-        if ub is None:
-            ub = _ub
-        if len(lb) != self.nup or len(ub) != self.nup:
+        if lb is None or ub is None:
+            _lb, _ub = self.par_bounds()
+        if lb is not None:
+            _lb = lb[self.tie] if lb.size == self.np else lb.copy()
+        if ub is not None:
+            _ub = ub[self.tie] if ub.size == self.np else ub.copy()
+        if len(_lb) != self.nup or len(_ub) != self.nup:
             raise ValueError('Length of one or both of the bound vectors is incorrect.')
 
         # Setup to iteratively fit, where the iterations are meant to ensure
@@ -444,9 +478,13 @@ class MultiTracerDisk:
         niter = 0
         while niter < maxiter:
             # Run the optimization
+#            try:
             result = optimize.least_squares(self.fom, p, x_scale='jac', method='trf',
-                                            xtol=1e-12, bounds=(lb[self.free], ub[self.free]), 
+                                            xtol=1e-12, bounds=(_lb[self.free], _ub[self.free]), 
                                             verbose=max(verbose,0), **jac_kwargs)
+#            except Exception as e:
+#                embed()
+#                exit()
             # Attempt to calculate the errors
             try:
                 pe = np.sqrt(np.diag(cov_err(result.jac)))
@@ -457,12 +495,17 @@ class MultiTracerDisk:
             # The fit should change the input parameters.
             if np.all(np.absolute(p-result.x) > 1e-3):
                 break
+            warnings.warn('Parameters unchanged after fit.  Retrying...')
 
             # If it doesn't, something likely went wrong with the fit.  Perturb
             # the input guesses a bit and retry.
             p = _p0 + rng.normal(size=self.nfree)*(pe if pe is not None else 0.1*p0)
-            p = np.clip(p, lb[self.free], ub[self.free])
+            p = np.clip(p, _lb[self.free], _ub[self.free])
             niter += 1
+
+        if niter == maxiter and np.all(np.absolute(p-result.x) > 1e-3):
+            warnings.warn('Parameters unchanged after fit.  Abandoning iterations...')
+            # TODO: Save this to the status somehow
 
         # TODO: Add something to the fit status/success flags that tests if
         # niter == maxiter and/or if the input parameters are identical to the
@@ -476,17 +519,29 @@ class MultiTracerDisk:
 
         # Save the best-fitting parameters
         self._set_par(result.x)
+
         if pe is None:
             self.par_err = None
         else:
             self.par_err = np.zeros(self.nup, dtype=float)
             self.par_err[self.free] = pe
 
+        self.par_mask = self.pbm.init_mask_array(self.nup)
+        pm = self.par_mask[self.free]
+        for v, flg in zip([-1, 1], ['LOWERBOUND', 'UPPERBOUND']):
+            indx = result.active_mask == v
+            if np.any(indx):
+                pm[indx] = self.pbm.turn_on(pm[indx], flg)
+        self.par_mask[self.free] = pm
+        indx = np.logical_not(self.free)
+        if np.any(indx):
+            self.par_mask[indx] = self.pbm.turn_on(self.par_mask[indx], 'FIXED')
+
         # Print the report
         if verbose > -1:
             self.report(fit_message=result.message)
 
-    def par_bounds(self):
+    def par_bounds(self, base_lb=None, base_ub=None):
         """
         Return the lower and upper bounds for the unique, untied parameters.
 
@@ -494,7 +549,8 @@ class MultiTracerDisk:
             :obj:`tuple`: A two-tuple of `numpy.ndarray`_ objects with the lower
             and upper parameter boundaries.
         """
-        lb, ub = np.array([list(d.par_bounds()) for d in self.disk]).transpose(1,0,2).reshape(2,-1)
+        lb, ub = np.array([list(d.par_bounds(base_lb=base_lb, base_ub=base_ub)) 
+                                for d in self.disk]).transpose(1,0,2).reshape(2,-1)
         return lb[self.tie], ub[self.tie]
 
     def fom(self, par):
@@ -545,6 +601,20 @@ class MultiTracerDisk:
             self._wrkspc_jac[sec] += _jac[i]
         return self._wrkspc_jac[:,self.free]
 
+    def distribute_par(self):
+        """
+        Distribute the current parameter set to the disk components.
+        """
+        full_par = self.par[self.untie]
+        full_par_err = None if self.par_err is None else self.par_err[self.untie]
+        full_free = self.free[self.untie]
+        full_free[np.setdiff1d(np.arange(self.np), self.tie)] = False
+        for i in range(self.ntracer):
+            slc = self.disk_slice(i)
+            self.disk[i].par = full_par[slc]
+            self.disk[i].free = full_free[slc]
+            self.disk[i].par_err = None if full_par_err is None else full_par_err[slc]
+
     def report(self, fit_message=None):
         """
         Report the current parameters of the model to the screen.
@@ -580,18 +650,11 @@ class MultiTracerDisk:
             print('No tied parameters')
 
         # Print the results for each disk
-        full_par = self.par[self.untie]
-        full_par_err = None if self.par_err is None else self.par_err[self.untie]
-        full_free = self.free[self.untie]
-        full_free[np.setdiff1d(np.arange(self.np), self.tie)] = False
+        self.distribute_par()
         for i in range(self.ntracer):
             print('-'*50)
             print(f'{f"Disk {i+1}":^50}')
             print('-'*50)
-            slc = self._disk_slice(i)
-            self.disk[i].par = full_par[slc]
-            self.disk[i].free = full_free[slc]
-            self.disk[i].par_err = None if full_par_err is None else full_par_err[slc]
             self.disk[i].report(component=True)
         print('-'*50)
 
@@ -692,7 +755,7 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
         s_map[i] = np.ma.sqrt(kin[i].remap('sig_phys2', mask=kin[i].sig_mask))
 
         # Construct the model data, both binned data and maps
-        slc = disk._disk_slice(i)
+        slc = disk.disk_slice(i)
         disk.disk[i].par = _par[slc]
         models = disk.disk[i].model()
         if disk.disk[i].dc is None:
@@ -1385,4 +1448,428 @@ def asymdrift_radial_profile(disk, kin, rstep, maj_wedge=30.):
     return ad_r, ad, binr, ad_ewmean, ad_ewsdev, ad_nbin
 
 
+def _rej_iters(rej):
+    _rej = None if rej is None else list(rej)
+    if _rej is not None and len(_rej) == 1:
+        _rej *= 4
+    if _rej is not None and len(_rej) != 4:
+        raise ValueError('Must provide 1 or 4 sigma rejection levels.')
+    return _rej
+
+
+def asymdrift_iter_fit(galmeta, gas_kin, str_kin, gas_disk, str_disk, gas_vel_mask=None,
+                       gas_sig_mask=None, str_vel_mask=None, str_sig_mask=None, p0=None,
+                       ignore_covar=True, assume_posdef_covar=True,
+                       gas_vel_sigma_rej=[15,10,10,10], gas_sig_sigma_rej=[15,10,10,10],
+                       str_vel_sigma_rej=[15,10,10,10], str_sig_sigma_rej=[15,10,10,10],
+                       fix_cen=False, fix_inc=False, low_inc=None, min_unmasked=None,
+                       analytic_jac=True, fit_scatter=True, verbose=0):
+    r"""
+    Iteratively fit a two-component disk to measure asymmetric drift.
+
+    Args:
+        galmeta (:class:`~nirvana.data.meta.GlobalPar`):
+            Object with metadata for the galaxy to be fit.
+        gas_kin (:class:`~nirvana.data.kinematics.Kinematics`):
+            Object with the gas data to be fit
+        str_kin (:class:`~nirvana.data.kinematics.Kinematics`):
+            Object with the stellar data to be fit
+        disk (:class:`~nirvana.models.multitrace.MultiTracerDisk`):
+            The disk object to use for fitting.
+        ignore_covar (:obj:`bool`, optional):
+            If ``kin`` provides the covariance between measurements, ignore it
+            and fit the data assuming there is no covariance.
+        assume_posdef_covar (:obj:`bool`, optional):
+            If ``kin`` provides the covariance between measurements, assume the
+            covariance matrices are positive definite.
+        vel_sigma_rej (:obj:`float`, :obj:`list`, optional):
+            Sigma values used for rejection of velocity measurements.  Must be a
+            single float or a *four-element* list.  If None, no rejections are
+            performed.  The description above provides which value is used in
+            each iteration.
+        sig_sigma_rej (:obj:`float`, :obj:`list`, optional):
+            Sigma values used for rejection of dispersion measurements.  Must be
+            a single float or a *four-element* list.  If None, no rejections are
+            performed.  The description above provides which value is used in
+            each iteration.
+        fix_cen (:obj:`bool`, optional):
+            Fix the dynamical center of the fit to 0,0 in the final fit
+            iteration.
+        fix_inc (:obj:`bool`, optional):
+            Fix the kinematic inclination of the fit to estimate provided by the
+            :func:`~nirvana.data.meta.GlobalPar.guess_inclination` method of
+            ``galmeta``.
+        low_inc (scalar-like, optional):
+            If the inclination is free and the best-fitting inclination from the
+            final fit iteration is below this value, flag the global bitmask of
+            the fit as having a low inclination and refit the data using a fixed
+            inclination set by
+            :func:`~nirvana.data.meta.GlobalPar.guess_inclination` (i.e., this
+            is the same as when setting ``fix_inc`` to True).  If None, no
+            minimum is set on the viable inclination (apart from the fit
+            boundaries).
+        min_unmasked (:obj:`int`, optional):
+            The minimum of velocity measurements (and velocity dispersion
+            measurements, if they are available and being fit) required to
+            proceed with the fit, after applying all masking.
+        analytic_jac (:obj:`bool`, optional):
+            Use the analytic calculation of the Jacobian matrix during the fit
+            optimization.  If False, the Jacobian is calculated using
+            finite-differencing methods provided by
+            `scipy.optimize.least_squares`_.
+        fit_scatter (:obj:`bool`, optional):
+            Model the intrinsic scatter in the data about the model during the
+            fit optimization.
+        verbose (:obj:`int`, optional):
+            Verbosity level: 0=only status output written to terminal; 1=show 
+            fit result QA plot; 2=full output
+
+    Returns:
+
+        :obj:`tuple`: Returns 5 objects: (1) a `numpy.ndarray`_ with the input
+        guess parameters, (3) a boolean `numpy.ndarray`_ selecting the
+        parameters that were fixed during the fit, (4) a `numpy.ndarray`_ with
+        the bad-pixel mask for the velocity measurements used in the fit, and
+        (5) a `numpy.ndarray`_ with the bad-pixel mask for the velocity
+        dispersion measurements used in the fit.
+
+    """
+    # Running in "debug" mode
+    debug = verbose > 1
+
+    # Check input
+    _gas_vel_sigma_rej = _rej_iters(gas_vel_sigma_rej)
+    _gas_sig_sigma_rej = _rej_iters(gas_sig_sigma_rej)
+    _str_vel_sigma_rej = _rej_iters(str_vel_sigma_rej)
+    _str_sig_sigma_rej = _rej_iters(str_sig_sigma_rej)
+
+    #---------------------------------------------------------------------------
+    # Initialize the fitting object and set the guess parameters
+    disk = MultiTracerDisk([gas_disk, str_disk])
+    p0 = np.append(gas_disk.par, str_disk.par)
+    p0[:disk.nbp] = (gas_disk.par[:disk.nbp] + str_disk.par[:disk.nbp])/2.
+    p0[gas_disk.np:gas_disk.np+disk.nbp] = p0[:disk.nbp]
+    # Force the inclination to be the photometric inclination
+    p0[3] = p0[gas_disk.np+3] = galmeta.guess_inclination(lb=1., ub=89.)
+
+    #---------------------------------------------------------------------------
+    # Define the fitting object
+    # Constrain the center to be in the middle third of the map relative to the
+    # photometric center. The mean in the calculation is to mitigate that some
+    # galaxies can be off center, but the detail here and how well it works
+    # hasn't been well tested.
+    # TODO: Should this use grid_x instead, so that it's more uniform for all
+    # IFUs?  Or should this be set as a fraction of Reff?
+    _x = np.append(gas_kin.x, str_kin.x)
+    _y = np.append(gas_kin.y, str_kin.y)
+    dx = np.mean([abs(np.amin(_x)), abs(np.amax(_x))])
+    dy = np.mean([abs(np.amin(_y)), abs(np.amax(_y))])
+    lb, ub = disk.par_bounds(base_lb=np.array([-dx/3, -dy/3, -350., 1., -500.]),
+                             base_ub=np.array([dx/3, dy/3, 350., 89., 500.]))
+    print(f'If free, center constrained within +/- {dx/3:.1f} in X and +/- {dy/3:.1f} in Y.')
+
+    # TODO: Handle these issues instead of faulting
+    if np.any(np.less(p0, lb)):
+        raise ValueError('Parameter lower bounds cannot accommodate initial guess value!')
+    if np.any(np.greater(p0, ub)):
+        raise ValueError('Parameter upper bounds cannot accommodate initial guess value!')
+
+    #---------------------------------------------------------------------------
+    # Setup the masks
+    print('Initializing data masking')
+    if gas_vel_mask is None or gas_sig_mask is None:
+        _gas_vel_mask, _gas_sig_mask = gas_kin.init_fitting_masks(bitmask=disk.mbm, verbose=True)
+    else:
+        _gas_vel_mask = gas_vel_mask.copy()
+        _gas_sig_mask = gas_sig_mask.copy()
+    # Make sure there are sufficient data to fit!
+    if min_unmasked is None:
+        if np.all(_gas_vel_mask > 0):
+            raise ValueError('All gas velocity measurements masked!')
+        if _gas_sig_mask is not None and np.all(_gas_sig_mask > 0):
+            raise ValueError('All gas velocity dispersion measurements masked!')
+    else:
+        if np.sum(np.logical_not(_gas_vel_mask > 0)) < min_unmasked:
+            raise ValueError('Insufficient valid gas velocity measurements to continue!')
+        if _gas_sig_mask is not None and np.sum(np.logical_not(_gas_sig_mask > 0)) < min_unmasked:
+            raise ValueError('Insufficient valid gas dispersion measurements to continue!')
+
+    if str_vel_mask is None or str_sig_mask is None:
+        _str_vel_mask, _str_sig_mask = str_kin.init_fitting_masks(bitmask=disk.mbm, verbose=True)
+    else:
+        _str_vel_mask = str_vel_mask.copy()
+        _str_sig_mask = str_sig_mask.copy()
+    # Make sure there are sufficient data to fit!
+    if min_unmasked is None:
+        if np.all(_str_vel_mask > 0):
+            raise ValueError('All stellar velocity measurements masked!')
+        if _str_sig_mask is not None and np.all(_str_sig_mask > 0):
+            raise ValueError('All stellar dispersion measurements masked!')
+    else:
+        if np.sum(np.logical_not(_str_vel_mask > 0)) < min_unmasked:
+            raise ValueError('Insufficient valid stellar velocity measurements to continue!')
+        if _str_sig_mask is not None and np.sum(np.logical_not(_str_sig_mask > 0)) < min_unmasked:
+            raise ValueError('Insufficient valid stellar dispersion measurements to continue!')
+
+    #---------------------------------------------------------------------------
+    # Perform the fit iterations
+    #---------------------------------------------------------------------------
+    # Tie all the geometric projection parameters, but leave the systemic
+    # velocities to be independent for each dataset.
+    disk.update_tie_base([True, True, True, True, False])
+    # Fit iteration 1: Fit all data but fix the inclination and center
+    #                x0    y0    pa     inc   vsys
+    fix = np.append([True, True, False, True, False], np.zeros(p0.size-5, dtype=bool))
+    print('Running fit iteration 1')
+    # TODO: sb_wgt is always true throughout. Make this a command-line
+    # parameter?
+    disk.lsq_fit([gas_kin, str_kin], sb_wgt=True, p0=p0, fix=fix, lb=lb, ub=ub,
+                 ignore_covar=True, assume_posdef_covar=assume_posdef_covar,
+                 analytic_jac=analytic_jac, verbose=2) #verbose)
+    # Show
+    if verbose > 0:
+        asymdrift_fit_plot(galmeta, [gas_kin, str_kin], disk, fix=fix) 
+
+    #---------------------------------------------------------------------------
+    # Fit iteration 2:
+    #   - Reject very large outliers. This is aimed at finding data that is
+    #     so descrepant from the model that it's reasonable to expect the
+    #     measurements are bogus.
+    print('Running rejection iterations')
+    gas_vel_rej, gas_vel_sig, gas_sig_rej, gas_sig_sig \
+            = disk.disk[0].reject(vel_sigma_rej=_gas_vel_sigma_rej[0], show_vel=debug,
+                                  sig_sigma_rej=_gas_sig_sigma_rej[0], show_sig=debug,
+                                  verbose=verbose > 1)
+    if np.any(gas_vel_rej):
+        print(f'{np.sum(gas_vel_rej)} gas velocity measurements rejected as unreliable.')
+        gas_vel_mask[gas_vel_rej] = disk.mbm.turn_on(gas_vel_mask[gas_vel_rej], 'REJ_UNR')
+    if gas_sig_rej is not None and np.any(gas_sig_rej):
+        print(f'{np.sum(gas_sig_rej)} gas dispersion measurements rejected as unreliable.')
+        gas_sig_mask[gas_sig_rej] = disk.mbm.turn_on(gas_sig_mask[gas_sig_rej], 'REJ_UNR')
+    gas_kin.reject(vel_rej=gas_vel_rej, sig_rej=gas_sig_rej)
+
+    str_vel_rej, str_vel_sig, str_sig_rej, str_sig_sig \
+            = disk.disk[1].reject(vel_sigma_rej=_str_vel_sigma_rej[0], show_vel=debug,
+                                  sig_sigma_rej=_str_sig_sigma_rej[0], show_sig=debug,
+                                  verbose=verbose > 1)
+    if np.any(str_vel_rej):
+        print(f'{np.sum(str_vel_rej)} stellar velocity measurements rejected as unreliable.')
+        str_vel_mask[str_vel_rej] = disk.mbm.turn_on(str_vel_mask[str_vel_rej], 'REJ_UNR')
+    if str_sig_rej is not None and np.any(str_sig_rej):
+        print(f'{np.sum(str_sig_rej)} stellar dispersion measurements rejected as unreliable.')
+        str_sig_mask[str_sig_rej] = disk.mbm.turn_on(str_sig_mask[str_sig_rej], 'REJ_UNR')
+    str_kin.reject(vel_rej=str_vel_rej, sig_rej=str_sig_rej)
+    #   - Refit, again with the inclination and center fixed. However, do not
+    #     use the parameters from the previous fit as the starting point, and
+    #     ignore the estimated intrinsic scatter.
+    print('Running fit iteration 2')
+    disk.lsq_fit([gas_kin, str_kin], sb_wgt=True, p0=p0, fix=fix, lb=lb, ub=ub,
+                 ignore_covar=True, assume_posdef_covar=assume_posdef_covar,
+                 analytic_jac=analytic_jac, verbose=2) #verbose)
+    # Show
+    if verbose > 0:
+        asymdrift_fit_plot(galmeta, [gas_kin, str_kin], disk, fix=fix) 
+
+    #---------------------------------------------------------------------------
+    # Fit iteration 3: 
+    #   - Perform a more restricted rejection
+    print('Running rejection iterations')
+    gas_vel_rej, gas_vel_sig, gas_sig_rej, gas_sig_sig \
+            = disk.disk[0].reject(vel_sigma_rej=_gas_vel_sigma_rej[1], show_vel=debug,
+                                  sig_sigma_rej=_gas_sig_sigma_rej[1], show_sig=debug,
+                                  verbose=verbose > 1)
+    if np.any(gas_vel_rej):
+        print(f'{np.sum(gas_vel_rej)} gas velocity measurements rejected as unreliable.')
+        gas_vel_mask[gas_vel_rej] = disk.mbm.turn_on(gas_vel_mask[gas_vel_rej], 'REJ_RESID')
+    if gas_sig_rej is not None and np.any(gas_sig_rej):
+        print(f'{np.sum(gas_sig_rej)} gas dispersion measurements rejected as unreliable.')
+        gas_sig_mask[gas_sig_rej] = disk.mbm.turn_on(gas_sig_mask[gas_sig_rej], 'REJ_RESID')
+    gas_kin.reject(vel_rej=gas_vel_rej, sig_rej=gas_sig_rej)
+
+    str_vel_rej, str_vel_sig, str_sig_rej, str_sig_sig \
+            = disk.disk[1].reject(vel_sigma_rej=_str_vel_sigma_rej[1], show_vel=debug,
+                                  sig_sigma_rej=_str_sig_sigma_rej[1], show_sig=debug,
+                                  verbose=verbose > 1)
+    if np.any(str_vel_rej):
+        print(f'{np.sum(str_vel_rej)} stellar velocity measurements rejected as unreliable.')
+        str_vel_mask[str_vel_rej] = disk.mbm.turn_on(str_vel_mask[str_vel_rej], 'REJ_RESID')
+    if str_sig_rej is not None and np.any(str_sig_rej):
+        print(f'{np.sum(str_sig_rej)} stellar dispersion measurements rejected as unreliable.')
+        str_sig_mask[str_sig_rej] = disk.mbm.turn_on(str_sig_mask[str_sig_rej], 'REJ_RESID')
+    str_kin.reject(vel_rej=str_vel_rej, sig_rej=str_sig_rej)
+    #   - Refit again with the inclination and center fixed, but use the
+    #     previous fit as the starting point and include the estimated
+    #     intrinsic scatter.
+    print('Running fit iteration 3')
+    scatter = np.array([gas_vel_sig, gas_sig_sig, str_vel_sig, str_sig_sig]) \
+                if fit_scatter else None
+    disk.lsq_fit([gas_kin, str_kin], sb_wgt=True, p0=disk.par[disk.untie], fix=fix, lb=lb, ub=ub,
+                 ignore_covar=True, assume_posdef_covar=assume_posdef_covar, scatter=scatter,
+                 analytic_jac=analytic_jac, verbose=2) #verbose)
+    # Show
+    if verbose > 0:
+        asymdrift_fit_plot(galmeta, [gas_kin, str_kin], disk, fix=fix) 
+
+    #---------------------------------------------------------------------------
+    # Fit iteration 4: 
+    #   - Recover data from the restricted rejection
+    disk.mbm.reset_to_base_flags(gas_kin, gas_vel_mask, gas_sig_mask)
+    disk.mbm.reset_to_base_flags(str_kin, str_vel_mask, str_sig_mask)
+    #   - Reject again based on the new fit parameters
+    print('Running rejection iterations')
+    gas_vel_rej, gas_vel_sig, gas_sig_rej, gas_sig_sig \
+            = disk.disk[0].reject(vel_sigma_rej=_gas_vel_sigma_rej[1], show_vel=debug,
+                                  sig_sigma_rej=_gas_sig_sigma_rej[1], show_sig=debug,
+                                  verbose=verbose > 1)
+    if np.any(gas_vel_rej):
+        print(f'{np.sum(gas_vel_rej)} gas velocity measurements rejected as unreliable.')
+        gas_vel_mask[gas_vel_rej] = disk.mbm.turn_on(gas_vel_mask[gas_vel_rej], 'REJ_RESID')
+    if gas_sig_rej is not None and np.any(gas_sig_rej):
+        print(f'{np.sum(gas_sig_rej)} gas dispersion measurements rejected as unreliable.')
+        gas_sig_mask[gas_sig_rej] = disk.mbm.turn_on(gas_sig_mask[gas_sig_rej], 'REJ_RESID')
+    gas_kin.reject(vel_rej=gas_vel_rej, sig_rej=gas_sig_rej)
+
+    str_vel_rej, str_vel_sig, str_sig_rej, str_sig_sig \
+            = disk.disk[1].reject(vel_sigma_rej=_str_vel_sigma_rej[1], show_vel=debug,
+                                  sig_sigma_rej=_str_sig_sigma_rej[1], show_sig=debug,
+                                  verbose=verbose > 1)
+    if np.any(str_vel_rej):
+        print(f'{np.sum(str_vel_rej)} stellar velocity measurements rejected as unreliable.')
+        str_vel_mask[str_vel_rej] = disk.mbm.turn_on(str_vel_mask[str_vel_rej], 'REJ_RESID')
+    if str_sig_rej is not None and np.any(str_sig_rej):
+        print(f'{np.sum(str_sig_rej)} stellar dispersion measurements rejected as unreliable.')
+        str_sig_mask[str_sig_rej] = disk.mbm.turn_on(str_sig_mask[str_sig_rej], 'REJ_RESID')
+    str_kin.reject(vel_rej=str_vel_rej, sig_rej=str_sig_rej)
+    #   - Refit again with the inclination and center fixed, but use the
+    #     previous fit as the starting point and include the estimated
+    #     intrinsic scatter.
+    print('Running fit iteration 4')
+    scatter = np.array([gas_vel_sig, gas_sig_sig, str_vel_sig, str_sig_sig]) \
+                if fit_scatter else None
+    disk.lsq_fit([gas_kin, str_kin], sb_wgt=True, p0=disk.par[disk.untie], fix=fix, lb=lb, ub=ub,
+                 ignore_covar=True, assume_posdef_covar=assume_posdef_covar, scatter=scatter,
+                 analytic_jac=analytic_jac, verbose=2) #verbose)
+    # Show
+    if verbose > 0:
+        asymdrift_fit_plot(galmeta, [gas_kin, str_kin], disk, fix=fix) 
+
+    #---------------------------------------------------------------------------
+    # Fit iteration 5: 
+    #   - Recover data from the restricted rejection
+    disk.mbm.reset_to_base_flags(gas_kin, gas_vel_mask, gas_sig_mask)
+    disk.mbm.reset_to_base_flags(str_kin, str_vel_mask, str_sig_mask)
+    #   - Reject again based on the new fit parameters
+    print('Running rejection iterations')
+    gas_vel_rej, gas_vel_sig, gas_sig_rej, gas_sig_sig \
+            = disk.disk[0].reject(vel_sigma_rej=_gas_vel_sigma_rej[2], show_vel=debug,
+                                  sig_sigma_rej=_gas_sig_sigma_rej[2], show_sig=debug,
+                                  verbose=verbose > 1)
+    if np.any(gas_vel_rej):
+        print(f'{np.sum(gas_vel_rej)} gas velocity measurements rejected as unreliable.')
+        gas_vel_mask[gas_vel_rej] = disk.mbm.turn_on(gas_vel_mask[gas_vel_rej], 'REJ_RESID')
+    if gas_sig_rej is not None and np.any(gas_sig_rej):
+        print(f'{np.sum(gas_sig_rej)} gas dispersion measurements rejected as unreliable.')
+        gas_sig_mask[gas_sig_rej] = disk.mbm.turn_on(gas_sig_mask[gas_sig_rej], 'REJ_RESID')
+    gas_kin.reject(vel_rej=gas_vel_rej, sig_rej=gas_sig_rej)
+
+    str_vel_rej, str_vel_sig, str_sig_rej, str_sig_sig \
+            = disk.disk[1].reject(vel_sigma_rej=_str_vel_sigma_rej[2], show_vel=debug,
+                                  sig_sigma_rej=_str_sig_sigma_rej[2], show_sig=debug,
+                                  verbose=verbose > 1)
+    if np.any(str_vel_rej):
+        print(f'{np.sum(str_vel_rej)} stellar velocity measurements rejected as unreliable.')
+        str_vel_mask[str_vel_rej] = disk.mbm.turn_on(str_vel_mask[str_vel_rej], 'REJ_RESID')
+    if str_sig_rej is not None and np.any(str_sig_rej):
+        print(f'{np.sum(str_sig_rej)} stellar dispersion measurements rejected as unreliable.')
+        str_sig_mask[str_sig_rej] = disk.mbm.turn_on(str_sig_mask[str_sig_rej], 'REJ_RESID')
+    str_kin.reject(vel_rej=str_vel_rej, sig_rej=str_sig_rej)
+    #   - Now fit as requested by the user, freeing one or both of the
+    #     inclination and center. Use the previous fit as the starting point
+    #     and include the estimated intrinsic scatter and the covariance.
+    #                    x0     y0     pa     inc    vsys
+    base_fix = np.array([False, False, False, False, False])
+    if fix_cen:
+        base_fix[:2] = True
+    if fix_inc:
+        base_fix[3] = True
+    fix = np.append(base_fix, np.zeros(p0.size-5, dtype=bool))
+    print('Running fit iteration 5')
+    scatter = np.array([gas_vel_sig, gas_sig_sig, str_vel_sig, str_sig_sig]) \
+                if fit_scatter else None
+    disk.lsq_fit([gas_kin, str_kin], sb_wgt=True, p0=disk.par[disk.untie], fix=fix, lb=lb, ub=ub,
+                 ignore_covar=ignore_covar, assume_posdef_covar=assume_posdef_covar,
+                 scatter=scatter, analytic_jac=analytic_jac, verbose=2) #verbose)
+    # Show
+    if verbose > 0:
+        asymdrift_fit_plot(galmeta, [gas_kin, str_kin], disk, fix=fix) 
+
+    #---------------------------------------------------------------------------
+    # Fit iteration 6:
+    #   - Recover data from the restricted rejection
+    disk.mbm.reset_to_base_flags(gas_kin, gas_vel_mask, gas_sig_mask)
+    disk.mbm.reset_to_base_flags(str_kin, str_vel_mask, str_sig_mask)
+    #   - Reject again based on the new fit parameters
+    print('Running rejection iterations')
+    gas_vel_rej, gas_vel_sig, gas_sig_rej, gas_sig_sig \
+            = disk.disk[0].reject(vel_sigma_rej=_gas_vel_sigma_rej[3], show_vel=debug,
+                                  sig_sigma_rej=_gas_sig_sigma_rej[3], show_sig=debug,
+                                  verbose=verbose > 1)
+    if np.any(gas_vel_rej):
+        print(f'{np.sum(gas_vel_rej)} gas velocity measurements rejected as unreliable.')
+        gas_vel_mask[gas_vel_rej] = disk.mbm.turn_on(gas_vel_mask[gas_vel_rej], 'REJ_RESID')
+    if gas_sig_rej is not None and np.any(gas_sig_rej):
+        print(f'{np.sum(gas_sig_rej)} gas dispersion measurements rejected as unreliable.')
+        gas_sig_mask[gas_sig_rej] = disk.mbm.turn_on(gas_sig_mask[gas_sig_rej], 'REJ_RESID')
+    gas_kin.reject(vel_rej=gas_vel_rej, sig_rej=gas_sig_rej)
+
+    str_vel_rej, str_vel_sig, str_sig_rej, str_sig_sig \
+            = disk.disk[1].reject(vel_sigma_rej=_str_vel_sigma_rej[3], show_vel=debug,
+                                  sig_sigma_rej=_str_sig_sigma_rej[3], show_sig=debug,
+                                  verbose=verbose > 1)
+    if np.any(str_vel_rej):
+        print(f'{np.sum(str_vel_rej)} stellar velocity measurements rejected as unreliable.')
+        str_vel_mask[str_vel_rej] = disk.mbm.turn_on(str_vel_mask[str_vel_rej], 'REJ_RESID')
+    if str_sig_rej is not None and np.any(str_sig_rej):
+        print(f'{np.sum(str_sig_rej)} stellar dispersion measurements rejected as unreliable.')
+        str_sig_mask[str_sig_rej] = disk.mbm.turn_on(str_sig_mask[str_sig_rej], 'REJ_RESID')
+    str_kin.reject(vel_rej=str_vel_rej, sig_rej=str_sig_rej)
+    #   - Redo previous fit
+    print('Running fit iteration 6')
+    scatter = np.array([gas_vel_sig, gas_sig_sig, str_vel_sig, str_sig_sig]) \
+                if fit_scatter else None
+    disk.lsq_fit([gas_kin, str_kin], sb_wgt=True, p0=disk.par[disk.untie], fix=fix, lb=lb, ub=ub,
+                 ignore_covar=ignore_covar, assume_posdef_covar=assume_posdef_covar,
+                 scatter=scatter, analytic_jac=analytic_jac, verbose=2) #verbose)
+    # Show
+    if verbose > 0:
+        asymdrift_fit_plot(galmeta, [gas_kin, str_kin], disk, fix=fix) 
+
+    if fix_inc or low_inc is None or disk.par[3] > low_inc:
+        # Inclination is valid, so return
+        return disk, p0, fix, gas_vel_mask, gas_sig_mask, str_vel_mask, str_sig_mask
+
+    #---------------------------------------------------------------------------
+    # Fit iteration 7:
+    #   - The best-fitting inclination is below the viable value.  Flag it.
+    disk.global_mask = disk.gbm.turn_on(disk.global_mask, 'LOWINC')
+    #   - Refit the data, but fix the inclination to the guess value.
+    #                    x0     y0     pa     inc   vsys
+    base_fix = np.array([False, False, False, True, False])
+    if fix_cen:
+        # Fix the center, if requested
+        base_fix[:2] = True
+    fix = np.append(base_fix, np.zeros(p0.size-5, dtype=bool))
+    # NOTE: This assumes the inclination is tied!!
+    disk.par[3] = galmeta.guess_inclination(lb=1., ub=89.)
+    warnings.warn(f'Best-fitting inclination is below {low_inc:.1f} degrees.  Running a final '
+                  f'fit fixing the inclination to {disk.par[3]:.1f}')
+    print('Running fit iteration 7')
+    disk.lsq_fit([gas_kin, str_kin], sb_wgt=True, p0=disk.par[disk.untie], fix=fix, lb=lb, ub=ub,
+                 ignore_covar=ignore_covar, assume_posdef_covar=assume_posdef_covar,
+                 scatter=scatter, analytic_jac=analytic_jac, verbose=2) #verbose)
+    # Show
+    if verbose > 0:
+        asymdrift_fit_plot(galmeta, [gas_kin, str_kin], disk, fix=fix) 
+
+    return disk, p0, fix, gas_vel_mask, gas_sig_mask, str_vel_mask, str_sig_mask
 

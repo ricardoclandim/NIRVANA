@@ -47,6 +47,55 @@ class ThinDiskFitBitMask(BitMask):
         """
         return ['DIDNOTUSE', 'REJ_ERR', 'REJ_SNR', 'REJ_UNR', 'DISJOINT']
 
+    def reset_to_base_flags(self, kin, vel_mask, sig_mask):
+        """
+        Reset the masks to only include the "base" flags.
+        
+        As the best-fit parameters change over the course of a set of rejection
+        iterations, the residuals with respect to the model change. This method
+        resets the flags back to the base-level rejection (i.e., independent of
+        the model), allowing the rejection to be based on the most recent set of
+        parameters and potentially recovering data that was previously rejected
+        because of a poor model fit.
+
+        .. warning::
+
+            The argument objects are *all* modified in place.
+
+        Args:
+            kin (:class:`~nirvana.data.kinematics.Kinematics`):
+                Object with the data being fit.
+            vel_mask (`numpy.ndarray`_):
+                Bitmask used to track velocity rejections.
+            sig_mask (`numpy.ndarray`_):
+                Bitmask used to track dispersion rejections. Can be None.
+        """
+        # Turn off the relevant rejection for all pixels
+        vel_mask = self.turn_off(vel_mask, flag='REJ_RESID')
+        # Reset the data mask held by the Kinematics object
+        kin.vel_mask = self.flagged(vel_mask, flag=self.base_flags())
+        if sig_mask is None:
+            return
+        # Turn off the relevant rejection for all pixels
+        sig_mask = self.turn_off(sig_mask, flag='REJ_RESID')
+        # Reset the data mask held by the Kinematics object
+        kin.sig_mask = self.flagged(sig_mask, flag=self.base_flags())
+
+
+class ThinDiskParBitMask(BitMask):
+    """
+    Mask used to track parameter issues.
+    """
+    def __init__(self):
+        # TODO: np.array just used for slicing convenience
+        mask_def = np.array([['FIXED', 'Parameter was not free during the fit.'],
+                             ['TIED', 'Parameter was not fit independently.'],
+                             ['LOWERBOUND',
+                              'Best-fit parameter is at the lower boundary of the trust region.'],
+                             ['UPPERBOUND',
+                              'Best-fit parameter is at the upper boundary of the trust region.']])
+        super().__init__(mask_def[:,0], descr=mask_def[:,1])
+
 
 class ThinDiskGlobalBitMask(BitMask):
     """
@@ -91,6 +140,11 @@ class ThinDisk:
     Measurement-specific bitmask.
     """
 
+    pbm = ThinDiskParBitMask()
+    """
+    Parameter-specific bitmask.
+    """
+
     def __init__(self, **kwargs):
         # Number of "base" parameters
         self.nbp = 5
@@ -117,6 +171,7 @@ class ThinDisk:
         """
         self.par = self.guess_par() # Model parameters
         self.par_err = None         # Model parameter errors
+        self.par_mask = None        # Model parameter masks
         self.x = None               # On-sky coordinates at which to evaluate the model
         self.y = None
         self.beam_fft = None        # FFT of the beam kernel
@@ -904,8 +959,8 @@ class ThinDisk:
         self._init_data(_kin, None, True, True)
 
         # Generate and bin the model data.  NOTE: Call above to _init_data sets
-        # _kin to self.kin, which is used by _binned_model...
-        _kin.vel, _sig = self._binned_model(par)
+        # _kin to self.kin, which is used by binned_model...
+        _kin.vel, _sig = self.binned_model(par)
         # If available, include the dispersion correction
         if _kin.sig_corr is not None:
             _sig = np.sqrt(_sig**2 + _kin.sig_corr**2)
@@ -1048,45 +1103,37 @@ class ThinDisk:
     def _deriv_s_chisqr_covar(self, sig, dsig):
         return np.dot(self._deriv_s_resid(sig, dsig).T, self._s_ucov).T
 
-    def _binned_model(self, par):
+    def binned_model(self, par, ignore_beam=False):
         """
         Compute the binned model data.
 
         Args:
-            par (`numpy.ndarray`_, optional):
+            par (`numpy.ndarray`_):
                 The list of parameters to use. Length should be either
                 :attr:`np` or :attr:`nfree`. If the latter, the values of the
                 fixed parameters in :attr:`par` are used.
+            ignore_beam (:obj:`bool`, optional):
+                Ignore the beam-smearing when constructing the model. I.e.,
+                construct the *intrinsic* model.
 
         Returns:
-
             :obj:`tuple`: Model velocity and velocity dispersion data.  The
             latter is None if the model has no dispersion parameterization.
         """
         self._set_par(par)
         if self.dc is None:
-            vel = self.model()
+            vel = self.model(ignore_beam=ignore_beam)
             sig = None
         else:
-            vel, sig = self.model()
+            vel, sig = self.model(ignore_beam=ignore_beam)
         return self.kin.bin_moments(self.sb, vel, sig)[1:]
 
-#       NOTE: LEAVE THIS OLD CODE HERE, in case we want to test the difference
-#       between the new and old approach.
-#        # TODO: This binning isn't exactly right...  Need to bin velocity and
-#        # velocity dispersion in the same way that we do the beam-smearing.
-#        # I.e., the binned velocity is sum_i w_i v_i / sum_i w_i, where w_i is
-#        # the luminosity weighting.  And the binned velocity dispersion should
-#        # be sqrt(sum_i w_i (v_i^2 + s_i^2) / sum_i w_i - bin_v^2)
-#        return (self.kin.bin(self.model()), None) if self.dc is None \
-#                        else map(lambda x : self.kin.bin(x), self.model())
-
-    def _deriv_binned_model(self, par):
+    def deriv_binned_model(self, par):
         """
         Compute the binned model data and its derivatives.
 
         Args:
-            par (`numpy.ndarray`_, optional):
+            par (`numpy.ndarray`_):
                 The list of parameters to use. Length should be either
                 :attr:`np` or :attr:`nfree`. If the latter, the values of the
                 fixed parameters in :attr:`par` are used.
@@ -1107,16 +1154,6 @@ class ThinDisk:
                 = self.kin.deriv_bin_moments(self.sb, vel, sig, None, dvel, dsig)
         return vel, sig, dvel, dsig
 
-#       NOTE: LEAVE THIS OLD CODE HERE, in case we want to test the difference
-#       between the new and old approach.
-#        if self.dc is None:
-#            vel, dvel = self.kin.deriv_bin(*self.deriv_model())
-#            return vel, None, dvel, None
-#        vel, sig, dvel, dsig = self.deriv_model()
-#        vel, dvel = self.kin.deriv_bin(vel, dvel)
-#        sig, dsig = self.kin.deriv_bin(sig, dsig)
-#        return vel, sig, dvel, dsig
-
     def _resid(self, par, sep=False):
         """
         Calculate the residuals between the data and the current model.
@@ -1136,7 +1173,7 @@ class ThinDisk:
             all data or as separate vectors for the velocity and velocity
             dispersion data (based on ``sep``).
         """
-        vel, sig = self._binned_model(par)
+        vel, sig = self.binned_model(par)
         vfom = self._v_resid(vel)
         sfom = numpy.array([]) if self.dc is None else self._s_resid(sig)
         return (vfom, sfom) if sep else np.append(vfom, sfom)
@@ -1161,7 +1198,7 @@ class ThinDisk:
             as a single array for all data or as separate arrays for the
             velocity and velocity dispersion data (based on ``sep``).
         """
-        vel, sig, dvel, dsig = self._deriv_binned_model(par)
+        vel, sig, dvel, dsig = self.deriv_binned_model(par)
         if self.dc is None:
             return (self._deriv_v_resid(dvel), numpy.array([])) \
                         if sep else self._deriv_v_resid(dvel)
@@ -1188,7 +1225,7 @@ class ThinDisk:
             returned as a single vector for all data or as separate vectors for
             the velocity and velocity dispersion data (based on ``sep``).
         """
-        vel, sig = self._binned_model(par)
+        vel, sig = self.binned_model(par)
         if self.has_covar:
             vfom = self._v_chisqr_covar(vel)
             sfom = np.array([]) if self.dc is None else self._s_chisqr_covar(sig)
@@ -1218,7 +1255,7 @@ class ThinDisk:
             array for all data or as separate arrays for the velocity and
             velocity dispersion data (based on ``sep``).
         """
-        vel, sig, dvel, dsig = self._deriv_binned_model(par)
+        vel, sig, dvel, dsig = self.deriv_binned_model(par)
         vf = self._deriv_v_chisqr_covar if self.has_covar else self._deriv_v_chisqr
         if self.dc is None:
             return (vf(dvel), numpy.array([])) if sep else vf(dvel)
@@ -1411,11 +1448,23 @@ class ThinDisk:
 
         # Save the best-fitting parameters
         self._set_par(result.x)
+
         if pe is None:
             self.par_err = None
         else:
             self.par_err = np.zeros(self.np, dtype=float)
             self.par_err[self.free] = pe
+
+        self.par_mask = self.pbm.init_mask_array(self.np)
+        pm = self.par_mask[self.free]
+        for v, flg in zip([-1, 1], ['LOWERBOUND', 'UPPERBOUND']):
+            indx = result.active_mask == v
+            if np.any(indx):
+                pm[indx] = self.pbm.turn_on(pm[indx], flg)
+        self.par_mask[self.free] = pm
+        indx = np.logical_not(self.free)
+        if np.any(indx):
+            self.par_mask[indx] = self.pbm.turn_on(self.par_mask[indx], 'FIXED')
 
         # Print the report
         if verbose > -1:
@@ -1435,8 +1484,8 @@ class ThinDisk:
 
     # TODO: This currently requires errors.  Allow for rejection without
     # errors...
-    def reject(self, disp=None, ignore_covar=True, vel_sigma_rej=5, show_vel=False, vel_plot=None,
-               sig_sigma_rej=5, show_sig=False, sig_plot=None, verbose=False, plots_only=False):
+    def reject(self, vel_sigma_rej=5, show_vel=False, vel_plot=None, sig_sigma_rej=5,
+               show_sig=False, sig_plot=None, verbose=False, plots_only=False):
         """
         Reject kinematic data based on the error-weighted residuals with respect
         to the current disk.
@@ -1453,14 +1502,6 @@ class ThinDisk:
         (e.g., ``show_vel`` can be True and ``vel_plot`` can provide a file).
 
         Args:
-            disp (:obj:`bool`, optional):
-                Flag to include the velocity dispersion rejection in the
-                iteration.  If None, rejection is included if :attr:`kin` has
-                velocity dispersion data and a dispersion parameterization is
-                available (:attr:`dc`).
-            ignore_covar (:obj:`bool`, optional):
-                If :attr:`kin` provides the covariance between measurements,
-                ignore it when constructing the error-weighted residuals.
             vel_sigma_rej (:obj:`float`, optional):
                 Rejection sigma for the velocity measurements.  If None, no data are
                 rejected and the function basically just measures the intrinsic
@@ -1496,25 +1537,18 @@ class ThinDisk:
             last two objects returned are both None.
         """
 
-        # Check input
-        if disp is None:
-            disp = self.kin.sig is not None and self.dc is not None
-        if disp and (self.kin.sig is None or self.dc is None):
-            raise ValueError('Cannot include dispersion if there is no dispersion data or if the '
-                             'dispersion data were not fit by the model.')
-        use_covar = not ignore_covar and self.kin.vel_covar is not None
-        if disp:
-            use_covar = use_covar and self.kin.sig_phys2_covar is not None
+        # NOTE: BEWARE that this is repeating code in the _resid private
+        # methods.  Make sure these stay consistent!
 
         # Get the models; this assumes the parameters are already set!
-        models = self.model()
+        models = self.binned_model(self.par)
         _verbose = 2 if verbose else 0
 
         # Reject based on error-weighted residuals, accounting for intrinsic
         # scatter
         vmod = models[0] if len(models) == 2 else models
-        resid = self.kin.vel - self.kin.bin(vmod)
-        v_err_kwargs = {'covar': self.kin.vel_covar} if use_covar \
+        resid = self.kin.vel - vmod     # NOTE: This should be the same as _v_resid
+        v_err_kwargs = {'covar': self.kin.vel_covar} if self.has_covar \
                             else {'err': np.sqrt(inverse(self.kin.vel_ivar))}
         scat = IntrinsicScatter(resid, gpm=self.vel_gpm, npar=self.nfree, **v_err_kwargs)
         if plots_only:
@@ -1532,14 +1566,15 @@ class ThinDisk:
         if vel_plot is not None:
             scat.show(ofile=vel_plot)
 
-        if not disp:
-            # Not rejecting dispersion so we're done
+        if self.kin.sig is None or self.dc is None:
+            # No dispersion data or model to use for rejection
             return vel_rej, vel_sig, None, None
 
         # Reject based on error-weighted residuals, accounting for intrinsic
         # scatter
-        resid = self.kin.sig_phys2 - self.kin.bin(models[1])**2
-        sig_err_kwargs = {'covar': self.kin.sig_phys2_covar} if use_covar \
+        smod = models[1]
+        resid = self.kin.sig_phys2 - smod**2    # NOTE: This should be the same as _s_resid
+        sig_err_kwargs = {'covar': self.kin.sig_phys2_covar} if self.has_covar \
                             else {'err': np.sqrt(inverse(self.kin.sig_phys2_ivar))}
         scat = IntrinsicScatter(resid, gpm=self.sig_gpm, npar=self.nfree, **sig_err_kwargs)
         if plots_only:

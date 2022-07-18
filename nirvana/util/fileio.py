@@ -172,10 +172,22 @@ def add_wcs(hdr, kin):
 
 # TODO: Assumes uncertainties are provided as inverse variances...
 def finalize_header(hdr, ext, bunit=None, hduclas2='DATA', err=False, qual=False, bm=None,
-                    bit_type=None, prepend=True):
+                    bit_type=None, prepend=True, channel_names=None, channel_units=None):
 
     # Don't change the input header
     _hdr = hdr.copy()
+
+    if channel_names is not None:
+        nchannels = len(channel_names)
+        ndig = int(np.log10(nchannels))+1
+        if channel_units is not None and len(channel_units) != nchannels:
+            raise ValueError('Length of column names and units are not the same.')
+
+        for i in range(nchannels):
+            _hdr['C'+f'{i+1}'.zfill(ndig)] = (channel_names[i], f'Data in channel {i+1}')
+            if channel_units is not None:
+                _hdr['U'+f'{i+1}'.zfill(ndig)] \
+                            = (channel_units[i], f'Units of data in channel {i+1}')
 
     # Add the units
     if bunit is not None:

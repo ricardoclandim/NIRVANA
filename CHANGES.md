@@ -31,6 +31,7 @@
    closer to the effects of binning the spectra and then fitting the kinematics.
  - Added method to compute Fisher Information Matrix for axisymmetric fits.
  - Added new asymmetry map calculations
+ - Added asymmetric drift fitting
 
 
 0.1.0

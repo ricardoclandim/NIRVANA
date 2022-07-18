@@ -184,7 +184,7 @@ def main(args):
 
     # Write the output file
     data_file = os.path.join(args.odir, f'{oroot}.fits.gz')
-    axisym.axisym_fit_data(galmeta, kin, p0, disk, data_file, vel_mask, sig_mask)
+    axisym.axisym_fit_data(galmeta, kin, p0, disk, vel_mask, sig_mask, ofile=data_file)
 
     if args.skip_plots:
         return
@@ -192,8 +192,7 @@ def main(args):
     # Plot the final residuals
     dv_plot = os.path.join(args.odir, f'{oroot}-vdist.png')
     ds_plot = os.path.join(args.odir, f'{oroot}-sdist.png')
-    disk.reject(disp=args.disp, ignore_covar=not args.covar, vel_plot=dv_plot, sig_plot=ds_plot,
-                plots_only=True) 
+    disk.reject(vel_plot=dv_plot, sig_plot=ds_plot, plots_only=True) 
 
     # Plot the fit asymmetry
     asym_plot = os.path.join(args.odir, f'{oroot}-asym.png')
