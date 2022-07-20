@@ -189,6 +189,10 @@ def main(args):
     if args.skip_plots:
         return
 
+    # Plot the masking data
+    mask_plot = os.path.join(args.odir, f'{oroot}-mask.png')
+    axisym.axisym_fit_plot_masks(galmeta, kin, disk, vel_mask, sig_mask, ofile=mask_plot)
+
     # Plot the final residuals
     dv_plot = os.path.join(args.odir, f'{oroot}-vdist.png')
     ds_plot = os.path.join(args.odir, f'{oroot}-sdist.png')

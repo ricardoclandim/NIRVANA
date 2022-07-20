@@ -1940,6 +1940,424 @@ def axisym_init_model(galmeta, kin, rctype, dctype=None):
     return p0, AxisymmetricDisk(rc=rc, dc=dc)
 
 
+# TODO:
+#   - This is MaNGA-specific and needs to be abstracted
+#   - Allow the plot to be constructed from the fits file written by
+#     axisym_fit_data
+def axisym_fit_plot_masks(galmeta, kin, disk, vel_mask, sig_mask, ofile=None):
+    """
+    Construct the QA plot for the result of fitting an
+    :class:`~nirvana.model.axisym.AxisymmetricDisk` model to a galaxy.
+
+    Args:
+        galmeta (:class:`~nirvana.data.meta.GlobalPar`):
+            Object with metadata for the galaxy to be fit.
+        kin (:class:`~nirvana.data.kinematics.Kinematics`):
+            Object with the data to be fit
+        disk (:class:`~nirvana.models.axisym.AxisymmetricDisk`):
+            Object that performed the fit and has the best-fitting parameters.
+        par (`numpy.ndarray`_, optional):
+            The parameters of the model.  If None are provided, the parameters
+            in ``disk`` are used.
+        par_err (`numpy.ndarray`_, optional):
+            The errors in the model parameters.  If None are provided, the
+            parameter errors in ``disk`` are used.
+        fix (`numpy.ndarray`_, optional):
+            Flags indicating the parameters that were fixed during the fit.  If
+            None, all parameters are assumed to have been free.
+        ofile (:obj:`str`, optional):
+            Output filename for the plot.  If None, the plot is shown to the
+            screen.
+    """
+    logformatter = plot.get_logformatter()
+
+    # Change the style
+    rc('font', size=8)
+
+    # Count the rejections
+    n_v_errsnr = np.sum(disk.mbm.flagged(vel_mask, ['REJ_ERR', 'REJ_SNR']))
+    n_v_coh = np.sum(disk.mbm.flagged(vel_mask, 'DISJOINT'))
+    n_v_unr = np.sum(disk.mbm.flagged(vel_mask, 'REJ_UNR'))
+    n_v_rej = np.sum(disk.mbm.flagged(vel_mask, 'REJ_RESID'))
+
+    n_s_errsnr = np.sum(disk.mbm.flagged(sig_mask, ['REJ_ERR', 'REJ_SNR']))
+    n_s_coh = np.sum(disk.mbm.flagged(sig_mask, 'DISJOINT'))
+    n_s_unr = np.sum(disk.mbm.flagged(sig_mask, 'REJ_UNR'))
+    n_s_rej = np.sum(disk.mbm.flagged(sig_mask, 'REJ_RESID'))
+
+    # Rebuild the 2D maps
+    v_mask_map = kin.remap(vel_mask, masked=False, fill_value=disk.mbm.turn_on(0, 'DIDNOTUSE'))
+    v_didnotuse = disk.mbm.flagged(v_mask_map, 'DIDNOTUSE')
+    s_mask_map = kin.remap(sig_mask, masked=False, fill_value=disk.mbm.turn_on(0, 'DIDNOTUSE'))
+    s_didnotuse = disk.mbm.flagged(s_mask_map, 'DIDNOTUSE')
+
+    sb_map = kin.remap('sb')
+    v_map = kin.remap('vel', mask=disk.mbm.flagged(vel_mask, 'DIDNOTUSE'))
+    s_map = kin.remap('sig_phys2', mask=disk.mbm.flagged(sig_mask, 'DIDNOTUSE'))
+
+    # Get the projected rotational velocity
+    #   - Disk-plane coordinates
+    r, th = projected_polar(kin.grid_x - disk.par[0], kin.grid_y - disk.par[1],
+                            *np.radians(disk.par[2:4]))
+    #   - Mask for data along the major axis
+    fwhm = galmeta.psf_fwhm[1]  # Selects r band!
+    maj_wedge = 30.
+    min_wedge = 10.
+    major_gpm = select_kinematic_axis(r, th, which='major', r_range='all', wedge=maj_wedge)
+    minor_gpm = select_kinematic_axis(r, th, which='minor', r_range='all', wedge=min_wedge)
+    kin_axis_map = np.ma.masked_all(major_gpm.shape, dtype=int)
+    kin_axis_map[major_gpm] = 1
+    kin_axis_map[minor_gpm] = 0.5
+    kin_axis_map[disk.mbm.flagged(v_mask_map, 'DIDNOTUSE')] = np.ma.masked
+
+    # Set the extent for the 2D maps
+    extent = [np.amax(kin.grid_x), np.amin(kin.grid_x), np.amin(kin.grid_y), np.amax(kin.grid_y)]
+    Dx = max(extent[0]-extent[1], extent[3]-extent[2]) # *1.01
+    skylim = np.array([ (extent[0]+extent[1] - Dx)/2., 0.0 ])
+    skylim[1] = skylim[0] + Dx
+
+    # Create the plot
+    w,h = pyplot.figaspect(1)
+    fig = pyplot.figure(figsize=(2*w,2*h))
+
+    #-------------------------------------------------------------------
+    # Surface-brightness
+    sb_lim = np.power(10.0, growth_lim(np.ma.log10(sb_map), 0.90, 1.05))
+    sb_lim = atleast_one_decade(sb_lim)
+    
+    ax = plot.init_ax(fig, [0.02, 0.783, 0.19, 0.19])
+    cax = fig.add_axes([0.05, 0.978, 0.15, 0.005])
+    cax.tick_params(which='both', direction='in')
+    ax.set_xlim(skylim[::-1])
+    ax.set_ylim(skylim)
+    plot.rotate_y_ticks(ax, 90, 'center')
+    ax.xaxis.set_major_formatter(ticker.NullFormatter())
+    ax.add_patch(patches.Circle((0.1, 0.1), fwhm/np.diff(skylim)[0]/2, transform=ax.transAxes,
+                                facecolor='0.7', edgecolor='k', zorder=4))
+    im = ax.imshow(sb_map, origin='lower', interpolation='nearest', cmap='inferno',
+                   extent=extent, norm=colors.LogNorm(vmin=sb_lim[0], vmax=sb_lim[1]), zorder=4)
+    # Mark the fitted dynamical center
+    ax.scatter(disk.par[0], disk.par[1], marker='+', color='k', s=40, lw=1, zorder=5)
+    # TODO: For some reason, the combination of the use of a masked array and
+    # setting the formatter to logformatter leads to weird behavior in the map.
+    # Use something like the "pallete" object described here?
+    #   https://matplotlib.org/stable/gallery/images_contours_and_fields/image_masked.html
+    cb = fig.colorbar(im, cax=cax, orientation='horizontal', format=logformatter)
+    cb.ax.xaxis.set_ticks_position('top')
+    cb.ax.xaxis.set_label_position('top')
+    cax.text(-0.05, 1.1, r'$\mu$', ha='right', va='center', transform=cax.transAxes)
+
+    #-------------------------------------------------------------------
+    # Major/Minor axis mask
+    ax = plot.init_ax(fig, [0.02, 0.588, 0.19, 0.19])
+    ax.set_xlim(skylim[::-1])
+    ax.set_ylim(skylim)
+    ax.xaxis.set_major_formatter(ticker.NullFormatter())
+    plot.rotate_y_ticks(ax, 90, 'center')
+    ax.add_patch(patches.Circle((0.1, 0.1), fwhm/np.diff(skylim)[0]/2, transform=ax.transAxes,
+                                facecolor='0.7', edgecolor='k', zorder=4))
+    im = ax.imshow(kin_axis_map, origin='lower', interpolation='nearest', cmap='gray',
+                   extent=extent, vmin=0., vmax=1., zorder=4)
+    # Mark the fitted dynamical center
+    ax.scatter(disk.par[0], disk.par[1], marker='+', color='k', s=40, lw=1, zorder=5)
+
+    #-------------------------------------------------------------------
+    #-------------------------------------------------------------------
+    #-------------------------------------------------------------------
+    # Velocity
+    vel_lim = growth_lim(v_map, 0.90, 1.05, midpoint=disk.par[4])
+    ax = plot.init_ax(fig, [0.215, 0.783, 0.19, 0.19])
+    cax = fig.add_axes([0.245, 0.978, 0.15, 0.005])
+    cax.tick_params(which='both', direction='in')
+    ax.set_xlim(skylim[::-1])
+    ax.set_ylim(skylim)
+    ax.xaxis.set_major_formatter(ticker.NullFormatter())
+    ax.yaxis.set_major_formatter(ticker.NullFormatter())
+    ax.add_patch(patches.Circle((0.1, 0.1), fwhm/np.diff(skylim)[0]/2, transform=ax.transAxes,
+                                facecolor='0.7', edgecolor='k', zorder=4))
+    im = ax.imshow(v_map, origin='lower', interpolation='nearest', cmap='RdBu_r',
+                   extent=extent, vmin=vel_lim[0], vmax=vel_lim[1], zorder=4)
+    # Mark the fitted dynamical center
+    ax.scatter(disk.par[0], disk.par[1], marker='+', color='k', s=40, lw=1, zorder=5)
+    cb = fig.colorbar(im, cax=cax, orientation='horizontal')
+    cb.ax.xaxis.set_ticks_position('top')
+    cb.ax.xaxis.set_label_position('top')
+    cax.text(-0.05, 1.1, 'V', ha='right', va='center', transform=cax.transAxes)
+
+    #-------------------------------------------------------------------
+    # Velocity ERR/SNR Mask
+    ax = plot.init_ax(fig, [0.215, 0.588, 0.19, 0.19])
+    ax.set_xlim(skylim[::-1])
+    ax.set_ylim(skylim)
+    ax.xaxis.set_major_formatter(ticker.NullFormatter())
+    ax.yaxis.set_major_formatter(ticker.NullFormatter())
+    ax.add_patch(patches.Circle((0.1, 0.1), fwhm/np.diff(skylim)[0]/2, transform=ax.transAxes,
+                                facecolor='0.7', edgecolor='k', zorder=4))
+    base = np.ma.MaskedArray(v_didnotuse.astype(int), mask=np.logical_not(v_didnotuse))
+    im = ax.imshow(base, origin='lower', interpolation='nearest',
+                   cmap='gray_r', alpha=0.3, extent=extent, vmin=0., vmax=1., zorder=4)
+    errsnr = disk.mbm.flagged(v_mask_map, ['REJ_ERR', 'REJ_SNR'])
+    mask = np.ma.MaskedArray(errsnr.astype(int)*0.7, mask=v_didnotuse | np.logical_not(errsnr))
+    im = ax.imshow(mask, origin='lower', interpolation='nearest',
+                   cmap='Reds', extent=extent, vmin=0., vmax=1., zorder=5)
+    # Mark the fitted dynamical center
+    ax.scatter(disk.par[0], disk.par[1], marker='+', color='k', s=40, lw=1, zorder=6)
+
+    #-------------------------------------------------------------------
+    # Velocity coherent mask
+    ax = plot.init_ax(fig, [0.215, 0.393, 0.19, 0.19])
+    ax.set_xlim(skylim[::-1])
+    ax.set_ylim(skylim)
+    ax.xaxis.set_major_formatter(ticker.NullFormatter())
+    ax.yaxis.set_major_formatter(ticker.NullFormatter())
+    ax.add_patch(patches.Circle((0.1, 0.1), fwhm/np.diff(skylim)[0]/2, transform=ax.transAxes,
+                                facecolor='0.7', edgecolor='k', zorder=4))
+    im = ax.imshow(base, origin='lower', interpolation='nearest',
+                   cmap='gray_r', alpha=0.3, extent=extent, vmin=0., vmax=1., zorder=4)
+    coh = disk.mbm.flagged(v_mask_map, 'DISJOINT')
+    mask = np.ma.MaskedArray(coh.astype(int)*0.7, mask=v_didnotuse | np.logical_not(coh))
+    im = ax.imshow(mask, origin='lower', interpolation='nearest',
+                   cmap='Reds', extent=extent, vmin=0., vmax=1., zorder=5)
+    # Mark the fitted dynamical center
+    ax.scatter(disk.par[0], disk.par[1], marker='+', color='k', s=40, lw=1, zorder=6)
+
+    #-------------------------------------------------------------------
+    # Velocity unreliable mask
+    ax = plot.init_ax(fig, [0.215, 0.198, 0.19, 0.19])
+    ax.set_xlim(skylim[::-1])
+    ax.set_ylim(skylim)
+    ax.xaxis.set_major_formatter(ticker.NullFormatter())
+    ax.yaxis.set_major_formatter(ticker.NullFormatter())
+    ax.add_patch(patches.Circle((0.1, 0.1), fwhm/np.diff(skylim)[0]/2, transform=ax.transAxes,
+                                facecolor='0.7', edgecolor='k', zorder=4))
+    im = ax.imshow(base, origin='lower', interpolation='nearest',
+                   cmap='gray_r', alpha=0.3, extent=extent, vmin=0., vmax=1., zorder=4)
+    unr = disk.mbm.flagged(v_mask_map, 'REJ_UNR')
+    mask = np.ma.MaskedArray(unr.astype(int)*0.7, mask=v_didnotuse | np.logical_not(unr))
+    im = ax.imshow(mask, origin='lower', interpolation='nearest',
+                   cmap='Reds', extent=extent, vmin=0., vmax=1., zorder=5)
+    # Mark the fitted dynamical center
+    ax.scatter(disk.par[0], disk.par[1], marker='+', color='k', s=40, lw=1, zorder=6)
+
+    #-------------------------------------------------------------------
+    # Velocity rejected mask
+    ax = plot.init_ax(fig, [0.215, 0.003, 0.19, 0.19])
+    ax.set_xlim(skylim[::-1])
+    ax.set_ylim(skylim)
+    ax.xaxis.set_major_formatter(ticker.NullFormatter())
+    ax.yaxis.set_major_formatter(ticker.NullFormatter())
+    ax.add_patch(patches.Circle((0.1, 0.1), fwhm/np.diff(skylim)[0]/2, transform=ax.transAxes,
+                                facecolor='0.7', edgecolor='k', zorder=4))
+    im = ax.imshow(base, origin='lower', interpolation='nearest',
+                   cmap='gray_r', alpha=0.3, extent=extent, vmin=0., vmax=1., zorder=4)
+    rej = disk.mbm.flagged(v_mask_map, 'REJ_RESID')
+    mask = np.ma.MaskedArray(rej.astype(int)*0.7, mask=v_didnotuse | np.logical_not(rej))
+    im = ax.imshow(mask, origin='lower', interpolation='nearest',
+                   cmap='Reds', extent=extent, vmin=0., vmax=1., zorder=5)
+    # Mark the fitted dynamical center
+    ax.scatter(disk.par[0], disk.par[1], marker='+', color='k', s=40, lw=1, zorder=6)
+
+    #-------------------------------------------------------------------
+    #-------------------------------------------------------------------
+    #-------------------------------------------------------------------
+    # Velocity Dispersion
+    sig_lim = np.power(10.0, growth_lim(np.ma.log10(s_map), 0.80, 1.05))
+    sig_lim = atleast_one_decade(sig_lim)
+
+    ax = plot.init_ax(fig, [0.410, 0.783, 0.19, 0.19])
+    cax = fig.add_axes([0.440, 0.978, 0.15, 0.005])
+#    ax = plot.init_ax(fig, [0.215, 0.580, 0.19, 0.19])
+#    cax = fig.add_axes([0.245, 0.57, 0.15, 0.005])
+    cax.tick_params(which='both', direction='in')
+    ax.set_xlim(skylim[::-1])
+    ax.set_ylim(skylim)
+    ax.xaxis.set_major_formatter(ticker.NullFormatter())
+    ax.yaxis.set_major_formatter(ticker.NullFormatter())
+    ax.add_patch(patches.Circle((0.1, 0.1), fwhm/np.diff(skylim)[0]/2, transform=ax.transAxes,
+                                facecolor='0.7', edgecolor='k', zorder=4))
+    im = ax.imshow(s_map, origin='lower', interpolation='nearest', cmap='viridis',
+                   extent=extent, norm=colors.LogNorm(vmin=sig_lim[0], vmax=sig_lim[1]), zorder=4)
+    # Mark the fitted dynamical center
+    ax.scatter(disk.par[0], disk.par[1], marker='+', color='k', s=40, lw=1, zorder=5)
+    cb = fig.colorbar(im, cax=cax, orientation='horizontal', format=logformatter)
+    cb.ax.xaxis.set_ticks_position('top')
+    cb.ax.xaxis.set_label_position('top')
+    cax.text(-0.05, 0.1, r'$\sigma$', ha='right', va='center', transform=cax.transAxes)
+
+    #-------------------------------------------------------------------
+    # Velocity Dispersion ERR/SNR Mask
+    ax = plot.init_ax(fig, [0.410, 0.588, 0.19, 0.19])
+    ax.set_xlim(skylim[::-1])
+    ax.set_ylim(skylim)
+    ax.xaxis.set_major_formatter(ticker.NullFormatter())
+    ax.yaxis.set_major_formatter(ticker.NullFormatter())
+    ax.add_patch(patches.Circle((0.1, 0.1), fwhm/np.diff(skylim)[0]/2, transform=ax.transAxes,
+                                facecolor='0.7', edgecolor='k', zorder=4))
+    base = np.ma.MaskedArray(s_didnotuse.astype(int), mask=np.logical_not(s_didnotuse))
+    im = ax.imshow(base, origin='lower', interpolation='nearest',
+                   cmap='gray_r', alpha=0.3, extent=extent, vmin=0., vmax=1., zorder=4)
+    errsnr = disk.mbm.flagged(s_mask_map, ['REJ_ERR', 'REJ_SNR'])
+    mask = np.ma.MaskedArray(errsnr.astype(int)*0.7, mask=s_didnotuse | np.logical_not(errsnr))
+    im = ax.imshow(mask, origin='lower', interpolation='nearest',
+                   cmap='Reds', extent=extent, vmin=0., vmax=1., zorder=5)
+    # Mark the fitted dynamical center
+    ax.scatter(disk.par[0], disk.par[1], marker='+', color='k', s=40, lw=1, zorder=6)
+    ax.text(1.07, 0.5, r'Large $\epsilon$; low S/N', ha='center', va='center',
+            transform=ax.transAxes, rotation='vertical', fontsize=10)
+
+    #-------------------------------------------------------------------
+    # Velocity dispersion coherent mask
+    ax = plot.init_ax(fig, [0.410, 0.393, 0.19, 0.19])
+    ax.set_xlim(skylim[::-1])
+    ax.set_ylim(skylim)
+    ax.xaxis.set_major_formatter(ticker.NullFormatter())
+    ax.yaxis.set_major_formatter(ticker.NullFormatter())
+    ax.add_patch(patches.Circle((0.1, 0.1), fwhm/np.diff(skylim)[0]/2, transform=ax.transAxes,
+                                facecolor='0.7', edgecolor='k', zorder=4))
+    im = ax.imshow(base, origin='lower', interpolation='nearest',
+                   cmap='gray_r', alpha=0.3, extent=extent, vmin=0., vmax=1., zorder=4)
+    coh = disk.mbm.flagged(s_mask_map, 'DISJOINT')
+    mask = np.ma.MaskedArray(coh.astype(int)*0.7, mask=s_didnotuse | np.logical_not(coh))
+    im = ax.imshow(mask, origin='lower', interpolation='nearest',
+                   cmap='Reds', extent=extent, vmin=0., vmax=1., zorder=5)
+    # Mark the fitted dynamical center
+    ax.scatter(disk.par[0], disk.par[1], marker='+', color='k', s=40, lw=1, zorder=6)
+    ax.text(1.07, 0.5, r'Disjoint region', ha='center', va='center',
+            transform=ax.transAxes, rotation='vertical', fontsize=10)
+
+    #-------------------------------------------------------------------
+    # Velocity dispersion unreliable mask
+    ax = plot.init_ax(fig, [0.410, 0.198, 0.19, 0.19])
+    ax.set_xlim(skylim[::-1])
+    ax.set_ylim(skylim)
+    ax.xaxis.set_major_formatter(ticker.NullFormatter())
+    ax.yaxis.set_major_formatter(ticker.NullFormatter())
+    ax.add_patch(patches.Circle((0.1, 0.1), fwhm/np.diff(skylim)[0]/2, transform=ax.transAxes,
+                                facecolor='0.7', edgecolor='k', zorder=4))
+    im = ax.imshow(base, origin='lower', interpolation='nearest',
+                   cmap='gray_r', alpha=0.3, extent=extent, vmin=0., vmax=1., zorder=4)
+    unr = disk.mbm.flagged(s_mask_map, 'REJ_UNR')
+    mask = np.ma.MaskedArray(unr.astype(int)*0.7, mask=s_didnotuse | np.logical_not(unr))
+    im = ax.imshow(mask, origin='lower', interpolation='nearest',
+                   cmap='Reds', extent=extent, vmin=0., vmax=1., zorder=5)
+    # Mark the fitted dynamical center
+    ax.scatter(disk.par[0], disk.par[1], marker='+', color='k', s=40, lw=1, zorder=6)
+    ax.text(1.07, 0.5, r'Unreliable', ha='center', va='center',
+            transform=ax.transAxes, rotation='vertical', fontsize=10)
+
+    #-------------------------------------------------------------------
+    # Velocity dispersion rejected mask
+    ax = plot.init_ax(fig, [0.410, 0.003, 0.19, 0.19])
+    ax.set_xlim(skylim[::-1])
+    ax.set_ylim(skylim)
+    ax.xaxis.set_major_formatter(ticker.NullFormatter())
+    ax.yaxis.set_major_formatter(ticker.NullFormatter())
+    ax.add_patch(patches.Circle((0.1, 0.1), fwhm/np.diff(skylim)[0]/2, transform=ax.transAxes,
+                                facecolor='0.7', edgecolor='k', zorder=4))
+    im = ax.imshow(base, origin='lower', interpolation='nearest',
+                   cmap='gray_r', alpha=0.3, extent=extent, vmin=0., vmax=1., zorder=4)
+    rej = disk.mbm.flagged(s_mask_map, 'REJ_RESID')
+    mask = np.ma.MaskedArray(rej.astype(int)*0.7, mask=s_didnotuse | np.logical_not(rej))
+    im = ax.imshow(mask, origin='lower', interpolation='nearest',
+                   cmap='Reds', extent=extent, vmin=0., vmax=1., zorder=5)
+    # Mark the fitted dynamical center
+    ax.scatter(disk.par[0], disk.par[1], marker='+', color='k', s=40, lw=1, zorder=6)
+    ax.text(1.07, 0.5, r'Outliers', ha='center', va='center',
+            transform=ax.transAxes, rotation='vertical', fontsize=10)
+
+    #-------------------------------------------------------------------
+    # SDSS image
+    ax = fig.add_axes([0.008, 0.343, 0.20, 0.20])
+    if kin.image is not None:
+        ax.imshow(kin.image)
+    else:
+        ax.text(0.5, 0.5, 'No Image', ha='center', va='center', transform=ax.transAxes,
+                fontsize=20)
+
+    ax.text(0.5, 1.05, 'SDSS gri Composite', ha='center', va='center', transform=ax.transAxes,
+            fontsize=10)
+    ax.axes.get_xaxis().set_visible(False)
+    ax.axes.get_yaxis().set_visible(False)
+
+    if galmeta.primaryplus:
+        sample='Primary+'
+    elif galmeta.secondary:
+        sample='Secondary'
+    elif galmeta.ancillary:
+        sample='Ancillary'
+    else:
+        sample='Filler'
+
+    # MaNGA ID
+    ax.text(0.00, -0.05, 'MaNGA ID:', ha='left', va='center', transform=ax.transAxes, fontsize=10)
+    ax.text(1.01, -0.05, f'{galmeta.mangaid}', ha='right', va='center', transform=ax.transAxes,
+            fontsize=10)
+    # Observation
+    ax.text(0.00, -0.13, 'Observation:', ha='left', va='center', transform=ax.transAxes,
+            fontsize=10)
+    ax.text(1.01, -0.13, f'{galmeta.plate}-{galmeta.ifu}', ha='right', va='center',
+            transform=ax.transAxes, fontsize=10)
+    # Sample selection
+    ax.text(0.00, -0.21, 'Sample:', ha='left', va='center', transform=ax.transAxes, fontsize=10)
+    ax.text(1.01, -0.21, f'{sample}', ha='right', va='center', transform=ax.transAxes, fontsize=10)
+    # Velocity rejections
+    ax.text(0.00, -0.29, 'Velocity Rejections:', ha='left', va='center', transform=ax.transAxes,
+            fontsize=10)
+    #   Large err/low S/N
+    ax.text(0.00, -0.37, r'  Large $\epsilon$, low S/N:', ha='left', va='center',
+            transform=ax.transAxes, fontsize=10)
+    ax.text(1.01, -0.37, f'{n_v_errsnr}', ha='right', va='center',
+            transform=ax.transAxes, fontsize=10)
+    #   Disjoint
+    ax.text(0.00, -0.45, '  Disjoint:', ha='left', va='center',
+            transform=ax.transAxes, fontsize=10)
+    ax.text(1.01, -0.45, f'{n_v_coh}', ha='right', va='center',
+            transform=ax.transAxes, fontsize=10)
+    #   Unreliable
+    ax.text(0.00, -0.53, '  Unreliable:', ha='left', va='center',
+            transform=ax.transAxes, fontsize=10)
+    ax.text(1.01, -0.53, f'{n_v_unr}', ha='right', va='center',
+            transform=ax.transAxes, fontsize=10)
+    #   Rejected
+    ax.text(0.00, -0.61, '  Outliers:', ha='left', va='center',
+            transform=ax.transAxes, fontsize=10)
+    ax.text(1.01, -0.61, f'{n_v_rej}', ha='right', va='center',
+            transform=ax.transAxes, fontsize=10)
+    # Velocity Dispersion rejections
+    ax.text(0.00, -0.69, 'Dispersion Rejections:', ha='left', va='center', transform=ax.transAxes,
+            fontsize=10)
+    #   Large err/low S/N
+    ax.text(0.00, -0.77, r'  Large $\epsilon$, low S/N:', ha='left', va='center',
+            transform=ax.transAxes, fontsize=10)
+    ax.text(1.01, -0.77, f'{n_s_errsnr}', ha='right', va='center',
+            transform=ax.transAxes, fontsize=10)
+    #   Disjoint
+    ax.text(0.00, -0.85, '  Disjoint:', ha='left', va='center',
+            transform=ax.transAxes, fontsize=10)
+    ax.text(1.01, -0.85, f'{n_s_coh}', ha='right', va='center',
+            transform=ax.transAxes, fontsize=10)
+    #   Unreliable
+    ax.text(0.00, -0.93, '  Unreliable:', ha='left', va='center',
+            transform=ax.transAxes, fontsize=10)
+    ax.text(1.01, -0.93, f'{n_s_unr}', ha='right', va='center',
+            transform=ax.transAxes, fontsize=10)
+    #   Rejected
+    ax.text(0.00, -1.01, '  Outliers:', ha='left', va='center',
+            transform=ax.transAxes, fontsize=10)
+    ax.text(1.01, -1.01, f'{n_s_rej}', ha='right', va='center',
+            transform=ax.transAxes, fontsize=10)
+
+    if ofile is None:
+        pyplot.show()
+    else:
+        fig.canvas.print_figure(ofile, bbox_inches='tight')
+    fig.clear()
+    pyplot.close(fig)
+
+    # Reset to default style
+    pyplot.rcdefaults()
+
+
 def axisym_iter_fit(galmeta, kin, rctype='HyperbolicTangent', dctype='Exponential', fitdisp=True,
                     ignore_covar=True, assume_posdef_covar=True, max_vel_err=None,
                     max_sig_err=None, min_vel_snr=None, min_sig_snr=None,

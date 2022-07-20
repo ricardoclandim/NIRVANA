@@ -9,6 +9,7 @@ from astropy.io import fits
 from nirvana.scripts import manga_axisym, manga_asymdrift
 from nirvana.tests.util import remote_data_file, requires_remote
 
+
 @requires_remote
 def test_manga_axisym():
     odir = remote_data_file('tests/8138')
@@ -29,6 +30,7 @@ def test_manga_axisym():
         assert hdu['FITMETA'].data['RCHI2'] < 1.1, 'Fit dramatically changed'
 
     shutil.rmtree(odir)
+
 
 @requires_remote
 def test_manga_asymdrift():

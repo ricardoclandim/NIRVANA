@@ -1085,6 +1085,8 @@ class Kinematics:
         vel_mask[vel_didnotuse] = bitmask.turn_on(vel_mask[vel_didnotuse], 'DIDNOTUSE')
         vel_mask[vel_largeerr] = bitmask.turn_on(vel_mask[vel_largeerr], 'REJ_ERR')
         vel_mask[vel_lowsnr] = bitmask.turn_on(vel_mask[vel_lowsnr], 'REJ_SNR')
+        if select_coherent:
+            vel_mask[vel_disjoint] = bitmask.turn_on(vel_mask[vel_disjoint], 'DISJOINT')
 
         # If there are not sigma measurements, we're done
         if self.sig is None:
@@ -1095,6 +1097,8 @@ class Kinematics:
         sig_mask[sig_didnotuse] = bitmask.turn_on(sig_mask[sig_didnotuse], 'DIDNOTUSE')
         sig_mask[sig_largeerr] = bitmask.turn_on(sig_mask[sig_largeerr], 'REJ_ERR')
         sig_mask[sig_lowsnr] = bitmask.turn_on(sig_mask[sig_lowsnr], 'REJ_SNR')
+        if select_coherent:
+            sig_mask[sig_disjoint] = bitmask.turn_on(sig_mask[sig_disjoint], 'DISJOINT')
 
         # Done    
         return vel_mask, sig_mask

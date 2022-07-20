@@ -265,6 +265,10 @@ def main(args):
         return
 
     # Create the QA plots
+    # - Get the gas mask data
+    mask_plot = os.path.join(args.odir, f'{oroot}-Gas-mask.png')
+    axisym.axisym_fit_plot_masks(galmeta, gas_kin, gas_disk, gas_vel_mask, gas_sig_mask,
+                                 ofile=mask_plot)
     # - Get the gas fit residuals
     dv_plot = os.path.join(args.odir, f'{oroot}-Gas-vdist.png')
     ds_plot = os.path.join(args.odir, f'{oroot}-Gas-sdist.png')
@@ -280,6 +284,10 @@ def main(args):
     fit_plot = os.path.join(args.odir, f'{oroot}-Gas-fit.png')
     axisym.axisym_fit_plot(galmeta, gas_kin, gas_disk, fix=fix[gas_slice], ofile=fit_plot)
 
+    # - Get the stellar mask data
+    mask_plot = os.path.join(args.odir, f'{oroot}-Stars-mask.png')
+    axisym.axisym_fit_plot_masks(galmeta, str_kin, str_disk, str_vel_mask, str_sig_mask,
+                                 ofile=mask_plot)
     # - Get the stellar fit residuals
     dv_plot = os.path.join(args.odir, f'{oroot}-Stars-vdist.png')
     ds_plot = os.path.join(args.odir, f'{oroot}-Stars-sdist.png')
@@ -294,8 +302,8 @@ def main(args):
     # - Make the stellar fit plots
     fit_plot = os.path.join(args.odir, f'{oroot}-Stars-fit.png')
     axisym.axisym_fit_plot(galmeta, str_kin, str_disk, fix=fix[str_slice], ofile=fit_plot)
+
     # - Get the consolidated asymmetric drift plot
-    # Create the final fit plots
     fit_plot = os.path.join(args.odir, f'{oroot}-asymdrift.png')
     multitrace.asymdrift_fit_plot(galmeta, [gas_kin, str_kin], disk, ofile=fit_plot)
 
