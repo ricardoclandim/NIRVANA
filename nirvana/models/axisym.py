@@ -974,6 +974,7 @@ def axisym_fit_data(galmeta, kin, p0, lb, ub, disk, vmask, smask, ofile=None):
 
     metadata['VASYM'] = np.array([np.percentile(np.absolute(a[np.logical_not(m)]),
                                                 [50., 80., 90.])
+                                        if not np.all(m) else np.array([-1., -1., -1.])
                                     for a, m in zip(vel_asym, vel_asym_mask)])
     nsig = 0.
 
@@ -998,6 +999,7 @@ def axisym_fit_data(galmeta, kin, p0, lb, ub, disk, vmask, smask, ofile=None):
 
         metadata['SASYM'] = np.array([np.percentile(np.absolute(a[np.logical_not(m)]),
                                                     [50., 80., 90.])
+                                            if not np.all(m) else np.array([-1., -1., -1.])
                                         for a, m in zip(sig_asym, sig_asym_mask)])
         
     # Total fit chi-square. SCHI2 and SNFIT are 0 if sigma not fit because of

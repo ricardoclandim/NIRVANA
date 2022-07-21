@@ -1455,17 +1455,22 @@ class Kinematics:
         abs_vel_x = np.absolute(vel_x.compressed())
         n_vel_x = abs_vel_x.size
         grw_vel_x = 1-(np.arange(n_vel_x)+1)/n_vel_x
-        fid_vel_x = np.percentile(abs_vel_x, fid_grw)
+        fid_vel_x = np.percentile(abs_vel_x, fid_grw) if abs_vel_x.size > 0 \
+                        else -np.ones(fid_grw.size, dtype=float)
 
         abs_vel_y = np.absolute(vel_y.compressed())
         n_vel_y = abs_vel_y.size
         grw_vel_y = 1-(np.arange(n_vel_y)+1)/n_vel_y
         fid_vel_y = np.percentile(abs_vel_y, fid_grw)
+        fid_vel_y = np.percentile(abs_vel_y, fid_grw) if abs_vel_y.size > 0 \
+                        else -np.ones(fid_grw.size, dtype=float)
 
         abs_vel_xy = np.absolute(vel_xy.compressed())
         n_vel_xy = abs_vel_xy.size
         grw_vel_xy = 1-(np.arange(n_vel_xy)+1)/n_vel_xy
         fid_vel_xy = np.percentile(abs_vel_xy, fid_grw)
+        fid_vel_xy = np.percentile(abs_vel_xy, fid_grw) if abs_vel_xy.size > 0 \
+                        else -np.ones(fid_grw.size, dtype=float)
 
         ax = plot.init_ax(fig, [0.38, 0.06, 0.29, 0.36], majlen=6, minlen=3, facecolor='0.95',
                           gridcolor='0.9')
@@ -1495,17 +1500,20 @@ class Kinematics:
         abs_sig_x = np.absolute(sig_x.compressed())
         n_sig_x = abs_sig_x.size
         grw_sig_x = 1-(np.arange(n_sig_x)+1)/n_sig_x
-        fid_sig_x = np.percentile(abs_sig_x, fid_grw)
+        fid_sig_x = np.percentile(abs_sig_x, fid_grw) if abs_sig_x.size > 0 \
+                        else -np.ones(fid_grw.size, dtype=float)
 
         abs_sig_y = np.absolute(sig_y.compressed())
         n_sig_y = abs_sig_y.size
         grw_sig_y = 1-(np.arange(n_sig_y)+1)/n_sig_y
-        fid_sig_y = np.percentile(abs_sig_y, fid_grw)
+        fid_sig_y = np.percentile(abs_sig_y, fid_grw) if abs_sig_y.size > 0 \
+                        else -np.ones(fid_grw.size, dtype=float)
 
         abs_sig_xy = np.absolute(sig_xy.compressed())
         n_sig_xy = abs_sig_xy.size
         grw_sig_xy = 1-(np.arange(n_sig_xy)+1)/n_sig_xy
-        fid_sig_xy = np.percentile(abs_sig_xy, fid_grw)
+        fid_sig_xy = np.percentile(abs_sig_xy, fid_grw) if abs_sig_xy.size > 0 \
+                        else -np.ones(fid_grw.size, dtype=float)
 
         ax = plot.init_ax(fig, [0.68, 0.06, 0.29, 0.36], majlen=6, minlen=3, facecolor='0.95',
                           gridcolor='0.9')

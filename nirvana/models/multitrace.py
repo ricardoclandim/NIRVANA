@@ -1426,7 +1426,7 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
                    marker='o', s=90, alpha=1.0, color='k', zorder=4)
         ax.errorbar(bin_ad_r[ad_indx], bin_ad[ad_indx], yerr=bin_ade[ad_indx],
                     color='k', capsize=0, linestyle='', linewidth=1, alpha=1.0, zorder=2)
-    ax.plot(modelr, np.sqrt(vrotm[0]**2 - vrotm[1]**2), color='k', zorder=5, lw=1)
+    ax.plot(modelr, np.ma.sqrt(vrotm[0]**2 - vrotm[1]**2).filled(0.0), color='k', zorder=5, lw=1)
     if reff_lines is not None:
         for l in reff_lines:
             ax.axvline(x=l, linestyle='--', lw=0.5, zorder=1, color='k')
