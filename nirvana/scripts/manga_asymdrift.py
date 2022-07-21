@@ -188,7 +188,7 @@ def main(args):
 
     #---------------------------------------------------------------------------
     # Run the iterative fits separately for the gas and stars
-    gas_disk, gas_p0, gas_fix, gas_vel_mask, gas_sig_mask \
+    gas_disk, gas_p0, gas_lb, gas_ub, gas_fix, gas_vel_mask, gas_sig_mask \
             = axisym.axisym_iter_fit(galmeta, gas_kin, rctype=args.gas_rc, dctype=args.gas_dc,
                                      fitdisp=args.disp, ignore_covar=not args.covar,
                                      max_vel_err=args.gas_max_vel_err,
@@ -203,7 +203,7 @@ def main(args):
                                      verbose=args.verbose)
     gas_only_par = gas_disk.par.copy()
 
-    str_disk, str_p0, str_fix, str_vel_mask, str_sig_mask \
+    str_disk, str_p0, str_lb, str_ub, str_fix, str_vel_mask, str_sig_mask \
             = axisym.axisym_iter_fit(galmeta, str_kin, rctype=args.str_rc, dctype=args.str_dc,
                                      fitdisp=args.disp, ignore_covar=not args.covar,
                                      max_vel_err=args.str_max_vel_err,
@@ -220,7 +220,7 @@ def main(args):
 
     #---------------------------------------------------------------------------
     # Run the combined fit using the independent fits as a starting point
-    disk, p0, fix, gas_vel_mask, gas_sig_mask, str_vel_mask, str_sig_mask \
+    disk, p0, lb, ub, fix, gas_vel_mask, gas_sig_mask, str_vel_mask, str_sig_mask \
             = multitrace.asymdrift_iter_fit(galmeta, gas_kin, str_kin, gas_disk, str_disk, 
                                             gas_vel_mask=gas_vel_mask, gas_sig_mask=gas_sig_mask,
                                             str_vel_mask=str_vel_mask, str_sig_mask=str_sig_mask,
@@ -235,12 +235,12 @@ def main(args):
     disk.distribute_par()
     # - Get the output data for the gas
     gas_slice = disk.disk_slice(0)
-    gas_hdu = axisym.axisym_fit_data(galmeta, gas_kin, p0[gas_slice], gas_disk,
-                                     gas_vel_mask, gas_sig_mask)
+    gas_hdu = axisym.axisym_fit_data(galmeta, gas_kin, p0[gas_slice], lb[gas_slice], ub[gas_slice],
+                                     gas_disk, gas_vel_mask, gas_sig_mask)
     # - Get the output data for the stars
     str_slice = disk.disk_slice(1)
-    str_hdu = axisym.axisym_fit_data(galmeta, str_kin, p0[str_slice], str_disk,
-                                     str_vel_mask, str_sig_mask)
+    str_hdu = axisym.axisym_fit_data(galmeta, str_kin, p0[str_slice], lb[str_slice], ub[str_slice],
+                                     str_disk, str_vel_mask, str_sig_mask)
     # - Combine the data into a single fits file
     prihdr = gas_hdu[0].header.copy()
     prihdr.remove('MODELTYP')

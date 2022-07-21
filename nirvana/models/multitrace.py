@@ -13,7 +13,7 @@ import numpy as np
 from scipy import optimize
 from matplotlib import pyplot, rc, patches, ticker, colors
 
-from .geometry import projected_polar
+from .geometry import projected_polar, disk_ellipse
 from ..data.util import select_kinematic_axis, bin_stats, growth_lim, atleast_one_decade
 from .util import cov_err
 from ..util import plot
@@ -509,7 +509,7 @@ class MultiTracerDisk:
 
         # TODO: Add something to the fit status/success flags that tests if
         # niter == maxiter and/or if the input parameters are identical to the
-        # final best-fit prameters?  Note that the input parameters, p0, may not
+        # final best-fit parameters?  Note that the input parameters, p0, may not
         # be identical to the output parameters because of the iterations mean
         # that p != p0 !
 
@@ -526,12 +526,23 @@ class MultiTracerDisk:
             self.par_err = np.zeros(self.nup, dtype=float)
             self.par_err[self.free] = pe
 
+        # Initialize the mask
         self.par_mask = self.pbm.init_mask_array(self.nup)
+        # Check if any parameters are "at" the boundary
         pm = self.par_mask[self.free]
         for v, flg in zip([-1, 1], ['LOWERBOUND', 'UPPERBOUND']):
             indx = result.active_mask == v
             if np.any(indx):
                 pm[indx] = self.pbm.turn_on(pm[indx], flg)
+
+        # Check if any parameters are within 1-sigma of the boundary
+        indx = self.par[self.free] - self.par_err[self.free] < _lb[self.free]
+        if np.any(indx):
+            pm[indx] = self.pbm.turn_on(pm[indx], 'LOWERERR')
+        indx = self.par[self.free] + self.par_err[self.free] > _ub[self.free]
+        if np.any(indx):
+            pm[indx] = self.pbm.turn_on(pm[indx], 'UPPERERR')
+        # Flag the fixed parameters
         self.par_mask[self.free] = pm
         indx = np.logical_not(self.free)
         if np.any(indx):
@@ -608,12 +619,19 @@ class MultiTracerDisk:
         full_par = self.par[self.untie]
         full_par_err = None if self.par_err is None else self.par_err[self.untie]
         full_free = self.free[self.untie]
-        full_free[np.setdiff1d(np.arange(self.np), self.tie)] = False
+        tied = np.setdiff1d(np.arange(self.np), self.tie)
+        full_free[tied] = False
+        if self.par_mask is None:
+            full_par_mask = None
+        else:
+            full_par_mask = self.par_mask[self.untie]
+            full_par_mask[tied] = self.pbm.turn_on(full_par_mask[tied], 'TIED')
         for i in range(self.ntracer):
             slc = self.disk_slice(i)
             self.disk[i].par = full_par[slc]
             self.disk[i].free = full_free[slc]
             self.disk[i].par_err = None if full_par_err is None else full_par_err[slc]
+            self.disk[i].par_mask = None if full_par_mask is None else full_par_mask[slc]
 
     def report(self, fit_message=None):
         """
@@ -791,6 +809,22 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
                                          inc=disk.disk[i].par[3], vsys=disk.disk[i].par[4],
                                          maj_wedge=maj_wedge)
 
+    # Construct an ellipse that has a constant disk radius and is at the
+    # best-fit center, position angle, and inclination.  Set the radius to the
+    # maximum of the valid binned rotation curve measurements, selecting the
+    # larger value between the gas and stars.
+    vrot_indx = [vrn > 5 for vrn in bin_vrotn]
+    for i in range(2):
+        if not np.any(vrot_indx[i]):
+            vrot_indx[i] = bin_vrotn[i] > 0
+    if not np.any(np.append(*vrot_indx)):
+        de_x, de_y = None, None
+    else:
+        # NOTE: Assumes geometric parameters are tied!
+        de_r = np.amax(np.append(bin_r[0][vrot_indx[0]], bin_r[1][vrot_indx[1]]))
+        de_x, de_y = disk_ellipse(de_r, *np.radians(disk[0].par[2:4]), xc=disk[0].par[0],
+                                  yc=disk[0].par[1])
+
     resid = disk.fom(_par[disk.tie])
     rchisqr = np.sum(resid**2) / (resid.size - disk.nfree)
 
@@ -878,6 +912,9 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
     # Mark the fitted dynamical center
     ax.scatter(disk.disk[0].par[0], disk.disk[0].par[1],
                marker='+', color='k', s=40, lw=1, zorder=5)
+    # Plot the ellipse with constant disk radius
+    if de_x is not None:
+        ax.plot(de_x, de_y, color='w', lw=2, zorder=6, alpha=0.5)
     cb = fig.colorbar(im, cax=cax, orientation='horizontal')
     cb.ax.xaxis.set_ticks_position('top')
     cb.ax.xaxis.set_label_position('top')
@@ -899,6 +936,9 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
     # Mark the fitted dynamical center
     ax.scatter(disk.disk[0].par[0], disk.disk[0].par[1],
                marker='+', color='k', s=40, lw=1, zorder=5)
+    # Plot the ellipse with constant disk radius
+    if de_x is not None:
+        ax.plot(de_x, de_y, color='w', lw=2, zorder=6, alpha=0.5)
     cb = fig.colorbar(im, cax=cax, orientation='horizontal')
     ax.text(0.05, 0.90, r'$V_{g,m}$', ha='left', va='center', transform=ax.transAxes)
 
@@ -918,6 +958,9 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
     # Mark the fitted dynamical center
     ax.scatter(disk.disk[1].par[0], disk.disk[1].par[1],
                marker='+', color='k', s=40, lw=1, zorder=5)
+    # Plot the ellipse with constant disk radius
+    if de_x is not None:
+        ax.plot(de_x, de_y, color='w', lw=2, zorder=6, alpha=0.5)
     cb = fig.colorbar(im, cax=cax, orientation='horizontal')
     cb.ax.xaxis.set_ticks_position('top')
     cb.ax.xaxis.set_label_position('top')
@@ -939,6 +982,9 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
     # Mark the fitted dynamical center
     ax.scatter(disk.disk[1].par[0], disk.disk[1].par[1],
                marker='+', color='k', s=40, lw=1, zorder=5)
+    # Plot the ellipse with constant disk radius
+    if de_x is not None:
+        ax.plot(de_x, de_y, color='w', lw=2, zorder=6, alpha=0.5)
     cb = fig.colorbar(im, cax=cax, orientation='horizontal')
     ax.text(0.05, 0.90, r'$V_{\ast,m}$', ha='left', va='center', transform=ax.transAxes)
 
@@ -955,9 +1001,9 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
                                 facecolor='0.7', edgecolor='k', zorder=4))
     im = ax.imshow(ad_map, origin='lower', interpolation='nearest', cmap='viridis',
                    extent=extent, norm=colors.LogNorm(vmin=ad_lim[0], vmax=ad_lim[1]), zorder=4) 
-    # Mark the fitted dynamical center
-    ax.scatter(disk.disk[0].par[0], disk.disk[0].par[1],
-               marker='+', color='k', s=40, lw=1, zorder=5)
+    # Plot the ellipse with constant disk radius
+    if de_x is not None:
+        ax.plot(de_x, de_y, color='w', lw=2, zorder=6, alpha=0.5)
     cb = fig.colorbar(im, cax=cax, orientation='horizontal', format=logformatter)
     cb.ax.xaxis.set_ticks_position('top')
     cb.ax.xaxis.set_label_position('top')
@@ -976,9 +1022,9 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
                                 facecolor='0.7', edgecolor='k', zorder=4))
     im = ax.imshow(admod_map, origin='lower', interpolation='nearest', cmap='viridis',
                    extent=extent, norm=colors.LogNorm(vmin=ad_lim[0], vmax=ad_lim[1]), zorder=4)
-    # Mark the fitted dynamical center
-    ax.scatter(disk.disk[0].par[0], disk.disk[0].par[1],
-               marker='+', color='k', s=40, lw=1, zorder=5)
+    # Plot the ellipse with constant disk radius
+    if de_x is not None:
+        ax.plot(de_x, de_y, color='w', lw=2, zorder=6, alpha=0.5)
     cb = fig.colorbar(im, cax=cax, orientation='horizontal', format=logformatter)
     ax.text(0.05, 0.90, r'$\sigma^2_{a,m}$', ha='left', va='center', transform=ax.transAxes)
 
@@ -998,6 +1044,9 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
     # Mark the fitted dynamical center
     ax.scatter(disk.disk[1].par[0], disk.disk[1].par[1],
                marker='+', color='k', s=40, lw=1, zorder=5)
+    # Plot the ellipse with constant disk radius
+    if de_x is not None:
+        ax.plot(de_x, de_y, color='w', lw=2, zorder=6, alpha=0.5)
     cb = fig.colorbar(im, cax=cax, orientation='horizontal', format=logformatter)
     cb.ax.xaxis.set_ticks_position('top')
     cb.ax.xaxis.set_label_position('top')
@@ -1016,6 +1065,12 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
                                 facecolor='0.7', edgecolor='k', zorder=4))
     im = ax.imshow(smod_map[1], origin='lower', interpolation='nearest', cmap='viridis',
                    extent=extent, norm=colors.LogNorm(vmin=sig_lim[0], vmax=sig_lim[1]), zorder=4)
+    # Mark the fitted dynamical center
+    ax.scatter(disk.disk[1].par[0], disk.disk[1].par[1],
+               marker='+', color='k', s=40, lw=1, zorder=5)
+    # Plot the ellipse with constant disk radius
+    if de_x is not None:
+        ax.plot(de_x, de_y, color='w', lw=2, zorder=6, alpha=0.5)
     cb = fig.colorbar(im, cax=cax, orientation='horizontal', format=logformatter)
     ax.text(0.05, 0.90, r'$\sigma_{\ast,m}$', ha='left', va='center', transform=ax.transAxes)
 
@@ -1032,6 +1087,9 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
                                 facecolor='0.7', edgecolor='k', zorder=4))
     im = ax.imshow(ados_map, origin='lower', interpolation='nearest', cmap='viridis',
                    extent=extent, vmin=ados_lim[0], vmax=ados_lim[1], zorder=4)
+    # Plot the ellipse with constant disk radius
+    if de_x is not None:
+        ax.plot(de_x, de_y, color='w', lw=2, zorder=6, alpha=0.5)
     cb = fig.colorbar(im, cax=cax, orientation='horizontal')
     cb.ax.xaxis.set_ticks_position('top')
     cb.ax.xaxis.set_label_position('top')
@@ -1051,6 +1109,9 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
                                 facecolor='0.7', edgecolor='k', zorder=4))
     im = ax.imshow(adosmod_map, origin='lower', interpolation='nearest', cmap='viridis',
                    extent=extent, vmin=ados_lim[0], vmax=ados_lim[1], zorder=4)
+    # Plot the ellipse with constant disk radius
+    if de_x is not None:
+        ax.plot(de_x, de_y, color='w', lw=2, zorder=6, alpha=0.5)
     cb = fig.colorbar(im, cax=cax, orientation='horizontal')
     ax.text(0.05, 0.90, r'$\sigma^2_{a,m}/\sigma^2_{\ast,m}$', ha='left', va='center',
              transform=ax.transAxes)
@@ -1072,6 +1133,9 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
     # Mark the fitted dynamical center
     ax.scatter(disk.disk[0].par[0], disk.disk[0].par[1],
                marker='+', color='k', s=40, lw=1, zorder=5)
+    # Plot the ellipse with constant disk radius
+    if de_x is not None:
+        ax.plot(de_x, de_y, color='w', lw=2, zorder=6, alpha=0.5)
     # TODO: For some reason, the combination of the use of a masked array and
     # setting the formatter to logformatter leads to weird behavior in the map.
     # Use something like the "pallete" object described here?
@@ -1101,6 +1165,9 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
     # Mark the fitted dynamical center
     ax.scatter(disk.disk[1].par[0], disk.disk[1].par[1],
                marker='+', color='k', s=40, lw=1, zorder=5)
+    # Plot the ellipse with constant disk radius
+    if de_x is not None:
+        ax.plot(de_x, de_y, color='w', lw=2, zorder=6, alpha=0.5)
     cb = fig.colorbar(im, cax=cax, orientation='horizontal', format=logformatter)
     ax.text(0.05, 0.90, r'$\mu_\ast$', ha='left', va='center', transform=ax.transAxes)
 
@@ -1458,15 +1525,100 @@ def _rej_iters(rej):
 
 
 def asymdrift_iter_fit(galmeta, gas_kin, str_kin, gas_disk, str_disk, gas_vel_mask=None,
-                       gas_sig_mask=None, str_vel_mask=None, str_sig_mask=None, p0=None,
-                       ignore_covar=True, assume_posdef_covar=True,
-                       gas_vel_sigma_rej=[15,10,10,10], gas_sig_sigma_rej=[15,10,10,10],
-                       str_vel_sigma_rej=[15,10,10,10], str_sig_sigma_rej=[15,10,10,10],
-                       fix_cen=False, fix_inc=False, low_inc=None, min_unmasked=None,
-                       analytic_jac=True, fit_scatter=True, verbose=0):
+                       gas_sig_mask=None, str_vel_mask=None, str_sig_mask=None, ignore_covar=True,
+                       assume_posdef_covar=True, gas_vel_sigma_rej=[15,10,10,10],
+                       gas_sig_sigma_rej=[15,10,10,10], str_vel_sigma_rej=[15,10,10,10],
+                       str_sig_sigma_rej=[15,10,10,10], fix_cen=False, fix_inc=False, low_inc=None,
+                       min_unmasked=None, analytic_jac=True, fit_scatter=True, verbose=0):
     r"""
     Iteratively fit a two-component disk to measure asymmetric drift.
 
+    The constraints and iterations closely mirror the approach used by
+    :func:`~nirvana.models.axisym.axisym_iter_fit`.
+
+    The initial guess parameters are set using the provided ``gas_disk`` and
+    ``str_disk`` objects.  If the ``par`` attributes of either of these objects
+    are None, the guess parameters are set by
+    :func:`~nirvana.models.thindisk.ThinDisk.guess_par` function of the derived
+    class (e.g., :func:`~nirvana.models.axisym.AxisymmetricDisk.guess_par`).
+    The initial guess for the geometric parameters are simply the mean of the
+    two disk objects, except that the guess for the inclination is always set to
+    the photometric inclination.
+
+    Constraints are as follows:
+
+        #. The center is constrained to be in the middle third of the available
+           range in x and y.
+
+        #. The center, position angle, and inclination are forced to be the same
+           for both disks.  The systemic velocities are, however, allowed to be
+           different.
+
+    The iterations are as follows:
+
+        #. Fit all data but fix the inclination to the value returned by
+           :func:`~nirvana.data.meta.GlobalPar.guess_inclination` and fix the
+           center to the initial guess value.  The initial guess will either be
+           :math:`(x,y) = (0,0)` or the mean of the centers provided by the
+           ``gas_disk`` and ``str_disk`` arguments.  If available, covariance is
+           ignored.
+
+        #. Reject outliers for all 4 kinematic measurements (gas v, gas sigma,
+           stellar v, stellar sigma) using
+           :func:`~nirvana.models.thindisk.ThinDisk.reject`.  The rejection
+           sigma used is the *first* element in the provided lists.  Then refit
+           the data, starting again from the initial guess parameters.  The
+           intrinsic scatter estimates provided by
+           :func:`~nirvana.models.thindisk.ThinDisk.reject` are
+           *not* included in the fit and, if available, covariance is ignored.
+
+        #. Reject outliers for all 4 kinematic measurements (gas v, gas sigma,
+           stellar v, stellar sigma) using
+           :func:`~nirvana.models.thindisk.ThinDisk.reject`.  The rejection
+           sigma used is the *second* element in the provided lists.  Then refit
+           the data using the parameters from the previous fit as the starting
+           point. This iteration also uses the intrinsic scatter estimates
+           provided by :func:`~nirvana.models.thindisk.ThinDisk.reject`;
+           however, covariance is still ignored.
+
+        #. Recover all fit rejections (i.e., keep any masks in place that are
+           tied to the data quality, but remove any masks associated with fit
+           quality).  Then use :func:`~nirvana.models.thindisk.ThinDisk.reject`
+           to perform a fresh rejection based on the most recent model; the
+           rejection sigma is the
+           *second* element in the provided lists.  The resetting of the
+           fit-outliers and re-rejection is done on the off chance that
+           rejections from the first few iterations were driven by a bad model.
+           Refit the data as in the previous iteration, using the parameters
+           from the previous fit as the starting point and use the intrinsic
+           scatter estimates provided by
+           :func:`~nirvana.models.thindisk.ThinDisk.reject`.  Covariance is
+           still ignored.
+
+        #. Reject outliers for all 4 kinematic measurements (gas v, gas sigma,
+           stellar v, stellar sigma) using
+           :func:`~nirvana.models.thindisk.ThinDisk.reject`.  The rejection
+           sigma used is the *third* element in the provided lists.  Then refit
+           the data, but fix or free the center and inclination based on the
+           provided keywords (``fix_cen`` and ``fix_inc``).  Also, as in all
+           previous iterations, the covariance is ignored in the outlier
+           rejection and intrinsic scatter determination; however, the
+           covariance *is* used by the fit, as available and if ``ignore_covar``
+           is False.
+
+        #. Redo the previous iteration in exactly the same way, except outlier
+           rejection and intrinsic-scatter determination now use the covariance,
+           as available and if ``ignore_covar`` is False.  The rejection sigma
+           used is the *fourth* element in the provided lists.
+
+        #. If a lower inclination threshold is set (see ``low_inc``) and the
+           best-fitting inclination is below this value (assuming the
+           inclination is freely fit), a final iteration refits the data by
+           fixing the inclination at the value set by
+           :func:`~nirvana.data.meta.GlobalPar.guess_inclination`.  The code
+           issues a warning, and the global fit-quality bit is set to include
+           the ``LOWINC`` flag.
+        
     Args:
         galmeta (:class:`~nirvana.data.meta.GlobalPar`):
             Object with metadata for the galaxy to be fit.
@@ -1474,24 +1626,52 @@ def asymdrift_iter_fit(galmeta, gas_kin, str_kin, gas_disk, str_disk, gas_vel_ma
             Object with the gas data to be fit
         str_kin (:class:`~nirvana.data.kinematics.Kinematics`):
             Object with the stellar data to be fit
-        disk (:class:`~nirvana.models.multitrace.MultiTracerDisk`):
-            The disk object to use for fitting.
+        gas_disk (:class:`~nirvana.models.thindisk.ThinDisk`):
+            Thin disk object used to model and set the initial guess parameters
+            for the gas disk (see above).
+        str_disk (:class:`~nirvana.models.thindisk.ThinDisk`):
+            Thin disk object used to model and set the initial guess parameters
+            for the stellar disk (see above).
+        gas_vel_mask (`numpy.ndarray`_, optional):
+            Initial array with the mask bits for gas velocities.  If None,
+            initialization uses
+            :func:`~nirvana.data.kinematics.Kinematics.init_fitting_masks` for
+            the gas data.
+        gas_sig_mask (`numpy.ndarray`_, optional):
+            Initial array with the mask bits for gas velocity dispersions.  If
+            None, initialization uses
+            :func:`~nirvana.data.kinematics.Kinematics.init_fitting_masks` for
+            the gas data.
+        str_vel_mask (`numpy.ndarray`_, optional):
+            Initial array with the mask bits for stellar velocities.  If None,
+            initialization uses
+            :func:`~nirvana.data.kinematics.Kinematics.init_fitting_masks` for
+            the stellar data.
+        gas_sig_mask (`numpy.ndarray`_, optional):
+            Initial array with the mask bits for stellar velocity dispersions.
+            If None, initialization uses
+            :func:`~nirvana.data.kinematics.Kinematics.init_fitting_masks` for
+            the stellar data.
         ignore_covar (:obj:`bool`, optional):
             If ``kin`` provides the covariance between measurements, ignore it
             and fit the data assuming there is no covariance.
         assume_posdef_covar (:obj:`bool`, optional):
             If ``kin`` provides the covariance between measurements, assume the
             covariance matrices are positive definite.
-        vel_sigma_rej (:obj:`float`, :obj:`list`, optional):
-            Sigma values used for rejection of velocity measurements.  Must be a
-            single float or a *four-element* list.  If None, no rejections are
-            performed.  The description above provides which value is used in
-            each iteration.
-        sig_sigma_rej (:obj:`float`, :obj:`list`, optional):
-            Sigma values used for rejection of dispersion measurements.  Must be
-            a single float or a *four-element* list.  If None, no rejections are
-            performed.  The description above provides which value is used in
-            each iteration.
+        gas_vel_sigma_rej (:obj:`float`, :obj:`list`, optional):
+            Sigma values used for rejection of the gas velocity measurements.
+            Must be a single float or a *four-element* list.  If None, no
+            rejections are performed.  The description above provides which
+            value is used in each iteration.
+        gas_sig_sigma_rej (:obj:`float`, :obj:`list`, optional):
+            Sigma values used for rejection of gas dispersion measurements; cf.
+            ``gas_vel_sigma_rej``.
+        str_vel_sigma_rej (:obj:`float`, :obj:`list`, optional):
+            Sigma values used for rejection of the stellar velocity
+            measurements; cf. ``gas_vel_sigma_rej``.
+        str_sig_sigma_rej (:obj:`float`, :obj:`list`, optional):
+            Sigma values used for rejection of stellar dispersion measurements;
+            cf. ``gas_vel_sigma_rej``.
         fix_cen (:obj:`bool`, optional):
             Fix the dynamical center of the fit to 0,0 in the final fit
             iteration.
@@ -1511,7 +1691,8 @@ def asymdrift_iter_fit(galmeta, gas_kin, str_kin, gas_disk, str_disk, gas_vel_ma
         min_unmasked (:obj:`int`, optional):
             The minimum of velocity measurements (and velocity dispersion
             measurements, if they are available and being fit) required to
-            proceed with the fit, after applying all masking.
+            proceed with the fit, after applying all masking.  This is applied
+            independently to both the gas and stellar data.
         analytic_jac (:obj:`bool`, optional):
             Use the analytic calculation of the Jacobian matrix during the fit
             optimization.  If False, the Jacobian is calculated using
@@ -1519,20 +1700,24 @@ def asymdrift_iter_fit(galmeta, gas_kin, str_kin, gas_disk, str_disk, gas_vel_ma
             `scipy.optimize.least_squares`_.
         fit_scatter (:obj:`bool`, optional):
             Model the intrinsic scatter in the data about the model during the
-            fit optimization.
+            fit optimization.  The scatter is modeled independently for all 4
+            kinematic measurements (gas velocity and dispersion, stellar
+            velocity and dispersion).
         verbose (:obj:`int`, optional):
             Verbosity level: 0=only status output written to terminal; 1=show 
             fit result QA plot; 2=full output
 
     Returns:
-
-        :obj:`tuple`: Returns 5 objects: (1) a `numpy.ndarray`_ with the input
-        guess parameters, (3) a boolean `numpy.ndarray`_ selecting the
-        parameters that were fixed during the fit, (4) a `numpy.ndarray`_ with
-        the bad-pixel mask for the velocity measurements used in the fit, and
-        (5) a `numpy.ndarray`_ with the bad-pixel mask for the velocity
-        dispersion measurements used in the fit.
-
+        :obj:`tuple`: Returns 9 objects: (1) the
+        :class:`~nirvana.models.multitrace.MultiTracerDisk` instance used during
+        the fit, (2) a `numpy.ndarray`_ with the input guess parameters, (3,4)
+        `numpy.ndarray`_ objects with the lower and upper bounds imposed on the
+        best-fit parameters, (5) a boolean `numpy.ndarray`_ selecting the
+        parameters that were fixed during the fit, (6,7) `numpy.ndarray`_
+        objects with the bad-pixel masks for the gas velocity and dispersion
+        measurements used in the fit, and (8,9) `numpy.ndarray`_ objects with
+        the bad-pixel masks for the stellar velocity and dispersion measurements
+        used in the fit. 
     """
     # Running in "debug" mode
     debug = verbose > 1
@@ -1546,6 +1731,10 @@ def asymdrift_iter_fit(galmeta, gas_kin, str_kin, gas_disk, str_disk, gas_vel_ma
     #---------------------------------------------------------------------------
     # Initialize the fitting object and set the guess parameters
     disk = MultiTracerDisk([gas_disk, str_disk])
+    if gas_disk.par is None:
+        gas_disk.par = gas_disk.guess_par()
+    if str_disk.par is None:
+        str_disk.par = str_disk.guess_par()
     p0 = np.append(gas_disk.par, str_disk.par)
     p0[:disk.nbp] = (gas_disk.par[:disk.nbp] + str_disk.par[:disk.nbp])/2.
     p0[gas_disk.np:gas_disk.np+disk.nbp] = p0[:disk.nbp]
@@ -1625,7 +1814,7 @@ def asymdrift_iter_fit(galmeta, gas_kin, str_kin, gas_disk, str_disk, gas_vel_ma
     # parameter?
     disk.lsq_fit([gas_kin, str_kin], sb_wgt=True, p0=p0, fix=fix, lb=lb, ub=ub,
                  ignore_covar=True, assume_posdef_covar=assume_posdef_covar,
-                 analytic_jac=analytic_jac, verbose=2) #verbose)
+                 analytic_jac=analytic_jac, verbose=verbose)
     # Show
     if verbose > 0:
         asymdrift_fit_plot(galmeta, [gas_kin, str_kin], disk, fix=fix) 
@@ -1665,7 +1854,7 @@ def asymdrift_iter_fit(galmeta, gas_kin, str_kin, gas_disk, str_disk, gas_vel_ma
     print('Running fit iteration 2')
     disk.lsq_fit([gas_kin, str_kin], sb_wgt=True, p0=p0, fix=fix, lb=lb, ub=ub,
                  ignore_covar=True, assume_posdef_covar=assume_posdef_covar,
-                 analytic_jac=analytic_jac, verbose=2) #verbose)
+                 analytic_jac=analytic_jac, verbose=verbose)
     # Show
     if verbose > 0:
         asymdrift_fit_plot(galmeta, [gas_kin, str_kin], disk, fix=fix) 
@@ -1705,7 +1894,7 @@ def asymdrift_iter_fit(galmeta, gas_kin, str_kin, gas_disk, str_disk, gas_vel_ma
                 if fit_scatter else None
     disk.lsq_fit([gas_kin, str_kin], sb_wgt=True, p0=disk.par[disk.untie], fix=fix, lb=lb, ub=ub,
                  ignore_covar=True, assume_posdef_covar=assume_posdef_covar, scatter=scatter,
-                 analytic_jac=analytic_jac, verbose=2) #verbose)
+                 analytic_jac=analytic_jac, verbose=verbose)
     # Show
     if verbose > 0:
         asymdrift_fit_plot(galmeta, [gas_kin, str_kin], disk, fix=fix) 
@@ -1748,7 +1937,7 @@ def asymdrift_iter_fit(galmeta, gas_kin, str_kin, gas_disk, str_disk, gas_vel_ma
                 if fit_scatter else None
     disk.lsq_fit([gas_kin, str_kin], sb_wgt=True, p0=disk.par[disk.untie], fix=fix, lb=lb, ub=ub,
                  ignore_covar=True, assume_posdef_covar=assume_posdef_covar, scatter=scatter,
-                 analytic_jac=analytic_jac, verbose=2) #verbose)
+                 analytic_jac=analytic_jac, verbose=verbose)
     # Show
     if verbose > 0:
         asymdrift_fit_plot(galmeta, [gas_kin, str_kin], disk, fix=fix) 
@@ -1798,7 +1987,7 @@ def asymdrift_iter_fit(galmeta, gas_kin, str_kin, gas_disk, str_disk, gas_vel_ma
                 if fit_scatter else None
     disk.lsq_fit([gas_kin, str_kin], sb_wgt=True, p0=disk.par[disk.untie], fix=fix, lb=lb, ub=ub,
                  ignore_covar=ignore_covar, assume_posdef_covar=assume_posdef_covar,
-                 scatter=scatter, analytic_jac=analytic_jac, verbose=2) #verbose)
+                 scatter=scatter, analytic_jac=analytic_jac, verbose=verbose)
     # Show
     if verbose > 0:
         asymdrift_fit_plot(galmeta, [gas_kin, str_kin], disk, fix=fix) 
@@ -1839,14 +2028,14 @@ def asymdrift_iter_fit(galmeta, gas_kin, str_kin, gas_disk, str_disk, gas_vel_ma
                 if fit_scatter else None
     disk.lsq_fit([gas_kin, str_kin], sb_wgt=True, p0=disk.par[disk.untie], fix=fix, lb=lb, ub=ub,
                  ignore_covar=ignore_covar, assume_posdef_covar=assume_posdef_covar,
-                 scatter=scatter, analytic_jac=analytic_jac, verbose=2) #verbose)
+                 scatter=scatter, analytic_jac=analytic_jac, verbose=verbose)
     # Show
     if verbose > 0:
         asymdrift_fit_plot(galmeta, [gas_kin, str_kin], disk, fix=fix) 
 
     if fix_inc or low_inc is None or disk.par[3] > low_inc:
         # Inclination is valid, so return
-        return disk, p0, fix, gas_vel_mask, gas_sig_mask, str_vel_mask, str_sig_mask
+        return disk, p0, lb, ub, fix, gas_vel_mask, gas_sig_mask, str_vel_mask, str_sig_mask
 
     #---------------------------------------------------------------------------
     # Fit iteration 7:
@@ -1866,10 +2055,10 @@ def asymdrift_iter_fit(galmeta, gas_kin, str_kin, gas_disk, str_disk, gas_vel_ma
     print('Running fit iteration 7')
     disk.lsq_fit([gas_kin, str_kin], sb_wgt=True, p0=disk.par[disk.untie], fix=fix, lb=lb, ub=ub,
                  ignore_covar=ignore_covar, assume_posdef_covar=assume_posdef_covar,
-                 scatter=scatter, analytic_jac=analytic_jac, verbose=2) #verbose)
+                 scatter=scatter, analytic_jac=analytic_jac, verbose=verbose)
     # Show
     if verbose > 0:
         asymdrift_fit_plot(galmeta, [gas_kin, str_kin], disk, fix=fix) 
 
-    return disk, p0, fix, gas_vel_mask, gas_sig_mask, str_vel_mask, str_sig_mask
+    return disk, p0, lb, ub, fix, gas_vel_mask, gas_sig_mask, str_vel_mask, str_sig_mask
 

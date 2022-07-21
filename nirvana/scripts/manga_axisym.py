@@ -69,9 +69,25 @@ def parse_args(options=None):
                         help='The tracer to fit; must be either Gas or Stars.')
     parser.add_argument('--rc', default='HyperbolicTangent', type=str,
                         help='Rotation curve parameterization to use: HyperbolicTangent or PolyEx')
+#    parser.add_argument('--rc_bounds', default=None, nargs='*', type=str,
+#                        help='Lower and upper bounds to use for each rotation curve parameter.  '
+#                             'Function defaults are used if none provided by the user.  The '
+#                             'number of provided bounds *must* be twice the number of '
+#                             'parameters.  The expected order is: lower bound parameter 1, '
+#                             'upper bound parameter 1, lower bound parameter 2, etc.  Any of the '
+#                             'bounds can be set to None to indicate that the code should use the '
+#                             'function default for that bound.')
     parser.add_argument('--dc', default='Exponential', type=str,
                         help='Dispersion profile parameterization to use: Exponential, ExpBase, '
                              'or Const.')
+#    parser.add_argument('--dc_bounds', default=None, nargs='*', type=str,
+#                        help='Lower and upper bounds to use for each dispersion profile '
+#                             'parameter.  Function defaults are used if none provided by the '
+#                             'user.  The number of provided bounds *must* be twice the number of '
+#                             'parameters.  The expected order is: lower bound parameter 1, '
+#                             'upper bound parameter 1, lower bound parameter 2, etc.  Any of the '
+#                             'bounds can be set to None to indicate that the code should use the '
+#                             'function default for that bound.')
     parser.add_argument('--min_vel_snr', default=None, type=float,
                         help='Minimum S/N to include for velocity measurements in fit; S/N is '
                              'calculated as the ratio of the surface brightness to its error')
@@ -171,7 +187,7 @@ def main(args):
     #---------------------------------------------------------------------------
 
     # Run the iterative fit
-    disk, p0, fix, vel_mask, sig_mask \
+    disk, p0, lb, ub, fix, vel_mask, sig_mask \
             = axisym.axisym_iter_fit(galmeta, kin, rctype=args.rc, dctype=args.dc,
                                      fitdisp=args.disp, ignore_covar=not args.covar,
                                      max_vel_err=args.max_vel_err, max_sig_err=args.max_sig_err,
@@ -184,7 +200,7 @@ def main(args):
 
     # Write the output file
     data_file = os.path.join(args.odir, f'{oroot}.fits.gz')
-    axisym.axisym_fit_data(galmeta, kin, p0, disk, vel_mask, sig_mask, ofile=data_file)
+    axisym.axisym_fit_data(galmeta, kin, p0, lb, ub, disk, vel_mask, sig_mask, ofile=data_file)
 
     if args.skip_plots:
         return

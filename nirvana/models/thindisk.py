@@ -25,18 +25,15 @@ class ThinDiskFitBitMask(BitMask):
     """
     Bin-by-bin mask used to track fit rejections.
     """
+    prefix = 'MBIT'
     def __init__(self):
         # TODO: np.array just used for slicing convenience
-        mask_def = np.array([['DIDNOTUSE', 'Data not used because it was flagged on input.'],
-                             ['REJ_ERR', 'Data rejected because of its large measurement error.'],
-                             ['REJ_SNR', 'Data rejected because of its low signal-to-noise.'],
-                             ['REJ_UNR', 'Data rejected after first iteration and are so '
-                                         'discrepant from the other data that we expect the '
-                                         'measurements are unreliable.'],
-                             ['REJ_RESID', 'Data rejected due to iterative rejection process '
-                                           'of model residuals.'],
-                             ['DISJOINT', 'Data part of a smaller disjointed region, not '
-                                          'congruent with the main body of the measurements.']])
+        mask_def = np.array([['DIDNOTUSE', 'Datum flagged on input'],
+                             ['REJ_ERR', 'Datum has large measurement error'],
+                             ['REJ_SNR', 'Datum has low signal-to-noise'],
+                             ['REJ_UNR', 'Datum unreasonably discrepant'],
+                             ['REJ_RESID', 'Datum rejected by iterative fit'],
+                             ['DISJOINT', 'Datum is spatially disjoint']])
         super().__init__(mask_def[:,0], descr=mask_def[:,1])
 
     @staticmethod
@@ -86,14 +83,15 @@ class ThinDiskParBitMask(BitMask):
     """
     Mask used to track parameter issues.
     """
+    prefix = 'PBIT'
     def __init__(self):
         # TODO: np.array just used for slicing convenience
-        mask_def = np.array([['FIXED', 'Parameter was not free during the fit.'],
-                             ['TIED', 'Parameter was not fit independently.'],
-                             ['LOWERBOUND',
-                              'Best-fit parameter is at the lower boundary of the trust region.'],
-                             ['UPPERBOUND',
-                              'Best-fit parameter is at the upper boundary of the trust region.']])
+        mask_def = np.array([['FIXED', 'Fixed parameter'],
+                             ['TIED', 'Tied parameter'],
+                             ['LOWERBOUND', 'Lower trust boundary active'],
+                             ['UPPERBOUND', 'Upper trust boundary active'],
+                             ['LOWERERR', 'lt 1 sigma above lower boundary'],
+                             ['UPPERERR', 'lt 1 sigma below upper boundary']])
         super().__init__(mask_def[:,0], descr=mask_def[:,1])
 
 
@@ -101,9 +99,10 @@ class ThinDiskGlobalBitMask(BitMask):
     """
     Fit-wide quality flag.
     """
+    prefix = 'GBIT'
     def __init__(self):
         # NOTE: np.array just used for slicing convenience
-        mask_def = np.array([['LOWINC', 'Fit has an erroneously low inclination']])
+        mask_def = np.array([['LOWINC', 'Best fit inclination unreasonably low']])
         super().__init__(mask_def[:,0], descr=mask_def[:,1])
 
 
@@ -1455,12 +1454,22 @@ class ThinDisk:
             self.par_err = np.zeros(self.np, dtype=float)
             self.par_err[self.free] = pe
 
+        # Initialize the mask
         self.par_mask = self.pbm.init_mask_array(self.np)
+        # Check if any parameters are "at" the boundary
         pm = self.par_mask[self.free]
         for v, flg in zip([-1, 1], ['LOWERBOUND', 'UPPERBOUND']):
             indx = result.active_mask == v
             if np.any(indx):
                 pm[indx] = self.pbm.turn_on(pm[indx], flg)
+        # Check if any parameters are within 1-sigma of the boundary
+        indx = self.par[self.free] - self.par_err[self.free] < lb[self.free]
+        if np.any(indx):
+            pm[indx] = self.pbm.turn_on(pm[indx], 'LOWERERR')
+        indx = self.par[self.free] + self.par_err[self.free] > ub[self.free]
+        if np.any(indx):
+            pm[indx] = self.pbm.turn_on(pm[indx], 'UPPERERR')
+        # Flag the fixed parameters
         self.par_mask[self.free] = pm
         indx = np.logical_not(self.free)
         if np.any(indx):
