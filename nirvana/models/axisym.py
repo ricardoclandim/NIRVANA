@@ -828,11 +828,16 @@ def axisym_fit_data(galmeta, kin, p0, lb, ub, disk, vmask, smask, ofile=None):
         fid_sig_xy = asymmetry.asymmetry_metrics(sig_xy, asym_grw)[2]
         #   - ..., within the elliptical radius defined above
         sig_major_gpm = major_gpm & np.logical_not(sigsqr_mask > 0)
-        sig_ell_r = np.amax(r[sig_major_gpm])
-        ellip_gpm = r < sig_ell_r
-        ell_fid_sig_x = asymmetry.asymmetry_metrics(sig_x, asym_grw, gpm=ellip_gpm)[2]
-        ell_fid_sig_y = asymmetry.asymmetry_metrics(sig_y, asym_grw, gpm=ellip_gpm)[2]
-        ell_fid_sig_xy = asymmetry.asymmetry_metrics(sig_xy, asym_grw, gpm=ellip_gpm)[2]
+        if np.any(sig_major_gpm):
+            sig_ell_r = np.amax(r[sig_major_gpm])
+            ellip_gpm = r < sig_ell_r
+            ell_fid_sig_x = asymmetry.asymmetry_metrics(sig_x, asym_grw, gpm=ellip_gpm)[2]
+            ell_fid_sig_y = asymmetry.asymmetry_metrics(sig_y, asym_grw, gpm=ellip_gpm)[2]
+            ell_fid_sig_xy = asymmetry.asymmetry_metrics(sig_xy, asym_grw, gpm=ellip_gpm)[2]
+        else:
+            ell_fid_sig_x = np.zeros(4, dtype=float)
+            ell_fid_sig_y = np.zeros(4, dtype=float)
+            ell_fid_sig_xy = np.zeros(4, dtype=float)
 
     # Construct the model data, both binned data and maps
     models = disk.binned_model(disk.par)
