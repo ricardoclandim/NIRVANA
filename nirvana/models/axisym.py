@@ -835,6 +835,7 @@ def axisym_fit_data(galmeta, kin, p0, lb, ub, disk, vmask, smask, ofile=None):
             ell_fid_sig_y = asymmetry.asymmetry_metrics(sig_y, asym_grw, gpm=ellip_gpm)[2]
             ell_fid_sig_xy = asymmetry.asymmetry_metrics(sig_xy, asym_grw, gpm=ellip_gpm)[2]
         else:
+            sig_ell_r = 0.
             ell_fid_sig_x = np.zeros(4, dtype=float)
             ell_fid_sig_y = np.zeros(4, dtype=float)
             ell_fid_sig_xy = np.zeros(4, dtype=float)
