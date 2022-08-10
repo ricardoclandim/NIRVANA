@@ -420,7 +420,9 @@ def construct_ivar_weights(error, eps=None):
     return wgts
 
 
-# TODO: Allow one to include covariance in all the stats functions below?
+# TODO:
+#   - Allow one to include covariance in all the stats functions below?
+#   - Remove weights, only allow errors/covariance?
 
 
 def aggregate_stats(x, y, ye=None, wgts=None, gpm=None, eps=None, fill_value=None):
@@ -481,11 +483,13 @@ def aggregate_stats(x, y, ye=None, wgts=None, gpm=None, eps=None, fill_value=Non
 
     # Weighted statistics
     # TODO: Include covariance
+    #   - Requires lots of error propagation!
     wsum = np.sum(_wgts[indx])
     ewxbin = np.dot(_wgts[indx],x[indx])/wsum
     ewmean = np.dot(_wgts[indx],y[indx])/wsum
     ewsdev = np.dot(_wgts[indx],y[indx]**2)/wsum - ewmean**2
     ewsdev = fill_value if ewsdev < 0 or nbin <= 1 else np.sqrt(ewsdev*nbin/(nbin-1))
+    # TODO: This assumes the weights provided are errors...
     ewerr = np.sqrt(1./wsum)
 
     return uwmed, uwmad, uwxbin, uwmean, uwsdev, ewxbin, ewmean, ewsdev, ewerr, nbin, indx

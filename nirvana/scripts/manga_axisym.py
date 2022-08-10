@@ -217,7 +217,7 @@ def main(args):
     # Plot the fit asymmetry
     asym_plot = os.path.join(args.odir, f'{oroot}-asym.png')
     kin.asymmetry_plot(galmeta=galmeta, xc=disk.par[0], yc=disk.par[1], pa=disk.par[2],
-                       vsys=disk.par[4], fwhm=galmeta.psf_fwhm[1], 
+                       inc=disk.par[3], vsys=disk.par[4], fwhm=galmeta.psf_fwhm[1], 
                        vel_mask=np.logical_not(disk.vel_gpm),
                        sig_mask=None if disk.dc is None else np.logical_not(disk.sig_gpm),
                        ofile=asym_plot)

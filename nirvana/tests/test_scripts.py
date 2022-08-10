@@ -21,6 +21,14 @@ def test_manga_axisym():
                                     '--max_vel_err', '100', '--max_sig_err', '100',
                                     '--min_unmasked', '10', '--coherent', '--skip_plots'])
     manga_axisym.main(args)
+#    embed()
+#
+#    args = manga_axisym.parse_args(['8138', '12704', '--root', remote_data_file(), '--odir', odir,
+#                                    '-t', 'Gas', '--min_vel_snr', '5', '--min_sig_snr', '5',
+#                                    '--max_vel_err', '100', '--max_sig_err', '100',
+#                                    '--min_unmasked', '10', '--coherent', '--covar', '--skip_plots'])
+#    manga_axisym.main(args)
+#    exit()
 
     main_output_file = os.path.join(odir, 'nirvana-manga-axisym-8138-12704-Gas.fits.gz')
     assert os.path.isfile(main_output_file), 'Output file not created.'
@@ -31,6 +39,7 @@ def test_manga_axisym():
 
     shutil.rmtree(odir)
 
+#test_manga_axisym()
 
 @requires_remote
 def test_manga_asymdrift():

@@ -598,8 +598,11 @@ class ThinDisk:
                 # Force the matrices to be positive definite
                 print('Forcing vel covar to be pos-def')
                 vel_pd_covar = impose_positive_definite(vel_pd_covar)
-                print('Forcing sig covar to be pos-def')
-                sig_pd_covar = None if self.dc is None else impose_positive_definite(sig_pd_covar)
+                if self.dc is None:
+                    sig_pd_covar = None 
+                else:
+                    print('Forcing sig covar to be pos-def')
+                    sig_pd_covar = impose_positive_definite(sig_pd_covar)
 
             if self.scatter is not None:
                 # A diagonal matrix with only positive values is, by definition,

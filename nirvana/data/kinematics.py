@@ -21,7 +21,7 @@ from .util import select_kinematic_axis, bin_stats, find_largest_coherent_region
 from ..util import plot
 from ..models import asymmetry
 from ..models.beam import construct_beam, ConvolveFFTW, smear
-from ..models.geometry import projected_polar
+from ..models.geometry import projected_polar, disk_ellipse
 
 # TODO: Make Kinematics a subclass of Bin2D?
 class Kinematics:
@@ -1188,9 +1188,9 @@ class Kinematics:
     # TODO:
     #   - Allow the plot to be constructed from the fits file written by
     #     axisym_fit_data
-    def asymmetry_plot(self, galmeta=None, xc=0., yc=0., pa=0., vsys=0., fwhm=None, vel_mask=None,
-                       sig_mask=None, ofile=None):
-        """
+    def asymmetry_plot(self, galmeta=None, xc=0., yc=0., pa=0., inc=0., vsys=0., ell_r=None,
+                       fwhm=None, vel_mask=None, sig_mask=None, ofile=None):
+        r"""
         Construct a plot showing reflective asymmetries in the velocity and
         velocity dispersion.
 
@@ -1203,8 +1203,19 @@ class Kinematics:
                 Kinematic center relative to :attr:`grid_y`.
             pa (:obj:`float`, optional):
                 Position angle of the major axis, from N through E in degrees.
+            inc (:obj:`float`, optional):
+                An inclination used to create an ellipse that marks a specific
+                in-plane radius; see ``ell_r``.  If ``ell_r`` is None, no
+                ellipse is plotted.  
             vsys (:obj:`float`, optional):
                 Systemic velocity.
+            ell_r (:obj:`float`, optional):
+                The radius of an ellipse used to mark a specific in-plane
+                radius.  If None, the maximum radius within a :math:`\pm 10` deg
+                wedge along the major axis is used.  The ellipticity, center,
+                and orientation of the ellipse are set by the provided
+                inclination (``inc``), center (``xc``, ``yc``), and position
+                angle (``pa``).
             fwhm (:obj:`float`, optional):
                 FWHM of the PSF in arcsec.  If provided, this is used to add the
                 nominal beam size to the map plots.
@@ -1251,6 +1262,76 @@ class Kinematics:
                                                                   sig.data, pa=pa, mask=sig.mask,
                                                                   maxd=0.4)
 
+        # Elliptical radius used in plotting and asymmetry RMS calculation
+        r, th = projected_polar(self.grid_x-xc, self.grid_y-yc, *np.radians([pa, inc]))
+        if ell_r is None:
+            major_gpm = select_kinematic_axis(r, th, which='major', r_range='all', wedge=10.)
+            major_gpm &= np.logical_not(np.ma.getmaskarray(vel))
+            ell_r = np.amax(r[major_gpm])
+        de_x, de_y = disk_ellipse(ell_r, np.radians(pa), np.radians(inc), xc=xc, yc=yc)
+        ellip_gpm = r < ell_r
+
+        # Asymmetry metrics
+        fid_grw = np.array([50., 80., 90.])
+
+        abs_vel_x, grw_vel_x, fid_vel_x = asymmetry.asymmetry_metrics(vel_x, fid_grw)
+        abs_vel_y, grw_vel_y, fid_vel_y = asymmetry.asymmetry_metrics(vel_y, fid_grw)
+        abs_vel_xy, grw_vel_xy, fid_vel_xy = asymmetry.asymmetry_metrics(vel_xy, fid_grw)
+
+        abs_sig_x, grw_sig_x, fid_sig_x = asymmetry.asymmetry_metrics(sig_x, fid_grw)
+        abs_sig_y, grw_sig_y, fid_sig_y = asymmetry.asymmetry_metrics(sig_y, fid_grw)
+        abs_sig_xy, grw_sig_xy, fid_sig_xy = asymmetry.asymmetry_metrics(sig_xy, fid_grw)
+
+        ell_abs_vel_x, ell_grw_vel_x, ell_fid_vel_x \
+                = asymmetry.asymmetry_metrics(vel_x, fid_grw, gpm=ellip_gpm)
+        ell_abs_vel_y, ell_grw_vel_y, ell_fid_vel_y \
+                = asymmetry.asymmetry_metrics(vel_y, fid_grw, gpm=ellip_gpm)
+        ell_abs_vel_xy, ell_grw_vel_xy, ell_fid_vel_xy \
+                = asymmetry.asymmetry_metrics(vel_xy, fid_grw, gpm=ellip_gpm)
+
+        ell_abs_sig_x, ell_grw_sig_x, ell_fid_sig_x \
+                = asymmetry.asymmetry_metrics(sig_x, fid_grw, gpm=ellip_gpm)
+        ell_abs_sig_y, ell_grw_sig_y, ell_fid_sig_y \
+                = asymmetry.asymmetry_metrics(sig_y, fid_grw, gpm=ellip_gpm)
+        ell_abs_sig_xy, ell_grw_sig_xy, ell_fid_sig_xy \
+                = asymmetry.asymmetry_metrics(sig_xy, fid_grw, gpm=ellip_gpm)
+
+#        abs_vel_x = np.sort(np.absolute(vel_x.compressed()))
+#        n_vel_x = abs_vel_x.size
+#        grw_vel_x = 1-(np.arange(n_vel_x)+1)/n_vel_x
+#        fid_vel_x = np.percentile(abs_vel_x, fid_grw) if abs_vel_x.size > 0 \
+#                        else -np.ones(fid_grw.size, dtype=float)
+
+#        abs_vel_y = np.sort(np.absolute(vel_y.compressed()))
+#        n_vel_y = abs_vel_y.size
+#        grw_vel_y = 1-(np.arange(n_vel_y)+1)/n_vel_y
+#        fid_vel_y = np.percentile(abs_vel_y, fid_grw) if abs_vel_y.size > 0 \
+#                        else -np.ones(fid_grw.size, dtype=float)
+
+#        abs_vel_xy = np.sort(np.absolute(vel_xy.compressed()))
+#        n_vel_xy = abs_vel_xy.size
+#        grw_vel_xy = 1-(np.arange(n_vel_xy)+1)/n_vel_xy
+#        fid_vel_xy = np.percentile(abs_vel_xy, fid_grw) if abs_vel_xy.size > 0 \
+#                        else -np.ones(fid_grw.size, dtype=float)
+
+#        abs_sig_x = np.sort(np.absolute(sig_x.compressed()))
+#        n_sig_x = abs_sig_x.size
+#        grw_sig_x = 1-(np.arange(n_sig_x)+1)/n_sig_x
+#        fid_sig_x = np.percentile(abs_sig_x, fid_grw) if abs_sig_x.size > 0 \
+#                        else -np.ones(fid_grw.size, dtype=float)
+#
+#        abs_sig_y = np.sort(np.absolute(sig_y.compressed()))
+#        n_sig_y = abs_sig_y.size
+#        grw_sig_y = 1-(np.arange(n_sig_y)+1)/n_sig_y
+#        fid_sig_y = np.percentile(abs_sig_y, fid_grw) if abs_sig_y.size > 0 \
+#                        else -np.ones(fid_grw.size, dtype=float)
+#
+#        abs_sig_xy = np.sort(np.absolute(sig_xy.compressed()))
+#        n_sig_xy = abs_sig_xy.size
+#        grw_sig_xy = 1-(np.arange(n_sig_xy)+1)/n_sig_xy
+#        fid_sig_xy = np.percentile(abs_sig_xy, fid_grw) if abs_sig_xy.size > 0 \
+#                        else -np.ones(fid_grw.size, dtype=float)
+
         # Set the extent for the 2D maps
         extent = [np.amax(self.grid_x), np.amin(self.grid_x),
                   np.amin(self.grid_y), np.amax(self.grid_y)]
@@ -1282,6 +1363,8 @@ class Kinematics:
         ax.arrow(xc, yc, skylim[1]*0.7*np.cos(np.radians(90-pa)),
                  skylim[1]*0.7*np.sin(np.radians(90-pa)), zorder=5, length_includes_head=True,
                  head_length=2., head_width=1.0, facecolor='k', edgecolor='k')
+        if de_x is not None:
+            ax.plot(de_x, de_y, color='w', lw=2, zorder=6, alpha=0.5)
         cb = fig.colorbar(im, cax=cax, orientation='horizontal')
         cb.ax.xaxis.set_ticks_position('top')
         cb.ax.xaxis.set_label_position('top')
@@ -1304,6 +1387,8 @@ class Kinematics:
                          transform=ax.transAxes, facecolor='0.7', edgecolor='k', zorder=4))
         im = ax.imshow(vel_x, origin='lower', interpolation='nearest', cmap='RdBu_r',
                        extent=extent, vmin=v_res_lim[0], vmax=v_res_lim[1], zorder=4)
+        if de_x is not None:
+            ax.plot(de_x, de_y, color='w', lw=2, zorder=6, alpha=0.5)
         cb = fig.colorbar(im, cax=cax, orientation='horizontal')
         cb.ax.xaxis.set_ticks_position('top')
         cb.ax.xaxis.set_label_position('top')
@@ -1322,6 +1407,8 @@ class Kinematics:
                          transform=ax.transAxes, facecolor='0.7', edgecolor='k', zorder=4))
         im = ax.imshow(vel_y, origin='lower', interpolation='nearest', cmap='RdBu_r',
                        extent=extent, vmin=v_res_lim[0], vmax=v_res_lim[1], zorder=4)
+        if de_x is not None:
+            ax.plot(de_x, de_y, color='w', lw=2, zorder=6, alpha=0.5)
         cb = fig.colorbar(im, cax=cax, orientation='horizontal')
         cb.ax.xaxis.set_ticks_position('top')
         cb.ax.xaxis.set_label_position('top')
@@ -1340,6 +1427,8 @@ class Kinematics:
                          transform=ax.transAxes, facecolor='0.7', edgecolor='k', zorder=4))
         im = ax.imshow(vel_xy, origin='lower', interpolation='nearest', cmap='RdBu_r',
                        extent=extent, vmin=v_res_lim[0], vmax=v_res_lim[1], zorder=4)
+        if de_x is not None:
+            ax.plot(de_x, de_y, color='w', lw=2, zorder=6, alpha=0.5)
         cb = fig.colorbar(im, cax=cax, orientation='horizontal')
         cb.ax.xaxis.set_ticks_position('top')
         cb.ax.xaxis.set_label_position('top')
@@ -1364,6 +1453,8 @@ class Kinematics:
                         extent=extent, vmin=sig_lim[0], vmax=sig_lim[1], zorder=4)
             # Mark the fitted dynamical center
             ax.scatter(xc, yc, marker='+', color='k', s=40, lw=1, zorder=5)
+            if de_x is not None:
+                ax.plot(de_x, de_y, color='w', lw=2, zorder=6, alpha=0.5)
             cb = fig.colorbar(im, cax=cax, orientation='horizontal')
             cax.text(-0.05, 0.1, r'$\sigma$', ha='right', va='center', transform=cax.transAxes)
 
@@ -1384,6 +1475,8 @@ class Kinematics:
                             transform=ax.transAxes, facecolor='0.7', edgecolor='k', zorder=4))
             im = ax.imshow(sig_x, origin='lower', interpolation='nearest', cmap='RdBu_r',
                            extent=extent, vmin=s_res_lim[0], vmax=s_res_lim[1], zorder=4)
+            if de_x is not None:
+                ax.plot(de_x, de_y, color='w', lw=2, zorder=6, alpha=0.5)
             cb = fig.colorbar(im, cax=cax, orientation='horizontal')
             cax.text(-0.05, 0.1, r'$\Delta \sigma_x$', ha='right', va='center',
                      transform=cax.transAxes)
@@ -1401,6 +1494,8 @@ class Kinematics:
                             transform=ax.transAxes, facecolor='0.7', edgecolor='k', zorder=4))
             im = ax.imshow(sig_y, origin='lower', interpolation='nearest', cmap='RdBu_r',
                            extent=extent, vmin=s_res_lim[0], vmax=s_res_lim[1], zorder=4)
+            if de_x is not None:
+                ax.plot(de_x, de_y, color='w', lw=2, zorder=6, alpha=0.5)
             cb = fig.colorbar(im, cax=cax, orientation='horizontal')
             cax.text(-0.05, 0.1, r'$\Delta \sigma_y$', ha='right', va='center',
                      transform=cax.transAxes)
@@ -1418,13 +1513,15 @@ class Kinematics:
                             transform=ax.transAxes, facecolor='0.7', edgecolor='k', zorder=4))
             im = ax.imshow(sig_xy, origin='lower', interpolation='nearest', cmap='RdBu_r',
                            extent=extent, vmin=s_res_lim[0], vmax=s_res_lim[1], zorder=4)
+            if de_x is not None:
+                ax.plot(de_x, de_y, color='w', lw=2, zorder=6, alpha=0.5)
             cb = fig.colorbar(im, cax=cax, orientation='horizontal')
             cax.text(-0.05, 0.1, r'$\Delta \sigma_{xy}$', ha='right', va='center',
                      transform=cax.transAxes)
  
         #-------------------------------------------------------------------
         # SDSS image
-        ax = fig.add_axes([0.03, 0.08, 0.28, 0.28])
+        ax = fig.add_axes([0.03, 0.14, 0.28, 0.28])
         if self.image is not None:
             ax.imshow(self.image)
         else:
@@ -1443,48 +1540,57 @@ class Kinematics:
             ax.text(1.01, -0.05, f'{galmeta.mangaid}', ha='right', va='center',
                     transform=ax.transAxes, fontsize=10)
             # Observation
-            ax.text(0.00, -0.13, 'Observation:', ha='left', va='center', transform=ax.transAxes,
+            ax.text(0.00, -0.12, 'Observation:', ha='left', va='center', transform=ax.transAxes,
                     fontsize=10)
-            ax.text(1.01, -0.13, f'{galmeta.plate}-{galmeta.ifu}', ha='right', va='center',
+            ax.text(1.01, -0.12, f'{galmeta.plate}-{galmeta.ifu}', ha='right', va='center',
                     transform=ax.transAxes, fontsize=10)
+        # Observation
+        ax.text(0.00, -0.19, r'$V_{\rm asym}$ (all: x, y, xy)', ha='left', va='center',
+                transform=ax.transAxes, fontsize=10)
+        ax.text(1.01, -0.19, f'{fid_vel_x[-1]:.1f}, {fid_vel_y[-1]:.1f}, {fid_vel_xy[-1]:.1f}',
+                ha='right', va='center', transform=ax.transAxes, fontsize=10)
+        ax.text(0.00, -0.26, r'$V_{\rm asym}$ (ell.: x, y, xy)', ha='left', va='center',
+                transform=ax.transAxes, fontsize=10)
+        ax.text(1.01, -0.26,
+                f'{ell_fid_vel_x[-1]:.1f}, {ell_fid_vel_y[-1]:.1f}, {ell_fid_vel_xy[-1]:.1f}',
+                ha='right', va='center', transform=ax.transAxes, fontsize=10)
+        ax.text(0.00, -0.33, r'$\sigma_{\rm asym}$ (all: x, y, xy)', ha='left', va='center',
+                transform=ax.transAxes, fontsize=10)
+        ax.text(1.01, -0.33, f'{fid_sig_x[-1]:.1f}, {fid_sig_y[-1]:.1f}, {fid_sig_xy[-1]:.1f}',
+                ha='right', va='center', transform=ax.transAxes, fontsize=10)
+        ax.text(0.00, -0.40, r'$\sigma_{\rm asym}$ (ell.: x, y, xy)', ha='left', va='center',
+                transform=ax.transAxes, fontsize=10)
+        ax.text(1.01, -0.40,
+                f'{ell_fid_sig_x[-1]:.1f}, {ell_fid_sig_y[-1]:.1f}, {ell_fid_sig_xy[-1]:.1f}',
+                ha='right', va='center', transform=ax.transAxes, fontsize=10)
 
         rc('font', size=10)
 
         # Velocity asymmetry growth
-        fid_grw = np.array([50., 80., 90.])
-        abs_vel_x = np.absolute(vel_x.compressed())
-        n_vel_x = abs_vel_x.size
-        grw_vel_x = 1-(np.arange(n_vel_x)+1)/n_vel_x
-        fid_vel_x = np.percentile(abs_vel_x, fid_grw) if abs_vel_x.size > 0 \
-                        else -np.ones(fid_grw.size, dtype=float)
-
-        abs_vel_y = np.absolute(vel_y.compressed())
-        n_vel_y = abs_vel_y.size
-        grw_vel_y = 1-(np.arange(n_vel_y)+1)/n_vel_y
-        fid_vel_y = np.percentile(abs_vel_y, fid_grw)
-        fid_vel_y = np.percentile(abs_vel_y, fid_grw) if abs_vel_y.size > 0 \
-                        else -np.ones(fid_grw.size, dtype=float)
-
-        abs_vel_xy = np.absolute(vel_xy.compressed())
-        n_vel_xy = abs_vel_xy.size
-        grw_vel_xy = 1-(np.arange(n_vel_xy)+1)/n_vel_xy
-        fid_vel_xy = np.percentile(abs_vel_xy, fid_grw)
-        fid_vel_xy = np.percentile(abs_vel_xy, fid_grw) if abs_vel_xy.size > 0 \
-                        else -np.ones(fid_grw.size, dtype=float)
-
         ax = plot.init_ax(fig, [0.38, 0.06, 0.29, 0.36], majlen=6, minlen=3, facecolor='0.95',
                           gridcolor='0.9')
-        ax.set_xlim([0., np.amax([fid_vel_x[-1], fid_vel_y[-1], fid_vel_xy[-1]])*1.2])
+        ax.set_xlim([0., np.amax([fid_vel_x[-2], fid_vel_y[-2], fid_vel_xy[-2],
+                                  ell_fid_vel_x[-2], ell_fid_vel_y[-2], ell_fid_vel_xy[-2]])*1.2])
         ax.set_ylim([3e-2, 1.01])
         ax.set_yscale('log')
         ax.yaxis.set_major_formatter(logformatter)
 
-        ax.step(np.sort(abs_vel_x), grw_vel_x, color='C0', where='post', zorder=3)
-        ax.scatter(fid_vel_x, 1-fid_grw/100, marker='.', s=200, color='C0', zorder=4)
-        ax.step(np.sort(abs_vel_y), grw_vel_y, color='C1', where='post', zorder=3)
-        ax.scatter(fid_vel_y, 1-fid_grw/100, marker='.', s=200, color='C1', zorder=4)
-        ax.step(np.sort(abs_vel_xy), grw_vel_xy, color='C2', where='post', zorder=3)
-        ax.scatter(fid_vel_xy, 1-fid_grw/100, marker='.', s=200, color='C2', zorder=4)
+        ax.step(abs_vel_x, grw_vel_x, color='C0', where='post', zorder=3)
+        ax.scatter(fid_vel_x[:3], 1-fid_grw/100, marker='.', s=200, color='C0', zorder=4)
+        ax.step(abs_vel_y, grw_vel_y, color='C1', where='post', zorder=3)
+        ax.scatter(fid_vel_y[:3], 1-fid_grw/100, marker='.', s=200, color='C1', zorder=4)
+        ax.step(abs_vel_xy, grw_vel_xy, color='C2', where='post', zorder=3)
+        ax.scatter(fid_vel_xy[:3], 1-fid_grw/100, marker='.', s=200, color='C2', zorder=4)
+
+        ax.step(ell_abs_vel_x, ell_grw_vel_x, color='C0', where='post', zorder=3, ls='--', lw=0.5)
+        ax.scatter(ell_fid_vel_x[:3], 1-fid_grw/100, marker='o', s=100, facecolor='none',
+                   edgecolor='C0', zorder=4)
+        ax.step(ell_abs_vel_y, ell_grw_vel_y, color='C1', where='post', zorder=3, ls='--', lw=0.5)
+        ax.scatter(ell_fid_vel_y[:3], 1-fid_grw/100, marker='o', s=100, facecolor='none',
+                   edgecolor='C1', zorder=4)
+        ax.step(ell_abs_vel_xy, ell_grw_vel_xy, color='C2', where='post', zorder=3, ls='--', lw=0.5)
+        ax.scatter(ell_fid_vel_xy[:3], 1-fid_grw/100, marker='o', s=100, facecolor='none',
+                   edgecolor='C2', zorder=4)
 
         ax.text(-0.15, 0.5, '1-Growth', ha='center', va='center', transform=ax.transAxes,
                 rotation='vertical')
@@ -1497,37 +1603,30 @@ class Kinematics:
                 color='C2', fontsize=12)
 
         # Velocity dispersion asymmetry growth
-        abs_sig_x = np.absolute(sig_x.compressed())
-        n_sig_x = abs_sig_x.size
-        grw_sig_x = 1-(np.arange(n_sig_x)+1)/n_sig_x
-        fid_sig_x = np.percentile(abs_sig_x, fid_grw) if abs_sig_x.size > 0 \
-                        else -np.ones(fid_grw.size, dtype=float)
-
-        abs_sig_y = np.absolute(sig_y.compressed())
-        n_sig_y = abs_sig_y.size
-        grw_sig_y = 1-(np.arange(n_sig_y)+1)/n_sig_y
-        fid_sig_y = np.percentile(abs_sig_y, fid_grw) if abs_sig_y.size > 0 \
-                        else -np.ones(fid_grw.size, dtype=float)
-
-        abs_sig_xy = np.absolute(sig_xy.compressed())
-        n_sig_xy = abs_sig_xy.size
-        grw_sig_xy = 1-(np.arange(n_sig_xy)+1)/n_sig_xy
-        fid_sig_xy = np.percentile(abs_sig_xy, fid_grw) if abs_sig_xy.size > 0 \
-                        else -np.ones(fid_grw.size, dtype=float)
-
         ax = plot.init_ax(fig, [0.68, 0.06, 0.29, 0.36], majlen=6, minlen=3, facecolor='0.95',
                           gridcolor='0.9')
-        ax.set_xlim([0., np.amax([fid_sig_x[-1], fid_sig_y[-1], fid_sig_xy[-1]])*1.2])
+        ax.set_xlim([0., np.amax([fid_sig_x[-2], fid_sig_y[-2], fid_sig_xy[-2],
+                                  ell_fid_sig_x[-2], ell_fid_sig_y[-2], ell_fid_sig_xy[-2]])*1.2])
         ax.set_ylim([3e-2, 1.01])
         ax.set_yscale('log')
         ax.yaxis.set_major_formatter(ticker.NullFormatter())
 
-        ax.step(np.sort(abs_sig_x), grw_sig_x, color='C0', where='post', zorder=3)
-        ax.scatter(fid_sig_x, 1-fid_grw/100, marker='.', s=200, color='C0', zorder=4)
-        ax.step(np.sort(abs_sig_y), grw_sig_y, color='C1', where='post', zorder=3)
-        ax.scatter(fid_sig_y, 1-fid_grw/100, marker='.', s=200, color='C1', zorder=4)
-        ax.step(np.sort(abs_sig_xy), grw_sig_xy, color='C2', where='post', zorder=3)
-        ax.scatter(fid_sig_xy, 1-fid_grw/100, marker='.', s=200, color='C2', zorder=4)
+        ax.step(abs_sig_x, grw_sig_x, color='C0', where='post', zorder=3)
+        ax.scatter(fid_sig_x[:3], 1-fid_grw/100, marker='.', s=200, color='C0', zorder=4)
+        ax.step(abs_sig_y, grw_sig_y, color='C1', where='post', zorder=3)
+        ax.scatter(fid_sig_y[:3], 1-fid_grw/100, marker='.', s=200, color='C1', zorder=4)
+        ax.step(abs_sig_xy, grw_sig_xy, color='C2', where='post', zorder=3)
+        ax.scatter(fid_sig_xy[:3], 1-fid_grw/100, marker='.', s=200, color='C2', zorder=4)
+
+        ax.step(ell_abs_sig_x, ell_grw_sig_x, color='C0', where='post', zorder=3, ls='--', lw=0.5)
+        ax.scatter(ell_fid_sig_x[:3], 1-fid_grw/100, marker='o', s=100, facecolor='none',
+                   edgecolor='C0', zorder=4)
+        ax.step(ell_abs_sig_y, ell_grw_sig_y, color='C1', where='post', zorder=3, ls='--', lw=0.5)
+        ax.scatter(ell_fid_sig_y[:3], 1-fid_grw/100, marker='o', s=100, facecolor='none',
+                   edgecolor='C1', zorder=4)
+        ax.step(ell_abs_sig_xy, ell_grw_sig_xy, color='C2', where='post', zorder=3, ls='--', lw=0.5)
+        ax.scatter(ell_fid_sig_xy[:3], 1-fid_grw/100, marker='o', s=100, facecolor='none',
+                   edgecolor='C2', zorder=4)
 
         ax.text(0.5, -0.08, r'$\Delta \sigma$ [km/s]', ha='center', va='center', transform=ax.transAxes)
         ax.text(0.85, 0.9, r'$\Delta \sigma_x$', ha='left', va='center', transform=ax.transAxes,

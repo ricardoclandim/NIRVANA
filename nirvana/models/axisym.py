@@ -584,8 +584,12 @@ def _fit_meta_dtype(par_names, nr, parbitmask):
             # VCHI2 is the reduced chi-square only for the velocity data and
             # excluding the instrinsic scatter modification of the error.
             ('VCHI2', np.float),
-            # VASYM is the 50%, 80%, and 90% growth of the 3 asymmetry maps
-            ('VASYM', np.float, (3,3)),
+            # VASYM is the 50%, 80%, and 90% growth and RMS of the 3 asymmetry
+            # maps; the "_ELL" version is after considering only data within an
+            # ellipse of radius "VASYM_ELL_R".
+            ('VASYM', np.float, (3,4)),
+            ('VASYM_ELL_R', np.float),
+            ('VASYM_ELL', np.float, (3,4)),
             # SNFIT is the total number of dispersion measurements included in
             # the fit.
             ('SNFIT', np.int),
@@ -628,7 +632,9 @@ def _fit_meta_dtype(par_names, nr, parbitmask):
             # velocity.  Note that sigma is calculated as sigma/sqrt(abs(sigma))
             # as a way of calculating the sqrt while maintaining the sign.
             # TODO: Revisit the sigma asymmetry calculations!
-            ('SASYM', np.float, (3,3)),
+            ('SASYM', np.float, (3,4)),
+            ('SASYM_ELL_R', np.float),
+            ('SASYM_ELL', np.float, (3,4)),
             # The total chi-square of the fit, includeing the intrinsic scatter
             # modification of the error.
             ('CHI2', np.float),
@@ -755,6 +761,8 @@ def axisym_fit_data(galmeta, kin, p0, lb, ub, disk, vmask, smask, ofile=None):
     vel = kin.remap('vel', masked=False, fill_value=0.)
     vel_ivar = kin.remap('vel_ivar', masked=False, fill_value=0.)
     vel_mask = kin.remap(vmask, masked=False, fill_value=didnotuse)
+
+    #   - Velocity asymmetry maps
     vel_x, vel_y, vel_xy = asymmetry.onsky_asymmetry_maps(kin.grid_x-disk.par[0],
                                                           kin.grid_y-disk.par[1], vel-disk.par[4],
                                                           pa=disk.par[2], mask=vel_mask>0,
@@ -765,6 +773,22 @@ def axisym_fit_data(galmeta, kin, p0, lb, ub, disk, vmask, smask, ofile=None):
     vasym_channels = ['dV minor axis flip', 'dV major axis flip', 'dV 180deg rotate']
     vasym_units = ['km/s', 'km/s', 'km/s']
 
+    #   - Asymmetry growth percentiles
+    asym_grw = np.array([50., 80., 90.])
+    #   - Set a maximum radius for some data (asymmetry metrics)
+    major_gpm = select_kinematic_axis(r, th, which='major', r_range='all', wedge=10.)
+    vel_major_gpm = major_gpm & np.logical_not(vel_mask > 0)
+    vel_ell_r = np.amax(r[vel_major_gpm])
+    ellip_gpm = r < vel_ell_r
+    #   - Velocity asymmetry metrics, entire map
+    fid_vel_x = asymmetry.asymmetry_metrics(vel_x, asym_grw)[2]
+    fid_vel_y = asymmetry.asymmetry_metrics(vel_y, asym_grw)[2]
+    fid_vel_xy = asymmetry.asymmetry_metrics(vel_xy, asym_grw)[2]
+    #   - ..., within the elliptical radius defined above
+    ell_fid_vel_x = asymmetry.asymmetry_metrics(vel_x, asym_grw, gpm=ellip_gpm)[2]
+    ell_fid_vel_y = asymmetry.asymmetry_metrics(vel_y, asym_grw, gpm=ellip_gpm)[2]
+    ell_fid_vel_xy = asymmetry.asymmetry_metrics(vel_xy, asym_grw, gpm=ellip_gpm)[2]
+
     #   - Corrected velocity dispersion squared
     if disk.dc is None:
         sigsqr = None
@@ -772,6 +796,12 @@ def axisym_fit_data(galmeta, kin, p0, lb, ub, disk, vmask, smask, ofile=None):
         sigsqr_mask = None
         sig_asym = None
         sig_asym_mask = None
+        fid_sig_x = None
+        fid_sig_y = None
+        fid_sig_xy = None
+        ell_fid_sig_x = None
+        ell_fid_sig_y = None
+        ell_fid_sig_xy = None
     else:
         sigsqr = kin.remap('sig_phys2', masked=False, fill_value=0.)
         sigsqr_ivar = kin.remap('sig_phys2_ivar', masked=False,fill_value=0.)
@@ -791,6 +821,18 @@ def axisym_fit_data(galmeta, kin, p0, lb, ub, disk, vmask, smask, ofile=None):
         sasym_channels = ['dsigma minor axis flip', 'dsigma major axis flip',
                           'dsigma 180deg rotate']
         sasym_units = ['km/s', 'km/s', 'km/s']
+
+        #   - Velocity dispersion asymmetry metrics, entire map
+        fid_sig_x = asymmetry.asymmetry_metrics(sig_x, asym_grw)[2]
+        fid_sig_y = asymmetry.asymmetry_metrics(sig_y, asym_grw)[2]
+        fid_sig_xy = asymmetry.asymmetry_metrics(sig_xy, asym_grw)[2]
+        #   - ..., within the elliptical radius defined above
+        sig_major_gpm = major_gpm & np.logical_not(sigsqr_mask > 0)
+        sig_ell_r = np.amax(r[sig_major_gpm])
+        ellip_gpm = r < sig_ell_r
+        ell_fid_sig_x = asymmetry.asymmetry_metrics(sig_x, asym_grw, gpm=ellip_gpm)[2]
+        ell_fid_sig_y = asymmetry.asymmetry_metrics(sig_y, asym_grw, gpm=ellip_gpm)[2]
+        ell_fid_sig_xy = asymmetry.asymmetry_metrics(sig_xy, asym_grw, gpm=ellip_gpm)[2]
 
     # Construct the model data, both binned data and maps
     models = disk.binned_model(disk.par)
@@ -972,10 +1014,14 @@ def axisym_fit_data(galmeta, kin, p0, lb, ub, disk, vmask, smask, ofile=None):
     metadata['VISCT'] = scat.sig
     metadata['VCHI2'] = np.sum(vfom**2)
 
-    metadata['VASYM'] = np.array([np.percentile(np.absolute(a[np.logical_not(m)]),
-                                                [50., 80., 90.])
-                                        if not np.all(m) else np.array([-1., -1., -1.])
-                                    for a, m in zip(vel_asym, vel_asym_mask)])
+#    metadata['VASYM'] = np.array([np.percentile(np.absolute(a[np.logical_not(m)]),
+#                                                [50., 80., 90.])
+#                                        if not np.all(m) else np.array([-1., -1., -1.])
+#                                    for a, m in zip(vel_asym, vel_asym_mask)])
+    metadata['VASYM'] = np.vstack((fid_vel_x, fid_vel_y, fid_vel_xy))
+    metadata['VASYM_ELL_R'] = vel_ell_r
+    metadata['VASYM_ELL'] = np.vstack((ell_fid_vel_x, ell_fid_vel_y, ell_fid_vel_xy))
+
     nsig = 0.
 
     if disk.dc is not None:
@@ -997,11 +1043,15 @@ def axisym_fit_data(galmeta, kin, p0, lb, ub, disk, vmask, smask, ofile=None):
         metadata['SISCT'] = scat.sig
         metadata['SCHI2'] = np.sum(sfom**2)
 
-        metadata['SASYM'] = np.array([np.percentile(np.absolute(a[np.logical_not(m)]),
-                                                    [50., 80., 90.])
-                                            if not np.all(m) else np.array([-1., -1., -1.])
-                                        for a, m in zip(sig_asym, sig_asym_mask)])
-        
+#        metadata['SASYM'] = np.array([np.percentile(np.absolute(a[np.logical_not(m)]),
+#                                                    [50., 80., 90.])
+#                                            if not np.all(m) else np.array([-1., -1., -1.])
+#                                        for a, m in zip(sig_asym, sig_asym_mask)])
+
+        metadata['SASYM'] = np.vstack((fid_sig_x, fid_sig_y, fid_sig_xy))
+        metadata['SASYM_ELL_R'] = sig_ell_r
+        metadata['SASYM_ELL'] = np.vstack((ell_fid_sig_x, ell_fid_sig_y, ell_fid_sig_xy))
+
     # Total fit chi-square. SCHI2 and SNFIT are 0 if sigma not fit because of
     # the instantiation value of init_record_array
     metadata['CHI2'] = metadata['VCHI2'] + metadata['SCHI2']
