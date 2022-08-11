@@ -775,19 +775,25 @@ def axisym_fit_data(galmeta, kin, p0, lb, ub, disk, vmask, smask, ofile=None):
 
     #   - Asymmetry growth percentiles
     asym_grw = np.array([50., 80., 90.])
-    #   - Set a maximum radius for some data (asymmetry metrics)
-    major_gpm = select_kinematic_axis(r, th, which='major', r_range='all', wedge=10.)
-    vel_major_gpm = major_gpm & np.logical_not(vel_mask > 0)
-    vel_ell_r = np.amax(r[vel_major_gpm])
-    ellip_gpm = r < vel_ell_r
-    #   - Velocity asymmetry metrics, entire map
+    #   - Velocity asymmetry metrics for the entire map
     fid_vel_x = asymmetry.asymmetry_metrics(vel_x, asym_grw)[2]
     fid_vel_y = asymmetry.asymmetry_metrics(vel_y, asym_grw)[2]
     fid_vel_xy = asymmetry.asymmetry_metrics(vel_xy, asym_grw)[2]
-    #   - ..., within the elliptical radius defined above
-    ell_fid_vel_x = asymmetry.asymmetry_metrics(vel_x, asym_grw, gpm=ellip_gpm)[2]
-    ell_fid_vel_y = asymmetry.asymmetry_metrics(vel_y, asym_grw, gpm=ellip_gpm)[2]
-    ell_fid_vel_xy = asymmetry.asymmetry_metrics(vel_xy, asym_grw, gpm=ellip_gpm)[2]
+    #   - Set a maximum radius for some data (asymmetry metrics)
+    major_gpm = select_kinematic_axis(r, th, which='major', r_range='all', wedge=10.)
+    vel_major_gpm = major_gpm & np.logical_not(vel_mask > 0)
+    if np.any(vel_major_gpm):
+        vel_ell_r = np.amax(r[vel_major_gpm])
+        ellip_gpm = r < vel_ell_r
+        #   - Velocity asymmetry metrics within the elliptical radius defined above
+        ell_fid_vel_x = asymmetry.asymmetry_metrics(vel_x, asym_grw, gpm=ellip_gpm)[2]
+        ell_fid_vel_y = asymmetry.asymmetry_metrics(vel_y, asym_grw, gpm=ellip_gpm)[2]
+        ell_fid_vel_xy = asymmetry.asymmetry_metrics(vel_xy, asym_grw, gpm=ellip_gpm)[2]
+    else:
+        vel_ell_r = 0.
+        ell_fid_vel_x = np.zeros(4, dtype=float)
+        ell_fid_vel_y = np.zeros(4, dtype=float)
+        ell_fid_vel_xy = np.zeros(4, dtype=float)
 
     #   - Corrected velocity dispersion squared
     if disk.dc is None:
