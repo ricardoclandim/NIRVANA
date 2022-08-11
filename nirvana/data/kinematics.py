@@ -1267,9 +1267,9 @@ class Kinematics:
         if ell_r is None:
             major_gpm = select_kinematic_axis(r, th, which='major', r_range='all', wedge=10.)
             major_gpm &= np.logical_not(np.ma.getmaskarray(vel))
-            ell_r = np.amax(r[major_gpm])
+            ell_r = np.amax(r[major_gpm]) if np.any(major_gpm) else -1
         de_x, de_y = disk_ellipse(ell_r, np.radians(pa), np.radians(inc), xc=xc, yc=yc)
-        ellip_gpm = r < ell_r
+        ellip_gpm = None if ell_r < 0 else r < ell_r
 
         # Asymmetry metrics
         fid_grw = np.array([50., 80., 90.])
@@ -1282,19 +1282,20 @@ class Kinematics:
         abs_sig_y, grw_sig_y, fid_sig_y = asymmetry.asymmetry_metrics(sig_y, fid_grw)
         abs_sig_xy, grw_sig_xy, fid_sig_xy = asymmetry.asymmetry_metrics(sig_xy, fid_grw)
 
-        ell_abs_vel_x, ell_grw_vel_x, ell_fid_vel_x \
-                = asymmetry.asymmetry_metrics(vel_x, fid_grw, gpm=ellip_gpm)
-        ell_abs_vel_y, ell_grw_vel_y, ell_fid_vel_y \
-                = asymmetry.asymmetry_metrics(vel_y, fid_grw, gpm=ellip_gpm)
-        ell_abs_vel_xy, ell_grw_vel_xy, ell_fid_vel_xy \
-                = asymmetry.asymmetry_metrics(vel_xy, fid_grw, gpm=ellip_gpm)
+        if ellip_gpm is not None:
+            ell_abs_vel_x, ell_grw_vel_x, ell_fid_vel_x \
+                    = asymmetry.asymmetry_metrics(vel_x, fid_grw, gpm=ellip_gpm)
+            ell_abs_vel_y, ell_grw_vel_y, ell_fid_vel_y \
+                    = asymmetry.asymmetry_metrics(vel_y, fid_grw, gpm=ellip_gpm)
+            ell_abs_vel_xy, ell_grw_vel_xy, ell_fid_vel_xy \
+                    = asymmetry.asymmetry_metrics(vel_xy, fid_grw, gpm=ellip_gpm)
 
-        ell_abs_sig_x, ell_grw_sig_x, ell_fid_sig_x \
-                = asymmetry.asymmetry_metrics(sig_x, fid_grw, gpm=ellip_gpm)
-        ell_abs_sig_y, ell_grw_sig_y, ell_fid_sig_y \
-                = asymmetry.asymmetry_metrics(sig_y, fid_grw, gpm=ellip_gpm)
-        ell_abs_sig_xy, ell_grw_sig_xy, ell_fid_sig_xy \
-                = asymmetry.asymmetry_metrics(sig_xy, fid_grw, gpm=ellip_gpm)
+            ell_abs_sig_x, ell_grw_sig_x, ell_fid_sig_x \
+                    = asymmetry.asymmetry_metrics(sig_x, fid_grw, gpm=ellip_gpm)
+            ell_abs_sig_y, ell_grw_sig_y, ell_fid_sig_y \
+                    = asymmetry.asymmetry_metrics(sig_y, fid_grw, gpm=ellip_gpm)
+            ell_abs_sig_xy, ell_grw_sig_xy, ell_fid_sig_xy \
+                    = asymmetry.asymmetry_metrics(sig_xy, fid_grw, gpm=ellip_gpm)
 
 #        abs_vel_x = np.sort(np.absolute(vel_x.compressed()))
 #        n_vel_x = abs_vel_x.size
@@ -1582,15 +1583,19 @@ class Kinematics:
         ax.step(abs_vel_xy, grw_vel_xy, color='C2', where='post', zorder=3)
         ax.scatter(fid_vel_xy[:3], 1-fid_grw/100, marker='.', s=200, color='C2', zorder=4)
 
-        ax.step(ell_abs_vel_x, ell_grw_vel_x, color='C0', where='post', zorder=3, ls='--', lw=0.5)
-        ax.scatter(ell_fid_vel_x[:3], 1-fid_grw/100, marker='o', s=100, facecolor='none',
-                   edgecolor='C0', zorder=4)
-        ax.step(ell_abs_vel_y, ell_grw_vel_y, color='C1', where='post', zorder=3, ls='--', lw=0.5)
-        ax.scatter(ell_fid_vel_y[:3], 1-fid_grw/100, marker='o', s=100, facecolor='none',
-                   edgecolor='C1', zorder=4)
-        ax.step(ell_abs_vel_xy, ell_grw_vel_xy, color='C2', where='post', zorder=3, ls='--', lw=0.5)
-        ax.scatter(ell_fid_vel_xy[:3], 1-fid_grw/100, marker='o', s=100, facecolor='none',
-                   edgecolor='C2', zorder=4)
+        if ellip_gpm is not None:
+            ax.step(ell_abs_vel_x, ell_grw_vel_x,
+                    color='C0', where='post', zorder=3, ls='--', lw=0.5)
+            ax.scatter(ell_fid_vel_x[:3], 1-fid_grw/100,
+                       marker='o', s=100, facecolor='none', edgecolor='C0', zorder=4)
+            ax.step(ell_abs_vel_y, ell_grw_vel_y,
+                    color='C1', where='post', zorder=3, ls='--', lw=0.5)
+            ax.scatter(ell_fid_vel_y[:3], 1-fid_grw/100,
+                       marker='o', s=100, facecolor='none', edgecolor='C1', zorder=4)
+            ax.step(ell_abs_vel_xy, ell_grw_vel_xy,
+                    color='C2', where='post', zorder=3, ls='--', lw=0.5)
+            ax.scatter(ell_fid_vel_xy[:3], 1-fid_grw/100,
+                       marker='o', s=100, facecolor='none', edgecolor='C2', zorder=4)
 
         ax.text(-0.15, 0.5, '1-Growth', ha='center', va='center', transform=ax.transAxes,
                 rotation='vertical')
@@ -1618,15 +1623,19 @@ class Kinematics:
         ax.step(abs_sig_xy, grw_sig_xy, color='C2', where='post', zorder=3)
         ax.scatter(fid_sig_xy[:3], 1-fid_grw/100, marker='.', s=200, color='C2', zorder=4)
 
-        ax.step(ell_abs_sig_x, ell_grw_sig_x, color='C0', where='post', zorder=3, ls='--', lw=0.5)
-        ax.scatter(ell_fid_sig_x[:3], 1-fid_grw/100, marker='o', s=100, facecolor='none',
-                   edgecolor='C0', zorder=4)
-        ax.step(ell_abs_sig_y, ell_grw_sig_y, color='C1', where='post', zorder=3, ls='--', lw=0.5)
-        ax.scatter(ell_fid_sig_y[:3], 1-fid_grw/100, marker='o', s=100, facecolor='none',
-                   edgecolor='C1', zorder=4)
-        ax.step(ell_abs_sig_xy, ell_grw_sig_xy, color='C2', where='post', zorder=3, ls='--', lw=0.5)
-        ax.scatter(ell_fid_sig_xy[:3], 1-fid_grw/100, marker='o', s=100, facecolor='none',
-                   edgecolor='C2', zorder=4)
+        if ellip_gpm:
+            ax.step(ell_abs_sig_x, ell_grw_sig_x,
+                    color='C0', where='post', zorder=3, ls='--', lw=0.5)
+            ax.scatter(ell_fid_sig_x[:3], 1-fid_grw/100,
+                       marker='o', s=100, facecolor='none', edgecolor='C0', zorder=4)
+            ax.step(ell_abs_sig_y, ell_grw_sig_y,
+                    color='C1', where='post', zorder=3, ls='--', lw=0.5)
+            ax.scatter(ell_fid_sig_y[:3], 1-fid_grw/100,
+                       marker='o', s=100, facecolor='none', edgecolor='C1', zorder=4)
+            ax.step(ell_abs_sig_xy, ell_grw_sig_xy,
+                    color='C2', where='post', zorder=3, ls='--', lw=0.5)
+            ax.scatter(ell_fid_sig_xy[:3], 1-fid_grw/100,
+                       marker='o', s=100, facecolor='none', edgecolor='C2', zorder=4)
 
         ax.text(0.5, -0.08, r'$\Delta \sigma$ [km/s]', ha='center', va='center', transform=ax.transAxes)
         ax.text(0.85, 0.9, r'$\Delta \sigma_x$', ha='left', va='center', transform=ax.transAxes,
