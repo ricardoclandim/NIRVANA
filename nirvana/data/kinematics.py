@@ -1572,8 +1572,10 @@ class Kinematics:
         # Velocity asymmetry growth
         ax = plot.init_ax(fig, [0.38, 0.06, 0.29, 0.36], majlen=6, minlen=3, facecolor='0.95',
                           gridcolor='0.9')
-        ax.set_xlim([0., np.amax([fid_vel_x[-2], fid_vel_y[-2], fid_vel_xy[-2],
-                                  ell_fid_vel_x[-2], ell_fid_vel_y[-2], ell_fid_vel_xy[-2]])*1.2])
+        asym90 = np.array([fid_vel_x[-2], fid_vel_y[-2], fid_vel_xy[-2]])
+        if ellip_gpm is not None:
+            asym90 = np.append(asym90, [ell_fid_vel_x[-2], ell_fid_vel_y[-2], ell_fid_vel_xy[-2]])
+        ax.set_xlim([0., np.amax(asym90)*1.2])
         ax.set_ylim([3e-2, 1.01])
         ax.set_yscale('log')
         ax.yaxis.set_major_formatter(logformatter)
@@ -1612,8 +1614,12 @@ class Kinematics:
         # Velocity dispersion asymmetry growth
         ax = plot.init_ax(fig, [0.68, 0.06, 0.29, 0.36], majlen=6, minlen=3, facecolor='0.95',
                           gridcolor='0.9')
-        ax.set_xlim([0., np.amax([fid_sig_x[-2], fid_sig_y[-2], fid_sig_xy[-2],
-                                  ell_fid_sig_x[-2], ell_fid_sig_y[-2], ell_fid_sig_xy[-2]])*1.2])
+        asym90 = np.array([fid_sig_x[-2], fid_sig_y[-2], fid_sig_xy[-2]])
+        if ellip_gpm is not None:
+            asym90 = np.append(asym90, [ell_fid_sig_x[-2], ell_fid_sig_y[-2], ell_fid_sig_xy[-2]])
+        ax.set_xlim([0., np.amax(asym90)*1.2])
+#        ax.set_xlim([0., np.amax([fid_sig_x[-2], fid_sig_y[-2], fid_sig_xy[-2],
+#                                  ell_fid_sig_x[-2], ell_fid_sig_y[-2], ell_fid_sig_xy[-2]])*1.2])
         ax.set_ylim([3e-2, 1.01])
         ax.set_yscale('log')
         ax.yaxis.set_major_formatter(ticker.NullFormatter())
