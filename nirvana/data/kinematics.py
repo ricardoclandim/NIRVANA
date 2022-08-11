@@ -1550,20 +1550,22 @@ class Kinematics:
                 transform=ax.transAxes, fontsize=10)
         ax.text(1.01, -0.19, f'{fid_vel_x[-1]:.1f}, {fid_vel_y[-1]:.1f}, {fid_vel_xy[-1]:.1f}',
                 ha='right', va='center', transform=ax.transAxes, fontsize=10)
-        ax.text(0.00, -0.26, r'$V_{\rm asym}$ (ell.: x, y, xy)', ha='left', va='center',
-                transform=ax.transAxes, fontsize=10)
-        ax.text(1.01, -0.26,
-                f'{ell_fid_vel_x[-1]:.1f}, {ell_fid_vel_y[-1]:.1f}, {ell_fid_vel_xy[-1]:.1f}',
-                ha='right', va='center', transform=ax.transAxes, fontsize=10)
+        if ellip_gpm is not None:
+            ax.text(0.00, -0.26, r'$V_{\rm asym}$ (ell.: x, y, xy)', ha='left', va='center',
+                    transform=ax.transAxes, fontsize=10)
+            ax.text(1.01, -0.26,
+                    f'{ell_fid_vel_x[-1]:.1f}, {ell_fid_vel_y[-1]:.1f}, {ell_fid_vel_xy[-1]:.1f}',
+                    ha='right', va='center', transform=ax.transAxes, fontsize=10)
         ax.text(0.00, -0.33, r'$\sigma_{\rm asym}$ (all: x, y, xy)', ha='left', va='center',
                 transform=ax.transAxes, fontsize=10)
         ax.text(1.01, -0.33, f'{fid_sig_x[-1]:.1f}, {fid_sig_y[-1]:.1f}, {fid_sig_xy[-1]:.1f}',
                 ha='right', va='center', transform=ax.transAxes, fontsize=10)
-        ax.text(0.00, -0.40, r'$\sigma_{\rm asym}$ (ell.: x, y, xy)', ha='left', va='center',
-                transform=ax.transAxes, fontsize=10)
-        ax.text(1.01, -0.40,
-                f'{ell_fid_sig_x[-1]:.1f}, {ell_fid_sig_y[-1]:.1f}, {ell_fid_sig_xy[-1]:.1f}',
-                ha='right', va='center', transform=ax.transAxes, fontsize=10)
+        if ellip_gpm is not None:
+            ax.text(0.00, -0.40, r'$\sigma_{\rm asym}$ (ell.: x, y, xy)', ha='left', va='center',
+                    transform=ax.transAxes, fontsize=10)
+            ax.text(1.01, -0.40,
+                    f'{ell_fid_sig_x[-1]:.1f}, {ell_fid_sig_y[-1]:.1f}, {ell_fid_sig_xy[-1]:.1f}',
+                    ha='right', va='center', transform=ax.transAxes, fontsize=10)
 
         rc('font', size=10)
 
