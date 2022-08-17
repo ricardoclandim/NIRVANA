@@ -1631,7 +1631,7 @@ class Kinematics:
         ax.step(abs_sig_xy, grw_sig_xy, color='C2', where='post', zorder=3)
         ax.scatter(fid_sig_xy[:3], 1-fid_grw/100, marker='.', s=200, color='C2', zorder=4)
 
-        if ellip_gpm:
+        if ellip_gpm is not None:
             ax.step(ell_abs_sig_x, ell_grw_sig_x,
                     color='C0', where='post', zorder=3, ls='--', lw=0.5)
             ax.scatter(ell_fid_sig_x[:3], 1-fid_grw/100,

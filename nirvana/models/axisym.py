@@ -1468,7 +1468,7 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
     cb = fig.colorbar(im, cax=cax, orientation='horizontal')
     cb.ax.xaxis.set_ticks_position('top')
     cb.ax.xaxis.set_label_position('top')
-    cax.text(-0.05, 1.1, 'V', ha='right', va='center', transform=cax.transAxes)
+    cax.text(-0.05, 1.1, r'$V$', ha='right', va='center', transform=cax.transAxes)
 
     #-------------------------------------------------------------------
     # Velocity Dispersion
@@ -1516,7 +1516,7 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
     cb = fig.colorbar(im, cax=cax, orientation='horizontal')
     cb.ax.xaxis.set_ticks_position('top')
     cb.ax.xaxis.set_label_position('top')
-    cax.text(-0.05, 1.1, 'V', ha='right', va='center', transform=cax.transAxes)
+    cax.text(-0.05, 1.1, r'$V_m$', ha='right', va='center', transform=cax.transAxes)
 
     #-------------------------------------------------------------------
     # Velocity Dispersion Model
@@ -1542,7 +1542,7 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
         cax = fig.add_axes([0.440, 0.57, 0.15, 0.005])
         cax.tick_params(which='both', direction='in')
         cb = fig.colorbar(im, cax=cax, orientation='horizontal', format=logformatter)
-        cax.text(-0.05, 0.1, r'$\sigma$', ha='right', va='center', transform=cax.transAxes)
+        cax.text(-0.05, 0.1, r'$\sigma_m$', ha='right', va='center', transform=cax.transAxes)
 
     #-------------------------------------------------------------------
     # Velocity Model Residuals

@@ -277,9 +277,9 @@ def main(args):
     sig_mask=None if gas_disk.dc is None else np.logical_not(gas_disk.sig_gpm)
     asym_plot = os.path.join(args.odir, f'{oroot}-Gas-asym.png')
     gas_kin.asymmetry_plot(galmeta=galmeta, xc=gas_disk.par[0], yc=gas_disk.par[1],
-                           pa=gas_disk.par[2], vsys=gas_disk.par[4], fwhm=galmeta.psf_fwhm[1], 
-                           vel_mask=np.logical_not(gas_disk.vel_gpm), sig_mask=sig_mask,
-                           ofile=asym_plot)
+                           pa=gas_disk.par[2], inc=gas_disk.par[3], vsys=gas_disk.par[4],
+                           fwhm=galmeta.psf_fwhm[1], vel_mask=np.logical_not(gas_disk.vel_gpm),
+                           sig_mask=sig_mask, ofile=asym_plot)
     # - Make the gas fit plots
     fit_plot = os.path.join(args.odir, f'{oroot}-Gas-fit.png')
     axisym.axisym_fit_plot(galmeta, gas_kin, gas_disk, fix=fix[gas_slice], ofile=fit_plot)
@@ -296,9 +296,9 @@ def main(args):
     sig_mask=None if str_disk.dc is None else np.logical_not(str_disk.sig_gpm)
     asym_plot = os.path.join(args.odir, f'{oroot}-Stars-asym.png')
     str_kin.asymmetry_plot(galmeta=galmeta, xc=str_disk.par[0], yc=str_disk.par[1],
-                           pa=str_disk.par[2], vsys=str_disk.par[4], fwhm=galmeta.psf_fwhm[1], 
-                           vel_mask=np.logical_not(str_disk.vel_gpm), sig_mask=sig_mask,
-                           ofile=asym_plot)
+                           pa=str_disk.par[2], inc=str_disk.par[3], vsys=str_disk.par[4],
+                           fwhm=galmeta.psf_fwhm[1], vel_mask=np.logical_not(str_disk.vel_gpm),
+                           sig_mask=sig_mask, ofile=asym_plot)
     # - Make the stellar fit plots
     fit_plot = os.path.join(args.odir, f'{oroot}-Stars-fit.png')
     axisym.axisym_fit_plot(galmeta, str_kin, str_disk, fix=fix[str_slice], ofile=fit_plot)
