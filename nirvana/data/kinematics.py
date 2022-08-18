@@ -194,6 +194,12 @@ class Kinematics:
             neither, or if ``binid`` is provided but ``grid_x`` or
             ``grid_y`` is None.
     """
+
+    tracer = None
+    """
+    Tracer designation.  Undefined by default, but can be set for derived classes.
+    """
+
     # TODO: We should change sb_anr to be just a generic S/N ratio.  I.e.,
     # Kinematics shouldn't care about the type of tracer.
     # TODO: Remove arguments that are redundant with the GlobalPar class?

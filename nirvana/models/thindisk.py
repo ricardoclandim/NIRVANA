@@ -102,7 +102,9 @@ class ThinDiskGlobalBitMask(BitMask):
     prefix = 'GBIT'
     def __init__(self):
         # NOTE: np.array just used for slicing convenience
-        mask_def = np.array([['LOWINC', 'Best fit inclination unreasonably low']])
+        mask_def = np.array([['LOWINC', 'Best fit inclination unreasonably low'],
+                             ['NOMODEL', 'Model not fit or failed'],
+                             ['DIFFMOD', 'Model discrepancy']])
         super().__init__(mask_def[:,0], descr=mask_def[:,1])
 
 

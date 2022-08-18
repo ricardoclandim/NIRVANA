@@ -1744,14 +1744,19 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
 
     #-------------------------------------------------------------------
     # Annotate with the intrinsic scatter included
-    ax.text(0.00, -0.2, r'V scatter, $\epsilon_v$:', ha='left', va='center',
+    # Reduced chi-square
+    ax.text(0.00, -0.2, r'$\chi^2_\nu$', ha='left', va='center', transform=ax.transAxes,
+            fontsize=10)
+    ax.text(1.00, -0.2, f'{rchi2:.2f}', ha='right', va='center', transform=ax.transAxes,
+            fontsize=10)
+    ax.text(0.00, -0.3, r'V scatter, $\epsilon_v$:', ha='left', va='center',
             transform=ax.transAxes, fontsize=10)
-    ax.text(1.00, -0.2, f'{vsct:.1f}', ha='right', va='center', transform=ax.transAxes,
+    ax.text(1.00, -0.3, f'{vsct:.1f}', ha='right', va='center', transform=ax.transAxes,
             fontsize=10)
     if disk.dc is not None:
-        ax.text(0.00, -0.3, r'$\sigma^2$ scatter, $\epsilon_{\sigma^2}$:', ha='left', va='center',
+        ax.text(0.00, -0.4, r'$\sigma^2$ scatter, $\epsilon_{\sigma^2}$:', ha='left', va='center',
                 transform=ax.transAxes, fontsize=10)
-        ax.text(1.00, -0.3, f'{ssct:.1f}', ha='right', va='center', transform=ax.transAxes,
+        ax.text(1.00, -0.4, f'{ssct:.1f}', ha='right', va='center', transform=ax.transAxes,
                 fontsize=10)
 
     #-------------------------------------------------------------------
@@ -1786,86 +1791,86 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
             fontsize=10)
     ax.text(1.01, -0.13, f'{galmeta.plate}-{galmeta.ifu}', ha='right', va='center',
             transform=ax.transAxes, fontsize=10)
+    # Kinematic tracer
+    ax.text(0.00, -0.21, 'Tracer:', ha='left', va='center', transform=ax.transAxes,
+            fontsize=10)
+    ax.text(1.01, -0.21, 'Unknown' if kin.tracer is None else kin.tracer, ha='right', va='center',
+            transform=ax.transAxes, fontsize=10)
     # Sample selection
-    ax.text(0.00, -0.21, 'Sample:', ha='left', va='center', transform=ax.transAxes, fontsize=10)
-    ax.text(1.01, -0.21, f'{sample}', ha='right', va='center', transform=ax.transAxes, fontsize=10)
+    ax.text(0.00, -0.29, 'Sample:', ha='left', va='center', transform=ax.transAxes, fontsize=10)
+    ax.text(1.01, -0.29, f'{sample}', ha='right', va='center', transform=ax.transAxes, fontsize=10)
     # Redshift
-    ax.text(0.00, -0.29, 'Redshift:', ha='left', va='center', transform=ax.transAxes, fontsize=10)
-    ax.text(1.01, -0.29, '{0:.4f}'.format(galmeta.z), ha='right', va='center',
+    ax.text(0.00, -0.37, 'Redshift:', ha='left', va='center', transform=ax.transAxes, fontsize=10)
+    ax.text(1.01, -0.37, '{0:.4f}'.format(galmeta.z), ha='right', va='center',
             transform=ax.transAxes, fontsize=10)
     # Mag
-    ax.text(0.00, -0.37, 'Mag (N,r,i):', ha='left', va='center', transform=ax.transAxes,
+    ax.text(0.00, -0.45, 'Mag (N,r,i):', ha='left', va='center', transform=ax.transAxes,
             fontsize=10)
     if galmeta.mag is None:
-        ax.text(1.01, -0.37, 'Unavailable', ha='right', va='center',
+        ax.text(1.01, -0.45, 'Unavailable', ha='right', va='center',
                 transform=ax.transAxes, fontsize=10)
     else:
-        ax.text(1.01, -0.37, '{0:.1f}/{1:.1f}/{2:.1f}'.format(*galmeta.mag), ha='right',
+        ax.text(1.01, -0.45, '{0:.1f}/{1:.1f}/{2:.1f}'.format(*galmeta.mag), ha='right',
                 va='center', transform=ax.transAxes, fontsize=10)
     # PSF FWHM
-    ax.text(0.00, -0.45, 'FWHM (g,r):', ha='left', va='center', transform=ax.transAxes,
+    ax.text(0.00, -0.53, 'FWHM (g,r):', ha='left', va='center', transform=ax.transAxes,
             fontsize=10)
-    ax.text(1.01, -0.45, '{0:.2f}, {1:.2f}'.format(*galmeta.psf_fwhm[:2]), ha='right', va='center',
+    ax.text(1.01, -0.53, '{0:.2f}, {1:.2f}'.format(*galmeta.psf_fwhm[:2]), ha='right', va='center',
             transform=ax.transAxes, fontsize=10)
     # Sersic n
-    ax.text(0.00, -0.53, r'Sersic $n$:', ha='left', va='center', transform=ax.transAxes,
+    ax.text(0.00, -0.61, r'Sersic $n$:', ha='left', va='center', transform=ax.transAxes,
             fontsize=10)
-    ax.text(1.01, -0.53, '{0:.2f}'.format(galmeta.sersic_n), ha='right', va='center',
+    ax.text(1.01, -0.61, '{0:.2f}'.format(galmeta.sersic_n), ha='right', va='center',
             transform=ax.transAxes, fontsize=10)
     # Stellar Mass
-    ax.text(0.00, -0.61, r'$\log(\mathcal{M}_\ast/\mathcal{M}_\odot$):', ha='left', va='center',
+    ax.text(0.00, -0.69, r'$\log(\mathcal{M}_\ast/\mathcal{M}_\odot$):', ha='left', va='center',
             transform=ax.transAxes, fontsize=10)
-    ax.text(1.01, -0.61, '{0:.2f}'.format(np.log10(galmeta.mass)), ha='right', va='center',
+    ax.text(1.01, -0.69, '{0:.2f}'.format(np.log10(galmeta.mass)), ha='right', va='center',
             transform=ax.transAxes, fontsize=10)
     # Phot Inclination
-    ax.text(0.00, -0.69, r'$i_{\rm phot}$ [deg]', ha='left', va='center', transform=ax.transAxes,
+    ax.text(0.00, -0.77, r'$i_{\rm phot}$ [deg]', ha='left', va='center', transform=ax.transAxes,
             fontsize=10)
-    ax.text(1.01, -0.69, '{0:.1f}'.format(galmeta.guess_inclination(lb=1., ub=89.)),
+    ax.text(1.01, -0.77, '{0:.1f}'.format(galmeta.guess_inclination(lb=1., ub=89.)),
             ha='right', va='center', transform=ax.transAxes, fontsize=10)
     # Fitted center
-    ax.text(0.00, -0.77, r'$x_0$ [arcsec]', ha='left', va='center', transform=ax.transAxes,
+    ax.text(0.00, -0.85, r'$x_0$ [arcsec]', ha='left', va='center', transform=ax.transAxes,
             fontsize=10, color='C3' if _fix[0] else 'k')
     xstr = r'{0:.2f}'.format(disk.par[0]) if _fix[0] \
             else r'{0:.2f} $\pm$ {1:.2f}'.format(disk.par[0], disk.par_err[0])
-    ax.text(1.01, -0.77, xstr,
+    ax.text(1.01, -0.85, xstr,
             ha='right', va='center', transform=ax.transAxes, fontsize=10,
             color='C3' if _fix[0] else 'k')
-    ax.text(0.00, -0.85, r'$y_0$ [arcsec]', ha='left', va='center', transform=ax.transAxes,
+    ax.text(0.00, -0.93, r'$y_0$ [arcsec]', ha='left', va='center', transform=ax.transAxes,
             fontsize=10, color='C3' if _fix[1] else 'k')
     ystr = r'{0:.2f}'.format(disk.par[1]) if _fix[1] \
             else r'{0:.2f} $\pm$ {1:.2f}'.format(disk.par[1], disk.par_err[1])
-    ax.text(1.01, -0.85, ystr,
+    ax.text(1.01, -0.93, ystr,
             ha='right', va='center', transform=ax.transAxes, fontsize=10,
             color='C3' if _fix[1] else 'k')
     # Position angle
-    ax.text(0.00, -0.93, r'$\phi_0$ [deg]', ha='left', va='center', transform=ax.transAxes,
+    ax.text(0.00, -1.01, r'$\phi_0$ [deg]', ha='left', va='center', transform=ax.transAxes,
             fontsize=10, color='C3' if _fix[2] else 'k')
     pastr = r'{0:.1f}'.format(disk.par[2]) if _fix[2] \
             else r'{0:.1f} $\pm$ {1:.1f}'.format(disk.par[2], disk.par_err[2])
-    ax.text(1.01, -0.93, pastr,
+    ax.text(1.01, -1.01, pastr,
             ha='right', va='center', transform=ax.transAxes, fontsize=10,
             color='C3' if _fix[2] else 'k')
     # Kinematic Inclination
-    ax.text(0.00, -1.01, r'$i_{\rm kin}$ [deg]', ha='left', va='center', transform=ax.transAxes,
+    ax.text(0.00, -1.09, r'$i_{\rm kin}$ [deg]', ha='left', va='center', transform=ax.transAxes,
             fontsize=10, color='C3' if _fix[3] else 'k')
     incstr = r'{0:.1f}'.format(disk.par[3]) if _fix[3] \
             else r'{0:.1f} $\pm$ {1:.1f}'.format(disk.par[3], disk.par_err[3])
-    ax.text(1.01, -1.01, incstr,
+    ax.text(1.01, -1.09, incstr,
             ha='right', va='center', transform=ax.transAxes, fontsize=10,
             color='C3' if _fix[3] else 'k')
     # Systemic velocity
-    ax.text(0.00, -1.09, r'$V_{\rm sys}$ [km/s]', ha='left', va='center', transform=ax.transAxes,
+    ax.text(0.00, -1.17, r'$V_{\rm sys}$ [km/s]', ha='left', va='center', transform=ax.transAxes,
             fontsize=10, color='C3' if _fix[4] else 'k')
     vsysstr = r'{0:.1f}'.format(disk.par[4]) if _fix[4] \
             else r'{0:.1f} $\pm$ {1:.1f}'.format(disk.par[4], disk.par_err[4])
-    ax.text(1.01, -1.09, vsysstr,
+    ax.text(1.01, -1.17, vsysstr,
             ha='right', va='center', transform=ax.transAxes, fontsize=10,
             color='C3' if _fix[4] else 'k')
-    # Reduced chi-square
-    ax.text(0.00, -1.17, r'$\chi^2_\nu$', ha='left', va='center', transform=ax.transAxes,
-            fontsize=10)
-    ax.text(1.01, -1.17, f'{rchi2:.2f}', ha='right', va='center', transform=ax.transAxes,
-            fontsize=10)
 
     #-------------------------------------------------------------------
     # Radial plot radius limits

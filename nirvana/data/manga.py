@@ -872,6 +872,12 @@ class MaNGAGasKinematics(MaNGAKinematics):
         quiet (:obj:`bool`, optional):
             Suppress printed output.
     """
+
+    tracer = 'Gas'
+    """
+    Tracer name.
+    """
+
     def __init__(self, maps_file, cube_file=None, image_file=None, psf_ext='RPSF', line='Ha-6564',
                  mask_flags='any', flux_bound=None, sb_fill=None, covar=False,
                  positive_definite=False, quiet=False, fwhm_only=False):
@@ -1053,6 +1059,12 @@ class MaNGAStellarKinematics(MaNGAKinematics):
         quiet (:obj:`bool`, optional):
             Suppress printed output.
     """
+
+    tracer = 'Stars'
+    """
+    Tracer name.
+    """
+
     def __init__(self, maps_file, cube_file=None, image_file=None, psf_ext='GPSF',
                  mask_flags='any', unbinned_sb=True, sb_fill=None, covar=False,
                  positive_definite=False, quiet=False, fwhm_only=False):

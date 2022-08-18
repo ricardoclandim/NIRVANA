@@ -246,6 +246,14 @@ def main(args):
     prihdr.remove('MODELTYP')
     prihdr.remove('RCMODEL')
     prihdr.remove('DCMODEL')
+    prihdr['GMODTYP'] = gas_hdu[0].header['MODELTYP']
+    prihdr['GRCMOD'] = gas_hdu[0].header['RCMODEL']
+    if 'DCMODEL' in gas_hdu[0].header:
+        prihdr['GDCMOD'] = gas_hdu[0].header['DCMODEL']
+    prihdr['SMODTYP'] = str_hdu[0].header['MODELTYP']
+    prihdr['SRCMOD'] = str_hdu[0].header['RCMODEL']
+    if 'DCMODEL' in str_hdu[0].header:
+        prihdr['SDCMOD'] = str_hdu[0].header['DCMODEL']
     prihdr['QUAL'] = disk.global_mask
     resid = disk.fom(disk.par)
     prihdr['CHI2'] = (np.sum(resid**2), 'Total chi-square')
