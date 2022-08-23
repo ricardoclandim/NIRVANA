@@ -13,16 +13,19 @@ import numpy as np
 from scipy import optimize
 from matplotlib import pyplot, rc, patches, ticker, colors
 
+from astropy.io import fits
+
 from .geometry import projected_polar, disk_ellipse
 from ..data.util import select_kinematic_axis, bin_stats, growth_lim, atleast_one_decade
 from .util import cov_err
-from ..util import plot
+from ..util import plot, fileio
 from . import thindisk
+from . import axisym
 
 class MultiTracerDisk:
     """
     Define a class that enables multiple kinematic datasets to be simultaneously
-    fit with the ThinDisk models.
+    fit with ThinDisk models.
 
     .. todo::
 
@@ -741,19 +744,33 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
 
     mean_vsys = (_par[4] + _par[disk.disk[0].np+4])/2
 
-    # Build the data to plot
+    # TODO: Move these to arguments for the function?
     fwhm = galmeta.psf_fwhm[1]
     oversample = 1.5
     maj_wedge = 30.
+    rstep = fwhm/oversample
 
-    sb_map = [None]*2
-    v_map = [None]*2
-    s_map = [None]*2
-    vmod = [None]*2
-    vmod_map = [None]*2
-    smod = [None]*2
-    smod_map = [None]*2
+    # Build the AD data
+    gv_map, gv_ivar_map, gv_mod_map, gv_mod_intr_map, \
+        sv_map, sv_ivar_map, sv_mod_map, sv_mod_intr_map, \
+        sd_map, sd_ivar_map, sd_mod_map, sd_mod_intr_map, \
+        ad_map, ad_ivar_map, ad_bc_map, ad_bc_ivar_map, ad_mod_map, ad_mod_bc_map, ad_mask_map, \
+        ados_map, ados_ivar_map, ados_bc_map, ados_bc_ivar_map, ados_mod_map, ados_mod_bc_map, \
+            ados_mask_map, \
+        spax_ad_r, spax_ad, _, spax_ad_mask, \
+        ad_binr, \
+        ad_ewmean, ad_ewsdev, ad_mod_ewmean, ad_mod_ewsdev, ad_nbin, \
+        ad_bc_ewmean, ad_bc_ewsdev, ad_mod_bc_ewmean, ad_mod_bc_ewsdev, ad_bc_nbin, \
+        ados_ewmean, ados_ewsdev, ados_mod_ewmean, ados_mod_ewsdev, ados_nbin, \
+        ados_bc_ewmean, ados_bc_ewsdev, ados_mod_bc_ewmean, ados_mod_bc_ewsdev, ados_bc_nbin \
+            = asymdrift_fit_maps(kin, disk, rstep, maj_wedge=maj_wedge)
 
+    # Surface brightness maps
+    gs_map = kin[0].remap('sb')
+    ss_map = kin[1].remap('sb')
+
+    # Get the projected spaxel data and the binned radial profiles for the
+    # kinematic data.
     spax_vrot_r = [None]*2
     spax_vrot = [None]*2
     spax_smaj_r = [None]*2
@@ -768,25 +785,6 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
     bin_smajn = [None]*2
 
     for i in range(2):
-        sb_map[i] = kin[i].remap('sb')
-        v_map[i] = kin[i].remap('vel')
-        s_map[i] = np.ma.sqrt(kin[i].remap('sig_phys2', mask=kin[i].sig_mask))
-
-        # Construct the model data, both binned data and maps
-        slc = disk.disk_slice(i)
-        disk.disk[i].par = _par[slc]
-        models = disk.disk[i].model()
-        if disk.disk[i].dc is None:
-            vmod[i] = kin[i].bin(models)
-            vmod_map[i] = kin[i].remap(vmod[i], mask=kin[i].vel_mask)
-            smod[i] = None
-            smod_map[i] = None
-        else:
-            vmod[i] = kin[i].bin(models[0])
-            vmod_map[i] = kin[i].remap(vmod[i], mask=kin[i].vel_mask)
-            smod[i] = kin[i].bin(models[1])
-            smod_map[i] = kin[i].remap(smod[i], mask=kin[i].sig_mask)
-
         # Get the projected rotational velocity
         #   - Disk-plane coordinates
         r, th = projected_polar(kin[i].x - disk.disk[i].par[0], kin[i].y - disk.disk[i].par[1],
@@ -804,10 +802,18 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
 
         bin_r[i], bin_vrot[i], bin_vrote[i], _, bin_vrotn[i], _, _, _, _, _, _, _, _, \
             _, _, _, _, _, _, bin_smaj[i], bin_smaje[i], _, bin_smajn[i], _, _, _, _, _, _, _, _, \
-                = kin[i].radial_profiles(fwhm/oversample, xc=disk.disk[i].par[0],
-                                         yc=disk.disk[i].par[1], pa=disk.disk[i].par[2],
-                                         inc=disk.disk[i].par[3], vsys=disk.disk[i].par[4],
-                                         maj_wedge=maj_wedge)
+                = kin[i].radial_profiles(rstep, xc=disk.disk[i].par[0], yc=disk.disk[i].par[1],
+                                         pa=disk.disk[i].par[2], inc=disk.disk[i].par[3],
+                                         vsys=disk.disk[i].par[4], maj_wedge=maj_wedge)
+
+    # Get the 1D model profiles
+    maxr = np.amax(np.concatenate(spax_vrot_r+spax_smaj_r))
+    modelr = np.arange(0, maxr, 0.1)
+    vrotm = [None]*2
+    smajm = [None]*2
+    for i in range(2):
+        vrotm[i] = disk.disk[i].rc.sample(modelr, par=disk.disk[i].rc_par())
+        smajm[i] = disk.disk[i].dc.sample(modelr, par=disk.disk[i].dc_par())
 
     # Construct an ellipse that has a constant disk radius and is at the
     # best-fit center, position angle, and inclination.  Set the radius to the
@@ -828,34 +834,11 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
     resid = disk.fom(_par[disk.tie])
     rchisqr = np.sum(resid**2) / (resid.size - disk.nfree)
 
-    r_map, th_map = projected_polar(kin[0].grid_x - disk.disk[0].par[0],
-                                    kin[0].grid_y - disk.disk[0].par[1],
-                                    np.radians(disk.disk[0].par[2]),
-                                    np.radians(disk.disk[0].par[3]))
-
-    ad_map = (v_map[0] - disk.disk[0].par[4])**2 - (v_map[1] - disk.disk[1].par[4])**2
-    ad_map = np.ma.divide(ad_map, np.cos(th_map)**2)
-    admod_map = (vmod_map[0] - disk.disk[0].par[4])**2 - (vmod_map[1] - disk.disk[1].par[4])**2
-    admod_map = np.ma.divide(admod_map, np.cos(th_map)**2)
-
-    ados_map = np.ma.divide(ad_map, kin[1].remap('sig_phys2', mask=kin[1].sig_mask))
-    adosmod_map = np.ma.divide(admod_map, smod_map[1]**2)
-
-    # Get the 1D model profiles
-    maxr = np.amax(np.concatenate(spax_vrot_r+spax_smaj_r))
-    modelr = np.arange(0, maxr, 0.1)
-    vrotm = [None]*2
-    smajm = [None]*2
-    for i in range(2):
-        vrotm[i] = disk.disk[i].rc.sample(modelr, par=disk.disk[i].rc_par())
-        smajm[i] = disk.disk[i].dc.sample(modelr, par=disk.disk[i].dc_par())
-
-    spax_ad_r, spax_ad, bin_ad_r, bin_ad, bin_ade, bin_adn \
-            = asymdrift_radial_profile(disk, kin, fwhm/oversample, maj_wedge=maj_wedge)
-
-    spax_ad = np.ma.sqrt(spax_ad).filled(0.0)
-    bin_ad = np.ma.sqrt(bin_ad).filled(0.0)
-    bin_ade = np.ma.divide(bin_ade, 2*bin_ad).filled(0.0)
+    gpm = np.logical_not(spax_ad_mask) & (spax_ad > 0)
+    spax_ad_r = spax_ad_r[gpm]
+    spax_ad = np.sqrt(spax_ad[gpm])
+    bin_ad = np.ma.sqrt(ad_ewmean).filled(0.0)
+    bin_ade = np.ma.divide(ad_ewsdev, 2*bin_ad).filled(0.0)
 
     # Set the radius limits for the radial plots
     r_lim = [0.0, maxr * 1.05]
@@ -872,25 +855,25 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
     skylim = np.array([ (extent[0]+extent[1] - Dx)/2., 0.0 ])
     skylim[1] = skylim[0] + Dx
 
-    sb_lim = [growth_lim(np.ma.log10(sb_map[0]).compressed(), 0.90, 1.05),
-              growth_lim(np.ma.log10(sb_map[1]).compressed(), 0.90, 1.05)]
+    sb_lim = [growth_lim(np.ma.log10(gs_map).compressed(), 0.90, 1.05),
+              growth_lim(np.ma.log10(ss_map).compressed(), 0.90, 1.05)]
     sb_lim = [atleast_one_decade(np.power(10.0, sb_lim[0])),
               atleast_one_decade(np.power(10.0, sb_lim[1]))]
 
-    vel_lim = growth_lim(np.ma.concatenate(v_map+vmod_map).compressed(), 0.90, 1.05,
-                         midpoint=mean_vsys)
+    vel_lim = growth_lim(np.ma.concatenate([gv_map, sv_map, gv_mod_map, sv_mod_map]).compressed(),
+                         0.90, 1.05, midpoint=mean_vsys)
 
-    ad_lim = growth_lim(np.ma.log10(np.ma.append(ad_map, admod_map)).compressed(), 0.70, 1.05)
+    ad_lim = growth_lim(np.ma.log10(np.ma.append(ad_map, ad_mod_map)).compressed(), 0.70, 1.05)
     ad_lim = atleast_one_decade(np.power(10.0, ad_lim))
 
-    sig_lim = growth_lim(np.ma.log10(np.ma.append(s_map[1], smod_map[1])).compressed(), 0.70, 1.05)
-    sig_lim = atleast_one_decade(np.power(10., sig_lim))
+    sig_map_lim = growth_lim(np.ma.log10(np.ma.append(sd_map, sd_mod_map)).compressed(), 0.70, 1.05)
+    sig_map_lim = atleast_one_decade(np.power(10., sig_map_lim))
 
 #    ados_lim = np.power(10.0, growth_lim(np.ma.log10(np.ma.append(ados_map, adosmod_map).compressed(),
 #                                        0.80, 1.05)))
 #    ados_lim = atleast_one_decade(sig_lim)
 
-    ados_lim = growth_lim(np.ma.append(ados_map, adosmod_map).compressed(), 0.80, 1.05)
+    ados_lim = growth_lim(np.ma.append(ados_map, ados_mod_map).compressed(), 0.80, 1.05)
 
     # Create the plot
     w,h = pyplot.figaspect(1)
@@ -907,7 +890,7 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
     ax.xaxis.set_major_formatter(ticker.NullFormatter())
     ax.add_patch(patches.Circle((0.1, 0.1), fwhm/np.diff(skylim)[0]/2, transform=ax.transAxes,
                                 facecolor='0.7', edgecolor='k', zorder=4))
-    im = ax.imshow(v_map[0], origin='lower', interpolation='nearest', cmap='RdBu_r',
+    im = ax.imshow(gv_map, origin='lower', interpolation='nearest', cmap='RdBu_r',
                    extent=extent, vmin=vel_lim[0], vmax=vel_lim[1], zorder=4)
     # Mark the fitted dynamical center
     ax.scatter(disk.disk[0].par[0], disk.disk[0].par[1],
@@ -931,7 +914,7 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
     ax.xaxis.set_major_formatter(ticker.NullFormatter())
     ax.add_patch(patches.Circle((0.1, 0.1), fwhm/np.diff(skylim)[0]/2, transform=ax.transAxes,
                                 facecolor='0.7', edgecolor='k', zorder=4))
-    im = ax.imshow(vmod_map[0], origin='lower', interpolation='nearest', cmap='RdBu_r',
+    im = ax.imshow(gv_mod_map, origin='lower', interpolation='nearest', cmap='RdBu_r',
                    extent=extent, vmin=vel_lim[0], vmax=vel_lim[1], zorder=4)
     # Mark the fitted dynamical center
     ax.scatter(disk.disk[0].par[0], disk.disk[0].par[1],
@@ -953,7 +936,7 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
     ax.yaxis.set_major_formatter(ticker.NullFormatter())
     ax.add_patch(patches.Circle((0.1, 0.1), fwhm/np.diff(skylim)[0]/2, transform=ax.transAxes,
                                 facecolor='0.7', edgecolor='k', zorder=4))
-    im = ax.imshow(v_map[1], origin='lower', interpolation='nearest', cmap='RdBu_r',
+    im = ax.imshow(sv_map, origin='lower', interpolation='nearest', cmap='RdBu_r',
                    extent=extent, vmin=vel_lim[0], vmax=vel_lim[1], zorder=4)
     # Mark the fitted dynamical center
     ax.scatter(disk.disk[1].par[0], disk.disk[1].par[1],
@@ -977,7 +960,7 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
     ax.yaxis.set_major_formatter(ticker.NullFormatter())
     ax.add_patch(patches.Circle((0.1, 0.1), fwhm/np.diff(skylim)[0]/2, transform=ax.transAxes,
                                 facecolor='0.7', edgecolor='k', zorder=4))
-    im = ax.imshow(vmod_map[1], origin='lower', interpolation='nearest', cmap='RdBu_r',
+    im = ax.imshow(sv_mod_map, origin='lower', interpolation='nearest', cmap='RdBu_r',
                    extent=extent, vmin=vel_lim[0], vmax=vel_lim[1], zorder=4)
     # Mark the fitted dynamical center
     ax.scatter(disk.disk[1].par[0], disk.disk[1].par[1],
@@ -1020,7 +1003,7 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
     ax.yaxis.set_major_formatter(ticker.NullFormatter())
     ax.add_patch(patches.Circle((0.1, 0.1), fwhm/np.diff(skylim)[0]/2, transform=ax.transAxes,
                                 facecolor='0.7', edgecolor='k', zorder=4))
-    im = ax.imshow(admod_map, origin='lower', interpolation='nearest', cmap='viridis',
+    im = ax.imshow(ad_mod_map, origin='lower', interpolation='nearest', cmap='viridis',
                    extent=extent, norm=colors.LogNorm(vmin=ad_lim[0], vmax=ad_lim[1]), zorder=4)
     # Plot the ellipse with constant disk radius
     if de_x is not None:
@@ -1039,8 +1022,9 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
     ax.yaxis.set_major_formatter(ticker.NullFormatter())
     ax.add_patch(patches.Circle((0.1, 0.1), fwhm/np.diff(skylim)[0]/2, transform=ax.transAxes,
                                 facecolor='0.7', edgecolor='k', zorder=4))
-    im = ax.imshow(s_map[1], origin='lower', interpolation='nearest', cmap='viridis',
-                   extent=extent, norm=colors.LogNorm(vmin=sig_lim[0], vmax=sig_lim[1]), zorder=4)
+    im = ax.imshow(sd_map, origin='lower', interpolation='nearest', cmap='viridis',
+                   extent=extent, norm=colors.LogNorm(vmin=sig_map_lim[0], vmax=sig_map_lim[1]),
+                   zorder=4)
     # Mark the fitted dynamical center
     ax.scatter(disk.disk[1].par[0], disk.disk[1].par[1],
                marker='+', color='k', s=40, lw=1, zorder=5)
@@ -1050,7 +1034,7 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
     cb = fig.colorbar(im, cax=cax, orientation='horizontal', format=logformatter)
     cb.ax.xaxis.set_ticks_position('top')
     cb.ax.xaxis.set_label_position('top')
-    ax.text(0.05, 0.90, r'$\sigma_\ast$', ha='left', va='center', transform=ax.transAxes)
+    ax.text(0.05, 0.90, r'$\sigma^2_\ast$', ha='left', va='center', transform=ax.transAxes)
  
     #-------------------------------------------------------------------
     # Velocity Dispersion Model
@@ -1063,8 +1047,9 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
     ax.yaxis.set_major_formatter(ticker.NullFormatter())
     ax.add_patch(patches.Circle((0.1, 0.1), fwhm/np.diff(skylim)[0]/2, transform=ax.transAxes,
                                 facecolor='0.7', edgecolor='k', zorder=4))
-    im = ax.imshow(smod_map[1], origin='lower', interpolation='nearest', cmap='viridis',
-                   extent=extent, norm=colors.LogNorm(vmin=sig_lim[0], vmax=sig_lim[1]), zorder=4)
+    im = ax.imshow(sd_mod_map, origin='lower', interpolation='nearest', cmap='viridis',
+                   extent=extent, norm=colors.LogNorm(vmin=sig_map_lim[0], vmax=sig_map_lim[1]),
+                   zorder=4)
     # Mark the fitted dynamical center
     ax.scatter(disk.disk[1].par[0], disk.disk[1].par[1],
                marker='+', color='k', s=40, lw=1, zorder=5)
@@ -1072,7 +1057,7 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
     if de_x is not None:
         ax.plot(de_x, de_y, color='w', lw=2, zorder=6, alpha=0.5)
     cb = fig.colorbar(im, cax=cax, orientation='horizontal', format=logformatter)
-    ax.text(0.05, 0.90, r'$\sigma_{\ast,m}$', ha='left', va='center', transform=ax.transAxes)
+    ax.text(0.05, 0.90, r'$\sigma^2_{\ast,m}$', ha='left', va='center', transform=ax.transAxes)
 
     #-------------------------------------------------------------------
     # AD ratio
@@ -1107,7 +1092,7 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
     ax.yaxis.set_major_formatter(ticker.NullFormatter())
     ax.add_patch(patches.Circle((0.1, 0.1), fwhm/np.diff(skylim)[0]/2, transform=ax.transAxes,
                                 facecolor='0.7', edgecolor='k', zorder=4))
-    im = ax.imshow(adosmod_map, origin='lower', interpolation='nearest', cmap='viridis',
+    im = ax.imshow(ados_mod_map, origin='lower', interpolation='nearest', cmap='viridis',
                    extent=extent, vmin=ados_lim[0], vmax=ados_lim[1], zorder=4)
     # Plot the ellipse with constant disk radius
     if de_x is not None:
@@ -1127,7 +1112,7 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
     ax.yaxis.set_major_formatter(ticker.NullFormatter())
     ax.add_patch(patches.Circle((0.1, 0.1), fwhm/np.diff(skylim)[0]/2, transform=ax.transAxes,
                                 facecolor='0.7', edgecolor='k', zorder=4))
-    im = ax.imshow(sb_map[0], origin='lower', interpolation='nearest', cmap='inferno',
+    im = ax.imshow(gs_map, origin='lower', interpolation='nearest', cmap='inferno',
                    extent=extent, norm=colors.LogNorm(vmin=sb_lim[0][0], vmax=sb_lim[0][1]),
                    zorder=4)
     # Mark the fitted dynamical center
@@ -1159,7 +1144,7 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
     ax.yaxis.set_major_formatter(ticker.NullFormatter())
     ax.add_patch(patches.Circle((0.1, 0.1), fwhm/np.diff(skylim)[0]/2, transform=ax.transAxes,
                                 facecolor='0.7', edgecolor='k', zorder=4))
-    im = ax.imshow(sb_map[1], origin='lower', interpolation='nearest', cmap='inferno',
+    im = ax.imshow(ss_map, origin='lower', interpolation='nearest', cmap='inferno',
                    extent=extent, norm=colors.LogNorm(vmin=sb_lim[1][0], vmax=sb_lim[1][1]),
                    zorder=4)
     # Mark the fitted dynamical center
@@ -1307,9 +1292,9 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
             vrot_indx[i] = bin_vrotn[i] > 0
         if not np.any(smaj_indx[i]):
             smaj_indx[i] = bin_smajn[i] > 0
-    ad_indx = bin_adn > 5
+    ad_indx = ad_nbin > 5
     if not np.any(ad_indx):
-        ad_indx = bin_adn > 0
+        ad_indx = ad_nbin > 0
 
     #-------------------------------------------------------------------
     # Rotation curves
@@ -1384,7 +1369,7 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
     # Velocity Dispersion profile
     ax = plot.init_ax(fig, [0.27, 0.04, 0.51, 0.23], facecolor='0.9')
     ax.set_xlim(r_lim)
-    ax.set_ylim(sig_lim)#[10,275])
+    ax.set_ylim(smaj_lim)#[10,275])
     ax.set_yscale('log')
     ax.yaxis.set_major_formatter(logformatter)
     plot.rotate_y_ticks(ax, 90, 'center')
@@ -1420,11 +1405,11 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
     ax.scatter(spax_ad_r, spax_ad,
                marker='.', color=_c, s=30, lw=0, alpha=0.6, zorder=1)
     if np.any(ad_indx):
-        ax.scatter(bin_ad_r[ad_indx], bin_ad[ad_indx],
+        ax.scatter(ad_binr[ad_indx], bin_ad[ad_indx],
                    marker='o', s=110, alpha=1.0, color='white', zorder=3)
-        ax.scatter(bin_ad_r[ad_indx], bin_ad[ad_indx],
+        ax.scatter(ad_binr[ad_indx], bin_ad[ad_indx],
                    marker='o', s=90, alpha=1.0, color='k', zorder=4)
-        ax.errorbar(bin_ad_r[ad_indx], bin_ad[ad_indx], yerr=bin_ade[ad_indx],
+        ax.errorbar(ad_binr[ad_indx], bin_ad[ad_indx], yerr=bin_ade[ad_indx],
                     color='k', capsize=0, linestyle='', linewidth=1, alpha=1.0, zorder=2)
     ax.plot(modelr, np.ma.sqrt(vrotm[0]**2 - vrotm[1]**2).filled(0.0), color='k', zorder=5, lw=1)
     if reff_lines is not None:
@@ -1455,6 +1440,238 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
     pyplot.rcdefaults()
 
 
+# TODO: Figure out what's causing:
+#   - UserWarning: Warning: 'partition' will ignore the 'mask' of the MaskedArray.
+def asymdrift_fit_maps(kin, disk, rstep, par=None, maj_wedge=30.):
+    """
+    Construct azimuthally averaged radial profiles of the kinematics.
+    """
+    # Check input
+    if disk.par is None and par is None:
+        raise ValueError('No model parameters available.  Provide directly or via disk argument.')
+
+    if disk.ntracer != 2:
+        raise NotImplementedError('Must provide two disks, first gas, second stars.')
+    if len(kin) != 2:
+        raise NotImplementedError('Must provide two kinematic datasets, first gas, second stars.')
+
+    if kin[0].spatial_shape != kin[1].spatial_shape:
+        raise NotImplementedError('Kinematic datasets must have the same spatial shape.')
+
+    if not np.allclose(kin[0].grid_x, kin[1].grid_x) \
+            or not np.allclose(kin[0].grid_y, kin[1].grid_y):
+        raise NotImplementedError('Kinematics datasets must have the same grid sampling!')
+
+    if not np.all(disk.tie_base[:4]):
+        raise NotImplementedError('Disk must have tied the xc, yc, pa, and inc for both tracers.')
+
+    # Set the parameters and confirm it has the correct size
+    _par = disk.par[disk.untie] if par is None else par
+    if _par.size != disk.np:
+        raise ValueError('Number of provided parameters has the incorrect size.')
+
+    # Get the maps of gas and stellar velocities
+    gv_mask = np.logical_not(disk[0].vel_gpm) | kin[0].vel_mask
+    gv_map = kin[0].remap('vel', mask=gv_mask)
+    sv_mask = np.logical_not(disk[1].vel_gpm) | kin[1].vel_mask
+    sv_map = kin[1].remap('vel', mask=sv_mask)
+    sv_ivar_map = kin[1].remap('vel_ivar', mask=sv_mask)
+
+    # Use masks to determine the spaxels/bins that both have valid gas and
+    # stellar velocity data
+    ad_mask_map = np.ma.getmaskarray(gv_map) | np.ma.getmaskarray(sv_map)
+    sv_map[ad_mask_map] = np.ma.masked
+    sv_ivar_map[ad_mask_map] = np.ma.masked
+    # Get the mask for the binned data
+    # NOTE: This approach should mean that the entire bin is masked if any
+    # spaxel within it is masked.  This is conservative, but it saves me having
+    # to account for individual masked gas spaxels within the stellar bins!
+    ad_mask = kin[1].bin(ad_mask_map.astype(int)) > 0.
+
+    # Bin the gas velocities identically to the stars and reconstruct the map
+    # using the stellar binning
+    gv = kin[1].bin_moments(kin[0].grid_sb, gv_map.filled(0.0), None)[1]
+    gv[ad_mask] = 0.
+    gv_map = kin[1].remap(gv, mask=ad_mask)
+
+    # Use simple error propagation to get the errors
+    _msk = np.logical_not(disk[0].vel_gpm) | kin[0].vel_mask
+    gv_var_map = np.ma.power(kin[0].remap('vel_ivar', mask=_msk), -1)
+    gv_ivar = np.ma.power(kin[1].bin_moments(kin[0].grid_sb, gv_var_map.filled(0.0), None)[1], -1)
+    gv_ivar_map = kin[1].remap(gv_ivar.filled(0.0), mask=ad_mask)
+
+    # Get the binned stellar velocities
+    sv = np.ma.MaskedArray(kin[1].vel, mask=ad_mask)
+    sv_ivar = np.ma.MaskedArray(kin[1].vel_ivar, mask=ad_mask)
+
+    # Stellar velocity dispersion (squared) data
+    sd = np.ma.MaskedArray(kin[1].sig_phys2.copy())
+    sd_mask = np.logical_not(disk[1].sig_gpm) | kin[1].sig_mask \
+                | np.logical_not(kin[1].sig_phys2_ivar > 0)
+    sd[sd_mask] = np.ma.masked
+    sd_map = kin[1].remap(sd, mask=sd_mask)
+    sd_ivar = np.ma.MaskedArray(kin[1].sig_phys2_ivar, mask=sd_mask)
+    sd_ivar_map = kin[1].remap(sd_ivar, mask=sd_mask)
+
+    # Create the model data
+    #   - Gas kinematics
+    slc = disk.disk_slice(0)
+    disk[0].par = _par[slc]
+    models = disk[0].model()
+    intr_models = disk[0].model(ignore_beam=True)
+    gv_mod = kin[1].bin_moments(kin[0].grid_sb,
+                                models if disk[0].dc is None else models[0], None)[1]
+    gv_mod_map = kin[1].remap(gv_mod, mask=ad_mask)
+    gv_mod_intr = kin[1].bin_moments(kin[0].grid_sb,
+                                     intr_models if disk[0].dc is None else intr_models[0], None)[1]
+    gv_mod_intr_map = kin[1].remap(gv_mod_intr, mask=ad_mask)
+    # - Stellar kinematics
+    slc = disk.disk_slice(1)
+    sv_mod, sd_mod = disk[1].binned_model(_par[slc])
+    sv_mod_intr, sd_mod_intr = disk[1].binned_model(_par[slc], ignore_beam=True)
+    sv_mod_map = kin[1].remap(sv_mod, mask=ad_mask)
+    sv_mod_intr_map = kin[1].remap(sv_mod_intr, mask=ad_mask)
+    if sd_mod is None:
+        sd_mod = np.ones(sv_mod.shape, dtype=float)
+        sd_mod_intr = np.ones(sv_mod.shape, dtype=float)
+    sd_mod = sd_mod**2
+    sd_mod_intr = sd_mod_intr**2
+    sd_mod_map = kin[1].remap(sd_mod, mask=sd_mask)
+    sd_mod_intr_map = kin[1].remap(sd_mod, mask=sd_mask)
+
+    # Get the beam-smearing corrections
+    gv_bc = gv_mod - gv_mod_intr
+    sv_bc = sv_mod - sv_mod_intr
+    sd_bc = sd_mod - sd_mod_intr
+
+    # Get the coordinates of the bins in the disk plane
+    r, th = projected_polar(kin[1].x - _par[0], kin[1].y - _par[1], *np.radians(_par[2:4]))
+
+    # Get the AD data for each bin, both beam-corrected and not
+    grot = np.ma.divide(gv - _par[4], np.cos(th))
+    grot_bc = np.ma.divide(gv - gv_bc - _par[4], np.cos(th))
+    grot_var = np.ma.power(np.cos(th)**2 * gv_ivar, -1)
+    srot = np.ma.divide(sv - _par[disk[0].np+4], np.cos(th))
+    srot_bc = np.ma.divide(sv - sv_bc - _par[disk[0].np+4], np.cos(th))
+    srot_var = np.ma.power(np.cos(th)**2 * sv_ivar, -1)
+
+    ad = grot**2 - srot**2
+    ad_var = (2*grot)**2 * grot_var + (2*srot)**2 * srot_var
+    ad_ivar = np.ma.power(ad_var, -1)
+
+    ad_bc = grot_bc**2 - srot_bc**2
+    ad_bc_var = (2*grot_bc)**2 * grot_var + (2*srot_bc)**2 * srot_var
+    ad_bc_ivar = np.ma.power(ad_bc_var, -1)
+
+    ados = np.ma.divide(ad, sd)
+    ados_ivar = np.ma.divide(np.ma.power(np.ma.power(ad_ivar * ad**2,-1)
+                              + np.ma.power(sd_ivar * sd**2, -1), -1), ados**2)
+    ados_mask = sd_mask | ad_mask | np.ma.getmaskarray(ados_ivar)
+    ados[ados_mask] = np.ma.masked
+    ados_ivar[ados_mask] = np.ma.masked
+
+    ados_bc = np.ma.divide(ad_bc, sd - sd_bc)
+    ados_bc_ivar = np.ma.divide(np.ma.power(np.ma.power(ad_bc_ivar * ad_bc**2,-1)
+                                + np.ma.power(sd_ivar * (sd-sd_bc)**2, -1), -1), ados_bc**2)
+    ados_bc_mask = sd_mask | ad_mask | np.ma.getmaskarray(ados_bc_ivar)
+    ados_bc[ados_bc_mask] = np.ma.masked
+    ados_bc_ivar[ados_bc_mask] = np.ma.masked
+
+    # Update the masking
+    if np.any((np.ma.getmaskarray(ad) | np.ma.getmaskarray(ad_ivar)) & np.logical_not(ad_mask)):
+        raise ValueError('check mask')
+    if np.any((np.ma.getmaskarray(ad_bc) | np.ma.getmaskarray(ad_bc_ivar)) & np.logical_not(ad_mask)):
+        raise ValueError('check bc mask')
+#    ad_mask |= (np.ma.getmaskarray(ad) | np.ma.getmaskarray(ad_ivar))
+#    ad[ad_mask] = np.ma.masked
+#    ad_ivar[ad_mask] = np.ma.masked
+#    gv[ad_mask] = np.ma.masked
+#    gv_ivar[ad_mask] = np.ma.masked
+#    sv[ad_mask] = np.ma.masked
+#    sv_ivar[ad_mask] = np.ma.masked
+
+    # Create the maps
+    ad_map = kin[1].remap(ad.filled(0.0), mask=ad_mask)
+    ad_ivar_map = kin[1].remap(ad_ivar.filled(0.0), mask=ad_mask)
+    ad_mask_map = kin[1].remap(ad_mask.astype(int), mask=ad_mask).filled(1).astype(bool)
+    ad_bc_map = kin[1].remap(ad_bc.filled(0.0), mask=ad_mask)
+    ad_bc_ivar_map = kin[1].remap(ad_bc_ivar.filled(0.0), mask=ad_mask)
+    ados_map = kin[1].remap(ados.filled(0.0), mask=ados_mask)
+    ados_ivar_map = kin[1].remap(ados_ivar.filled(0.0), mask=ados_mask)
+    ados_mask_map = kin[1].remap(ados_mask.astype(int), mask=ados_mask).filled(1).astype(bool)
+    ados_bc_map = kin[1].remap(ados_bc.filled(0.0), mask=ados_mask)
+    ados_bc_ivar_map = kin[1].remap(ados_bc_ivar.filled(0.0), mask=ados_mask)
+
+    # Get the model AD data for each bin, both beam-corrected and not
+    grot_mod = np.ma.divide(gv_mod - _par[4], np.cos(th))
+    grot_mod_bc = np.ma.divide(gv_mod - gv_bc - _par[4], np.cos(th))
+    srot_mod = np.ma.divide(sv_mod - _par[disk[0].np+4], np.cos(th))
+    srot_mod_bc = np.ma.divide(sv_mod - sv_bc - _par[disk[0].np+4], np.cos(th))
+    ad_mod = grot_mod**2 - srot_mod**2
+    ad_mod_bc = grot_mod_bc**2 - srot_mod_bc**2
+    ados_mod = np.ma.divide(ad_mod, sd_mod)
+    ados_mod_bc = np.ma.divide(ad_mod_bc, sd_mod - sd_bc)
+
+    # Create the model maps    
+    ad_mod_map = kin[1].remap(ad_mod.filled(0.0), mask=ad_mask)
+    ad_mod_bc_map = kin[1].remap(ad_mod_bc.filled(0.0), mask=ad_mask)
+    ados_mod_map = kin[1].remap(ados_mod.filled(0.0), mask=ados_mask)
+    ados_mod_bc_map = kin[1].remap(ados_mod_bc.filled(0.0), mask=ados_mask)
+
+    # Set the radial bins
+    binr = np.arange(rstep/2, np.amax(r), rstep)
+    binw = np.full(binr.size, rstep, dtype=float)
+
+    # Mask data away from the major axes
+    major_gpm = select_kinematic_axis(r, th, which='major', r_range='all', wedge=maj_wedge)
+    ad_indx = major_gpm & np.logical_not(ad_mask)
+    ados_indx = major_gpm & np.logical_not(ados_mask)
+
+    # Bin the data
+    _, _, _, _, _, _, _, ad_ewmean, ad_ewsdev, _, _, ad_nbin, _ \
+            = bin_stats(r[ad_indx], ad.data[ad_indx], binr, binw, wgts=ad_ivar.data[ad_indx],
+                        fill_value=0.0) 
+    _, _, _, _, _, _, _, ad_bc_ewmean, ad_bc_ewsdev, _, _, ad_bc_nbin, _ \
+            = bin_stats(r[ad_indx], ad_bc.data[ad_indx], binr, binw, wgts=ad_bc_ivar.data[ad_indx],
+                        fill_value=0.0) 
+    _, _, _, _, _, _, _, ados_ewmean, ados_ewsdev, _, _, ados_nbin, _ \
+            = bin_stats(r[ados_indx], ados.data[ados_indx], binr, binw,
+                        wgts=ados_ivar.data[ados_indx], fill_value=0.0) 
+    _, _, _, _, _, _, _, ados_bc_ewmean, ados_bc_ewsdev, _, _, ados_bc_nbin, _ \
+            = bin_stats(r[ados_indx], ados_bc.data[ados_indx], binr, binw,
+                        wgts=ados_bc_ivar.data[ados_indx], fill_value=0.0) 
+
+    # Bin the model identically to the data
+    _, _, _, _, _, _, _, ad_mod_ewmean, ad_mod_ewsdev, _, _, _, _ \
+            = bin_stats(r[ad_indx], ad_mod.data[ad_indx], binr, binw, wgts=ad_ivar.data[ad_indx],
+                        fill_value=0.0) 
+    _, _, _, _, _, _, _, ad_mod_bc_ewmean, ad_mod_bc_ewsdev, _, _, _, _ \
+            = bin_stats(r[ad_indx], ad_mod_bc.data[ad_indx], binr, binw, wgts=ad_bc_ivar.data[ad_indx],
+                        fill_value=0.0) 
+    _, _, _, _, _, _, _, ados_mod_ewmean, ados_mod_ewsdev, _, _, _, _ \
+            = bin_stats(r[ados_indx], ados_mod.data[ados_indx], binr, binw,
+                        wgts=ados_ivar.data[ados_indx], fill_value=0.0) 
+    _, _, _, _, _, _, _, ados_mod_bc_ewmean, ados_mod_bc_ewsdev, _, _, _, _ \
+            = bin_stats(r[ados_indx], ados_mod_bc.data[ados_indx], binr, binw,
+                        wgts=ados_bc_ivar.data[ados_indx], fill_value=0.0) 
+
+    # Return the data
+    return gv_map, gv_ivar_map, gv_mod_map, gv_mod_intr_map, \
+           sv_map, sv_ivar_map, sv_mod_map, sv_mod_intr_map, \
+           sd_map, sd_ivar_map, sd_mod_map, sd_mod_intr_map, \
+           ad_map, ad_ivar_map, ad_bc_map, ad_bc_ivar_map, ad_mod_map, ad_mod_bc_map, \
+                ad_mask_map, \
+           ados_map, ados_ivar_map, ados_bc_map, ados_bc_ivar_map, ados_mod_map, ados_mod_bc_map, \
+                ados_mask_map, \
+           r[ad_indx], ad[ad_indx].filled(0.0), ad_ivar[ad_indx].filled(0.0), \
+                np.ma.getmaskarray(ad[ad_indx]), \
+           binr, \
+           ad_ewmean, ad_ewsdev, ad_mod_ewmean, ad_mod_ewsdev, ad_nbin, \
+           ad_bc_ewmean, ad_bc_ewsdev, ad_mod_bc_ewmean, ad_mod_bc_ewsdev, ad_bc_nbin, \
+           ados_ewmean, ados_ewsdev, ados_mod_ewmean, ados_mod_ewsdev, ados_nbin, \
+           ados_bc_ewmean, ados_bc_ewsdev, ados_mod_bc_ewmean, ados_mod_bc_ewsdev, ados_bc_nbin
+
+
 def asymdrift_radial_profile(disk, kin, rstep, maj_wedge=30.):
     """
     Construct azimuthally averaged radial profiles of the kinematics.
@@ -1465,6 +1682,9 @@ def asymdrift_radial_profile(disk, kin, rstep, maj_wedge=30.):
     if len(kin) != 2:
         raise NotImplementedError('Must provide two kinematic datasets, first gas, second stars.')
 
+    if kin[0].spatial_shape != kin[1].spatial_shape:
+        raise NotImplementedError('Kinematic datasets must have the same spatial shape.')
+
     if not np.allclose(kin[0].grid_x, kin[1].grid_x) \
             or not np.allclose(kin[0].grid_y, kin[1].grid_y):
         raise NotImplementedError('Kinematics datasets must have the same grid sampling!')
@@ -1472,11 +1692,30 @@ def asymdrift_radial_profile(disk, kin, rstep, maj_wedge=30.):
     if not np.all(disk.tie_base[:4]):
         raise NotImplementedError('Disk must have tied the xc, yc, pa, and inc for both tracers.')
 
+    # Get the full list of parameters
     par = disk.par[disk.untie]
 
-    # Disk-plane coordinates
-    r, th = projected_polar(kin[0].grid_x - par[0], kin[0].grid_y - par[1], np.radians(par[2]),
-                            np.radians(par[3]))
+    # Determine the spaxels/bins that both have valid gas and stellar velocity
+    # data
+    gas_vel = kin[0].remap('vel', mask=np.logical_not(disk[0].vel_gpm) | kin[0].vel_mask)
+    str_vel = kin[1].remap('vel', mask=np.logical_not(disk[1].vel_gpm) | kin[1].vel_mask)
+    ad_mask_map = np.ma.getmaskarray(gas_vel) | np.ma.getmaskarray(str_vel)
+    ad_mask = kin[1].bin(ad_mask_map.astype(int)) > 0.
+
+    # Bin the gas data identical to the stars
+    gas_sig = np.ma.sqrt(kin[0].remap('sig_phys2',
+                                      mask=np.logical_not(disk[0].sig_gpm) | kin[0].sig_mask))
+    _, _gas_vel, _gas_sig = kin[1].bin_moments(kin[0].grid_sb, gas_vel.filled(0.0),
+                                               gas_sig.filled(0.0))
+    # Use bin_moments to get the error in the velocities
+    gas_vel_var = np.ma.power(kin[0].remap('vel_ivar',
+                                           mask=np.logical_not(disk[0].vel_gpm) | kin[0].vel_mask),
+                              -1)
+    _gas_vel_ivar = np.ma.power(kin[1].bin_moments(kin[0].grid_sb, gas_vel_var.filled(0.0), None)[1],
+                                -1)
+
+    # Get the coordinates of the bins in the disk plane
+    r, th = projected_polar(kin[1].x - par[0], kin[1].y - par[1], *np.radians(par[2:4]))
 
     # Mask for data along the major and minor axes
     major_gpm = select_kinematic_axis(r, th, which='major', r_range='all', wedge=maj_wedge)
@@ -1485,24 +1724,15 @@ def asymdrift_radial_profile(disk, kin, rstep, maj_wedge=30.):
     binr = np.arange(rstep/2, np.amax(r), rstep)
     binw = np.full(binr.size, rstep, dtype=float)
 
-    # Projected gas and stellar rotation velocities (within the major axis wedge)
-    gas_vel = kin[0].remap('vel', mask=np.logical_not(disk.disk[0].vel_gpm))
-    gas_vel_ivar = kin[0].remap('vel_ivar',
-                                mask=np.logical_not(disk.disk[0].vel_gpm) | kin[0].vel_mask)
-
-    str_vel = kin[1].remap('vel', mask=np.logical_not(disk.disk[1].vel_gpm))
-    str_vel_ivar = kin[1].remap('vel_ivar',
-                                mask=np.logical_not(disk.disk[1].vel_gpm) | kin[1].vel_mask)
-
-    indx = major_gpm & np.logical_not(np.ma.getmaskarray(gas_vel)) \
-                & np.logical_not(np.ma.getmaskarray(str_vel))
+    # Construct the radial profile using the binned data
+    indx = major_gpm & np.logical_not(ad_mask)
 
     ad_r = r[indx]
-    gas_vrot = (gas_vel.data[indx] - par[4])/np.cos(th[indx])
-    gas_vrot_ivar = gas_vel_ivar.data[indx]*np.cos(th[indx])**2
+    gas_vrot = (_gas_vel[indx] - par[4])/np.cos(th[indx])
+    gas_vrot_ivar = _gas_vel_ivar.data[indx]*np.cos(th[indx])**2
 
-    str_vrot = (str_vel.data[indx] - par[disk.disk[0].np+4])/np.cos(th[indx])
-    str_vrot_ivar = str_vel_ivar.data[indx]*np.cos(th[indx])**2
+    str_vrot = (kin[1].vel[indx] - par[disk[0].np+4])/np.cos(th[indx])
+    str_vrot_ivar = kin[1].vel_ivar[indx]*np.cos(th[indx])**2
 
     ad = gas_vrot**2 - str_vrot**2
     ad_wgt = 1 / 2 / (gas_vrot**2/gas_vrot_ivar + str_vrot**2/str_vrot_ivar)
@@ -2061,4 +2291,212 @@ def asymdrift_iter_fit(galmeta, gas_kin, str_kin, gas_disk, str_disk, gas_vel_ma
         asymdrift_fit_plot(galmeta, [gas_kin, str_kin], disk, fix=fix) 
 
     return disk, p0, lb, ub, fix, gas_vel_mask, gas_sig_mask, str_vel_mask, str_sig_mask
+
+
+# TODO:
+#   - This is MaNGA-specific and needs to be abstracted
+#   - Copy over the DataTable class from the DAP, or use an astropy.table.Table?
+def _ad_meta_dtype(nr):
+    """
+    """
+    return [('MANGAID', '<U30'),
+            ('PLATE', np.int16),
+            ('IFU', np.int16),
+            # Azimuthally binned radial profiles
+            ('BINR', float, (nr,)),
+            ('AD', float, (nr,)),
+            ('AD_SDEV', float, (nr,)),
+            ('AD_MOD', float, (nr,)),
+            ('AD_MOD_SDEV', float, (nr,)),
+            ('AD_NUSE', int, (nr,)),
+            ('AD_BC', float, (nr,)),
+            ('AD_BC_SDEV', float, (nr,)),
+            ('AD_BC_MOD', float, (nr,)),
+            ('AD_BC_MOD_SDEV', float, (nr,)),
+            ('AD_BC_NUSE', int, (nr,)),
+            ('ADOS', float, (nr,)),
+            ('ADOS_SDEV', float, (nr,)),
+            ('ADOS_MOD', float, (nr,)),
+            ('ADOS_MOD_SDEV', float, (nr,)),
+            ('ADOS_NUSE', int, (nr,)),
+            ('ADOS_BC', float, (nr,)),
+            ('ADOS_BC_SDEV', float, (nr,)),
+            ('ADOS_BC_MOD', float, (nr,)),
+            ('ADOS_BC_MOD_SDEV', float, (nr,)),
+            ('ADOS_BC_NUSE', int, (nr,))
+           ]
+
+
+def asymdrift_fit_data(galmeta, kin, disk, p0, lb, ub, gas_vel_mask, gas_sig_mask,
+                       str_vel_mask, str_sig_mask, ofile=None):
+
+    # Create the output data file
+    # - Ensure the best-fitting parameters have been distributed to the disks
+    disk.distribute_par()
+    # - Get the output data for the gas
+    gas_slice = disk.disk_slice(0)
+    gas_hdu = axisym.axisym_fit_data(galmeta, kin[0], p0[gas_slice], lb[gas_slice], ub[gas_slice],
+                                     disk[0], gas_vel_mask, gas_sig_mask)
+    # - Get the output data for the stars
+    str_slice = disk.disk_slice(1)
+    str_hdu = axisym.axisym_fit_data(galmeta, kin[1], p0[str_slice], lb[str_slice], ub[str_slice],
+                                     disk[1], str_vel_mask, str_sig_mask)
+    # Get the asymmetric drift data
+    fwhm = galmeta.psf_fwhm[1]
+    oversample = 1.5
+    rstep = fwhm/oversample
+    maj_wedge = 30.
+
+    gv_map, gv_ivar_map, gv_mod_map, gv_mod_intr_map, \
+        sv_map, sv_ivar_map, sv_mod_map, sv_mod_intr_map, \
+        sd_map, sd_ivar_map, sd_mod_map, sd_mod_intr_map, \
+        ad_map, ad_ivar_map, ad_bc_map, ad_bc_ivar_map, ad_mod_map, ad_mod_bc_map, ad_mask_map, \
+        ados_map, ados_ivar_map, ados_bc_map, ados_bc_ivar_map, ados_mod_map, ados_mod_bc_map, \
+            ados_mask_map, \
+        ad_spx_r, ad_spx, ad_spx_ivar, ad_spx_mask, \
+        binr, \
+        ad_ewmean, ad_ewsdev, ad_mod_ewmean, ad_mod_ewsdev, ad_nbin, \
+        ad_bc_ewmean, ad_bc_ewsdev, ad_mod_bc_ewmean, ad_mod_bc_ewsdev, ad_bc_nbin, \
+        ados_ewmean, ados_ewsdev, ados_mod_ewmean, ados_mod_ewsdev, ados_nbin, \
+        ados_bc_ewmean, ados_bc_ewsdev, ados_mod_bc_ewmean, ados_mod_bc_ewsdev, ados_bc_nbin \
+            = asymdrift_fit_maps(kin, disk, rstep, maj_wedge=maj_wedge)
+
+    adprof = fileio.init_record_array(1, _ad_meta_dtype(binr.size))
+    adprof['MANGAID'] = galmeta.mangaid
+    adprof['PLATE'] = galmeta.plate
+    adprof['IFU'] = galmeta.ifu
+    adprof['BINR'] = binr
+    adprof['AD'] = ad_ewmean
+    adprof['AD_SDEV'] = ad_ewsdev
+    adprof['AD_MOD'] = ad_mod_ewmean
+    adprof['AD_MOD_SDEV'] = ad_mod_ewsdev
+    adprof['AD_NUSE'] = ad_nbin
+    adprof['AD_BC'] = ad_bc_ewmean
+    adprof['AD_BC_SDEV'] = ad_bc_ewsdev
+    adprof['AD_BC_MOD'] = ad_mod_bc_ewmean
+    adprof['AD_BC_MOD_SDEV'] = ad_mod_bc_ewsdev
+    adprof['AD_BC_NUSE'] = ad_bc_nbin
+    adprof['ADOS'] = ados_ewmean
+    adprof['ADOS_SDEV'] = ados_ewsdev
+    adprof['ADOS_MOD'] = ados_mod_ewmean
+    adprof['ADOS_MOD_SDEV'] = ados_mod_ewsdev
+    adprof['ADOS_NUSE'] = ados_nbin
+    adprof['ADOS_BC'] = ados_bc_ewmean
+    adprof['ADOS_BC_SDEV'] = ados_bc_ewsdev
+    adprof['ADOS_BC_MOD'] = ados_mod_bc_ewmean
+    adprof['ADOS_BC_MOD_SDEV'] = ados_mod_bc_ewsdev
+    adprof['ADOS_BC_NUSE'] = ados_bc_nbin
+
+    # - Combine the data into a single fits file
+    prihdr = gas_hdu[0].header.copy()
+    prihdr.remove('MODELTYP')
+    prihdr.remove('RCMODEL')
+    prihdr.remove('DCMODEL')
+    prihdr['GMODTYP'] = gas_hdu[0].header['MODELTYP']
+    prihdr['GRCMOD'] = gas_hdu[0].header['RCMODEL']
+    if 'DCMODEL' in gas_hdu[0].header:
+        prihdr['GDCMOD'] = gas_hdu[0].header['DCMODEL']
+    prihdr['SMODTYP'] = str_hdu[0].header['MODELTYP']
+    prihdr['SRCMOD'] = str_hdu[0].header['RCMODEL']
+    if 'DCMODEL' in str_hdu[0].header:
+        prihdr['SDCMOD'] = str_hdu[0].header['DCMODEL']
+    prihdr['QUAL'] = disk.global_mask
+    resid = disk.fom(disk.par)
+    prihdr['CHI2'] = (np.sum(resid**2), 'Total chi-square')
+    prihdr['RCHI2'] = (prihdr['CHI2']/(resid.size - disk.nfree), 'Total reduced chi-square')
+    prihdr['ADWEDGE'] = (maj_wedge, 'Major axis wedge for AD')
+    maphdr = fileio.add_wcs(prihdr, kin[0])
+    mapmaskhdr = maphdr.copy()
+    disk.mbm.to_header(mapmaskhdr)
+    for h in gas_hdu[1:]:
+        h.name = 'GAS_'+h.name
+    for h in str_hdu[1:]:
+        h.name = 'STR_'+h.name
+
+    hdus = [fits.PrimaryHDU(header=prihdr)] + gas_hdu[1:] + str_hdu[1:] \
+            + [fits.ImageHDU(data=gv_map.filled(0.0),
+                             header=fileio.finalize_header(maphdr, 'BIN_GAS_VEL', bunit='km/s',
+                                                           err=True),
+                             name='BIN_GAS_VEL'),
+               fits.ImageHDU(data=gv_ivar_map.filled(0.0),
+                             header=fileio.finalize_header(maphdr, 'BIN_GAS_VEL',
+                                                           bunit='(km/s)^{-2}', hduclas2='ERROR'),
+                             name='BIN_GAS_VEL_IVAR'),
+               fits.ImageHDU(data=gv_mod_map.filled(0.0),
+                             header=fileio.finalize_header(maphdr, 'BIN_GAS_VEL_MOD',
+                                                           bunit='km/s'),
+                             name='BIN_GAS_VEL_MOD'),
+               fits.ImageHDU(data=gv_mod_intr_map.filled(0.0),
+                             header=fileio.finalize_header(maphdr, 'BIN_GAS_VEL_MODI',
+                                                           bunit='km/s'),
+                             name='BIN_GAS_VEL_MODI'),
+               fits.ImageHDU(data=ad_map.filled(0.0),
+                             header=fileio.finalize_header(maphdr, 'AD', bunit='(km/s)^2',
+                                                           err=True, qual=True),
+                             name='AD'),
+               fits.ImageHDU(data=ad_ivar_map.filled(0.0),
+                             header=fileio.finalize_header(maphdr, 'AD', bunit='(km/s)^{-4}',
+                                                           hduclas2='ERROR', qual=True),
+                             name='AD_IVAR'),
+               fits.ImageHDU(data=ad_mask_map.astype(np.int16),
+                             header=fileio.finalize_header(mapmaskhdr, 'AD', hduclas2='QUALITY',
+                                                           err=True, bit_type=bool),
+                             name='AD_MASK'),
+               fits.ImageHDU(data=ad_bc_map.filled(0.0),
+                             header=fileio.finalize_header(maphdr, 'AD_BC', bunit='(km/s)^2',
+                                                           err=True),
+                             name='AD_BC'),
+               fits.ImageHDU(data=ad_bc_ivar_map.filled(0.0),
+                             header=fileio.finalize_header(maphdr, 'AD_BC', bunit='(km/s)^{-4}',
+                                                           hduclas2='ERROR'),
+                             name='AD_BC_IVAR'),
+               fits.ImageHDU(data=ad_mod_map.filled(0.0),
+                             header=fileio.finalize_header(maphdr, 'AD_MOD', bunit='(km/s)^2'),
+                             name='AD_MOD'),
+               fits.ImageHDU(data=ad_mod_bc_map.filled(0.0),
+                             header=fileio.finalize_header(maphdr, 'AD_MODI', bunit='(km/s)^2'),
+                             name='AD_MODI'),
+               fits.ImageHDU(data=ados_map.filled(0.0),
+                             header=fileio.finalize_header(maphdr, 'ADOS', err=True, qual=True),
+                             name='ADOS'),
+               fits.ImageHDU(data=ados_ivar_map.filled(0.0),
+                             header=fileio.finalize_header(maphdr, 'ADOS', hduclas2='ERROR',
+                                                           qual=True),
+                             name='ADOS_IVAR'),
+               fits.ImageHDU(data=ados_mask_map.astype(np.int16),
+                             header=fileio.finalize_header(mapmaskhdr, 'ADOS', hduclas2='QUALITY',
+                                                           err=True, bit_type=bool),
+                             name='ADOS_MASK'),
+               fits.ImageHDU(data=ados_bc_map.filled(0.0),
+                             header=fileio.finalize_header(maphdr, 'ADOS_BC', err=True),
+                             name='ADOS_BC'),
+               fits.ImageHDU(data=ados_bc_ivar_map.filled(0.0),
+                             header=fileio.finalize_header(maphdr, 'ADOS_BC', hduclas2='ERROR'),
+                             name='ADOS_BC_IVAR'),
+               fits.ImageHDU(data=ados_mod_map.filled(0.0),
+                             header=fileio.finalize_header(maphdr, 'ADOS_MOD'),
+                             name='ADOS_MOD'),
+               fits.ImageHDU(data=ados_mod_bc_map.filled(0.0),
+                             header=fileio.finalize_header(maphdr, 'ADOS_MODI'),
+                             name='ADOS_MODI'),
+               fits.BinTableHDU.from_columns([fits.Column(name=n,
+                                                          format=fileio.rec_to_fits_type(adprof[n]),
+                                                          dim=fileio.rec_to_fits_col_dim(adprof[n]),
+                                                          array=adprof[n])
+                                                for n in adprof.dtype.names],
+                                              name='ADPROF')]
+
+    # Construct the HDUList, write it if requested, and return
+    hdu = fits.HDUList(hdus)
+    if ofile is not None:
+        if ofile.split('.')[-1] == 'gz':
+            _ofile = ofile[:ofile.rfind('.')]
+            compress = True
+        else:
+            _ofile = ofile
+        hdu.writeto(_ofile, overwrite=True, checksum=True)
+        if compress:
+            fileio.compress_file(_ofile, overwrite=True, rm_original=True)
+    return hdu
+
 

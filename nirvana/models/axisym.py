@@ -1365,6 +1365,7 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
     #   - Projected rotation velocities
     indx = major_gpm & np.logical_not(kin.vel_mask)
     vrot_r = r[indx]
+    vrot_th = th[indx]
     vrot = (kin.vel[indx] - disk.par[4])/np.cos(th[indx])
     #   - Projected radial velocities
     indx = minor_gpm & np.logical_not(kin.vel_mask)
@@ -1930,27 +1931,31 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
         ax.xaxis.set_major_formatter(ticker.NullFormatter())
 
     indx = vrot_nbin > 0
-    ax.scatter(vrot_r, vrot, marker='.', color='k', s=30, lw=0, alpha=0.6, zorder=1)
+#    ax.scatter(vrot_r, vrot, marker='.', color='k', s=30, lw=0, alpha=0.6, zorder=1)
+    app_indx = (vrot_th > np.pi/2) & (vrot_th < 3*np.pi/2)
+    ax.scatter(vrot_r[app_indx], vrot[app_indx], marker='.', color='C0', s=30, lw=0, alpha=0.6, zorder=2)
+    rec_indx = (vrot_th < np.pi/2) | (vrot_th > 3*np.pi/2)
+    ax.scatter(vrot_r[rec_indx], vrot[rec_indx], marker='.', color='C3', s=30, lw=0, alpha=0.6, zorder=2)
     if np.any(indx):
         ax.scatter(binr[indx], vrot_ewmean[indx], marker='o', edgecolors='none', s=100,
-                   alpha=1.0, facecolors='0.5', zorder=3)
-        ax.scatter(binr[indx], vrotm_ewmean[indx], edgecolors='C3', marker='o', lw=3, s=100,
-                   alpha=1.0, facecolors='none', zorder=4)
+                   alpha=1.0, facecolors='0.5', zorder=4)
+        ax.scatter(binr[indx], vrotm_ewmean[indx], edgecolors='blueviolet', marker='o', lw=3, s=100,
+                   alpha=1.0, facecolors='none', zorder=5)
         ax.errorbar(binr[indx], vrot_ewmean[indx], yerr=vrot_ewsdev[indx], color='0.5', capsize=0,
-                    linestyle='', linewidth=1, alpha=1.0, zorder=2)
+                    linestyle='', linewidth=1, alpha=1.0, zorder=3)
     indx = vrad_nbin > 0
-    ax.scatter(vrad_r, vrad, marker='.', color='0.6', s=30, lw=0, alpha=0.6, zorder=1)
+    ax.scatter(vrad_r, vrad, marker='.', color='0.6', s=30, lw=0, alpha=0.6, zorder=2)
     if np.any(indx):
         ax.scatter(binr[indx], vrad_ewmean[indx], marker='o', edgecolors='none', s=100,
-                   alpha=1.0, facecolors='0.7', zorder=3)
+                   alpha=1.0, facecolors='0.7', zorder=4)
         ax.scatter(binr[indx], vradm_ewmean[indx], edgecolors='C1', marker='o', lw=3, s=100,
-                   alpha=1.0, facecolors='none', zorder=4)
+                   alpha=1.0, facecolors='none', zorder=5)
         ax.errorbar(binr[indx], vrad_ewmean[indx], yerr=vrad_ewsdev[indx], color='0.7', capsize=0,
-                    linestyle='', linewidth=1, alpha=1.0, zorder=2)
-    ax.plot(modelr, vrot_intr_model, color='C3', zorder=5, lw=0.5)
+                    linestyle='', linewidth=1, alpha=1.0, zorder=3)
+    ax.plot(modelr, vrot_intr_model, color='blueviolet', zorder=6, lw=0.5)
     if reff_lines is not None:
         for l in reff_lines:
-            ax.axvline(x=l, linestyle='--', lw=0.5, zorder=2, color='k')
+            ax.axvline(x=l, linestyle='--', lw=0.5, zorder=3, color='k')
 
     asec2kpc = galmeta.kpc_per_arcsec()
     if asec2kpc > 0:
@@ -1973,11 +1978,11 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
     axt.yaxis.label.set_color('0.4')
 
     ax.add_patch(patches.Rectangle((0.66,0.55), 0.32, 0.19, facecolor='w', lw=0, edgecolor='none',
-                                   zorder=5, alpha=0.7, transform=ax.transAxes))
+                                   zorder=7, alpha=0.7, transform=ax.transAxes))
     ax.text(0.97, 0.65, r'$V\ \sin i$ [km/s; left axis]', ha='right', va='bottom',
-            transform=ax.transAxes, fontsize=10, zorder=6)
+            transform=ax.transAxes, fontsize=10, zorder=8)
     ax.text(0.97, 0.56, r'$V$ [km/s; right axis]', ha='right', va='bottom', color='0.4',
-            transform=ax.transAxes, fontsize=10, zorder=6)
+            transform=ax.transAxes, fontsize=10, zorder=8)
 
     #-------------------------------------------------------------------
     # Velocity Dispersion profile
@@ -1995,27 +2000,27 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
         plot.rotate_y_ticks(ax, 90, 'center')
 
         indx = sprof_nbin > 0
-        ax.scatter(sprof_r, sprof, marker='.', color='k', s=30, lw=0, alpha=0.6, zorder=1)
+        ax.scatter(sprof_r, sprof, marker='.', color='k', s=30, lw=0, alpha=0.6, zorder=2)
         if np.any(indx):
             ax.scatter(binr[indx], sprof_ewmean[indx], marker='o', edgecolors='none', s=100,
-                       alpha=1.0, facecolors='0.5', zorder=3)
-            ax.scatter(binr[indx], sprofm_ewmean[indx], edgecolors='C3', marker='o', lw=3, s=100,
-                       alpha=1.0, facecolors='none', zorder=4)
+                       alpha=1.0, facecolors='0.5', zorder=4)
+            ax.scatter(binr[indx], sprofm_ewmean[indx], edgecolors='blueviolet',
+                       marker='o', lw=3, s=100, alpha=1.0, facecolors='none', zorder=5)
             ax.errorbar(binr[indx], sprof_ewmean[indx], yerr=sprof_ewsdev[indx], color='0.6',
-                        capsize=0, linestyle='', linewidth=1, alpha=1.0, zorder=2)
-        ax.plot(modelr, sprof_intr_model, color='C3', zorder=5, lw=0.5)
+                        capsize=0, linestyle='', linewidth=1, alpha=1.0, zorder=3)
+        ax.plot(modelr, sprof_intr_model, color='blueviolet', zorder=6, lw=0.5)
         if reff_lines is not None:
             for l in reff_lines:
-                ax.axvline(x=l, linestyle='--', lw=0.5, zorder=2, color='k')
+                ax.axvline(x=l, linestyle='--', lw=0.5, zorder=3, color='k')
 
         ax.text(0.5, -0.13, r'$R$ [arcsec]', ha='center', va='center', transform=ax.transAxes,
                 fontsize=10)
 
         ax.add_patch(patches.Rectangle((0.81,0.86), 0.17, 0.09, facecolor='w', lw=0,
-                                       edgecolor='none', zorder=5, alpha=0.7,
+                                       edgecolor='none', zorder=7, alpha=0.7,
                                        transform=ax.transAxes))
         ax.text(0.97, 0.87, r'$\sigma_{\rm los}$ [km/s]', ha='right', va='bottom',
-                transform=ax.transAxes, fontsize=10, zorder=6)
+                transform=ax.transAxes, fontsize=10, zorder=8)
 
     # TODO:
     #   - Add errors (if available)?

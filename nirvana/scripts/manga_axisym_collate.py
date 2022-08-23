@@ -83,11 +83,18 @@ def main(args):
     if args.full:
         plateifu = None
     else:
-        pltifutrc = np.array(['-'.join(f.name.split('.')[0].split('-')[-3:])
-                              for f in files])
-        if pltifutrc.size != np.unique(pltifutrc).size:
-            raise ValueError(f'All plate-ifu-tracer must be unique for files found in {args.dir}!')
-        plateifu = np.unique(['-'.join(p.split('-')[:2]) for p in pltifutrc])
+        if args.asymdrift:
+            plateifu = np.array(['-'.join(f.name.split('.')[0].split('-')[-2:]) for f in files])
+            if plateifu.size != np.unique(plateifu).size:
+                raise ValueError('Plate-IFUs must be unique for all asymdrift files found in '
+                                 f'{args.dir}!')
+        else:
+            pltifutrc = np.array(['-'.join(f.name.split('.')[0].split('-')[-3:])
+                                for f in files])
+            if pltifutrc.size != np.unique(pltifutrc).size:
+                raise ValueError('Plate-IFUs must be unique for all axisym files for each tracer '
+                                f'found in {args.dir}!')
+            plateifu = np.unique(['-'.join(p.split('-')[:2]) for p in pltifutrc])
 
     # Check the output file and determine if it is expected to be compressed
     ofile = Path(args.ofile).resolve()
@@ -117,6 +124,7 @@ def main(args):
         md_keys = ['GMODTYP', 'SMODTYP']
         rc_keys = ['GRCMOD', 'SRCMOD']
         dc_keys = ['GDCMOD', 'SDCMOD']
+        meta_ext = ['GAS_FITMETA', 'STR_FITMETA']
     else:
         for i in range(len(plateifu)):
             plate, ifu = plateifu[i].split('-')
@@ -128,6 +136,7 @@ def main(args):
         md_keys = ['MODELTYP', 'MODELTYP']
         rc_keys = ['RCMODEL', 'RCMODEL']
         dc_keys = ['DCMODEL', 'DCMODEL']
+        meta_ext = ['FITMETA', 'FITMETA']
 
     # Use the example files to get the rc and dc class names for each tracer, and check
     # that both models are both AxisymmetricDisk models
@@ -161,7 +170,11 @@ def main(args):
     for i, f in enumerate(files):
         print(f'{i+1}/{nf}', end='\r')
         with fits.open(f) as hdu:
-            maxnr = max(maxnr, hdu['FITMETA'].data['BINR'].shape[1])
+            if args.asymdrift:
+                maxnr = max(maxnr, hdu['GAS_FITMETA'].data['BINR'].shape[1])
+                maxnr = max(maxnr, hdu['STR_FITMETA'].data['BINR'].shape[1])
+            else:
+                maxnr = max(maxnr, hdu['FITMETA'].data['BINR'].shape[1])
     print(f'{nf}/{nf}')
 
     # Get the data type for the output tables
@@ -192,8 +205,9 @@ def main(args):
 
         gas_metadata['DRPALLINDX'][i] = dapall['DRPALLINDX'][j]
         gas_metadata['DAPALLINDX'][i] = j
-        gas_file = oroot / str(plate) / f'{nirvana_root}-{plate}-{ifu}-Gas.fits.gz'
-
+        gas_file = f'{nirvana_root}-{plate}-{ifu}.fits.gz' if args.asymdrift \
+                        else f'{nirvana_root}-{plate}-{ifu}-Gas.fits.gz'
+        gas_file = oroot / str(plate) / gas_file
         if gas_file.exists():
             with fits.open(gas_file) as hdu:
                 # Confirm the output has the expected model parameterization
@@ -211,12 +225,12 @@ def main(args):
                     gas_metadata['FINISHED'][i] = 1
                     gas_metadata['QUAL'][i] = hdu[0].header['QUAL']
                     for k in gas_meta_keys:
-                        if hdu['FITMETA'].data[k].size > 1 \
-                                and hdu['FITMETA'].data[k][0].shape != gas_metadata[k][i].shape:
-                            nr = hdu['FITMETA'].data[k][0].size
-                            gas_metadata[k][i,:nr] = hdu['FITMETA'].data[k][0]
+                        if hdu[meta_ext[0]].data[k].size > 1 \
+                                and hdu[meta_ext[0]].data[k][0].shape != gas_metadata[k][i].shape:
+                            nr = hdu[meta_ext[0]].data[k][0].size
+                            gas_metadata[k][i,:nr] = hdu[meta_ext[0]].data[k][0]
                         else:
-                            gas_metadata[k][i] = hdu['FITMETA'].data[k][0]
+                            gas_metadata[k][i] = hdu[meta_ext[0]].data[k][0]
         else:
             # Toggle flag
             gas_metadata['QUAL'][i] \
@@ -228,7 +242,9 @@ def main(args):
 
         str_metadata['DRPALLINDX'][i] = dapall['DRPALLINDX'][j]
         str_metadata['DAPALLINDX'][i] = j
-        str_file = oroot / str(plate) / f'{nirvana_root}-{plate}-{ifu}-Stars.fits.gz'
+        str_file = f'{nirvana_root}-{plate}-{ifu}.fits.gz' if args.asymdrift \
+                        else f'{nirvana_root}-{plate}-{ifu}-Stars.fits.gz'
+        str_file = oroot / str(plate) / str_file
         if str_file.exists():
             with fits.open(str_file) as hdu:
                 # Confirm the output has the expected model parameterization
@@ -246,12 +262,12 @@ def main(args):
                     str_metadata['FINISHED'][i] = 1
                     str_metadata['QUAL'][i] = hdu[0].header['QUAL']
                     for k in str_meta_keys:
-                        if hdu['FITMETA'].data[k].size > 1 \
-                                and hdu['FITMETA'].data[k][0].shape != str_metadata[k][i].shape:
-                            nr = hdu['FITMETA'].data[k][0].size
-                            str_metadata[k][i,:nr] = hdu['FITMETA'].data[k][0]
+                        if hdu[meta_ext[1]].data[k].size > 1 \
+                                and hdu[meta_ext[1]].data[k][0].shape != str_metadata[k][i].shape:
+                            nr = hdu[meta_ext[1]].data[k][0].size
+                            str_metadata[k][i,:nr] = hdu[meta_ext[1]].data[k][0]
                         else:
-                            str_metadata[k][i] = hdu['FITMETA'].data[k][0]
+                            str_metadata[k][i] = hdu[meta_ext[1]].data[k][0]
         else:
             # Toggle flag
             str_metadata['QUAL'][i] \
@@ -260,8 +276,6 @@ def main(args):
             str_metadata['MANGAID'][i] = dapall['MANGAID'][j]
             str_metadata['PLATE'][i] = plate
             str_metadata['IFU'][i] = ifu
-        break
-
     print(f'Collating {indx.size}/{indx.size}')
 
     # TODO: Add more to the headers?

@@ -201,7 +201,6 @@ def main(args):
                                      low_inc=args.low_inc, min_unmasked=args.min_unmasked,
                                      select_coherent=args.coherent, fit_scatter=args.fit_scatter,
                                      verbose=args.verbose)
-    gas_only_par = gas_disk.par.copy()
 
     str_disk, str_p0, str_lb, str_ub, str_fix, str_vel_mask, str_sig_mask \
             = axisym.axisym_iter_fit(galmeta, str_kin, rctype=args.str_rc, dctype=args.str_dc,
@@ -216,7 +215,6 @@ def main(args):
                                      low_inc=args.low_inc, min_unmasked=args.min_unmasked,
                                      select_coherent=args.coherent, fit_scatter=args.fit_scatter,
                                      verbose=args.verbose)
-    str_only_par = str_disk.par.copy()
 
     #---------------------------------------------------------------------------
     # Run the combined fit using the independent fits as a starting point
@@ -230,44 +228,10 @@ def main(args):
                                             fit_scatter=args.fit_scatter,
                                             verbose=args.verbose)
 
-    # Create the output data file
-    # - Ensure the best-fitting parameters have been distributed to the disks
-    disk.distribute_par()
-    # - Get the output data for the gas
-    gas_slice = disk.disk_slice(0)
-    gas_hdu = axisym.axisym_fit_data(galmeta, gas_kin, p0[gas_slice], lb[gas_slice], ub[gas_slice],
-                                     gas_disk, gas_vel_mask, gas_sig_mask)
-    # - Get the output data for the stars
-    str_slice = disk.disk_slice(1)
-    str_hdu = axisym.axisym_fit_data(galmeta, str_kin, p0[str_slice], lb[str_slice], ub[str_slice],
-                                     str_disk, str_vel_mask, str_sig_mask)
-    # - Combine the data into a single fits file
-    prihdr = gas_hdu[0].header.copy()
-    prihdr.remove('MODELTYP')
-    prihdr.remove('RCMODEL')
-    prihdr.remove('DCMODEL')
-    prihdr['GMODTYP'] = gas_hdu[0].header['MODELTYP']
-    prihdr['GRCMOD'] = gas_hdu[0].header['RCMODEL']
-    if 'DCMODEL' in gas_hdu[0].header:
-        prihdr['GDCMOD'] = gas_hdu[0].header['DCMODEL']
-    prihdr['SMODTYP'] = str_hdu[0].header['MODELTYP']
-    prihdr['SRCMOD'] = str_hdu[0].header['RCMODEL']
-    if 'DCMODEL' in str_hdu[0].header:
-        prihdr['SDCMOD'] = str_hdu[0].header['DCMODEL']
-    prihdr['QUAL'] = disk.global_mask
-    resid = disk.fom(disk.par)
-    prihdr['CHI2'] = (np.sum(resid**2), 'Total chi-square')
-    prihdr['RCHI2'] = (prihdr['CHI2']/(resid.size - disk.nfree), 'Total reduced chi-square')
-    for h in gas_hdu[1:]:
-        h.name = 'GAS_'+h.name
-    for h in str_hdu[1:]:
-        h.name = 'STR_'+h.name
     ofile = os.path.join(args.odir, f'{oroot}.fits.gz')
-    _ofile = ofile[:ofile.rfind('.')]
-    fits.HDUList([fits.PrimaryHDU(header=prihdr)] + gas_hdu[1:] + str_hdu[1:]
-                 ).writeto(_ofile, overwrite=True, checksum=True)
-    fileio.compress_file(_ofile, overwrite=True)
-    os.remove(_ofile)
+    multitrace.asymdrift_fit_data(galmeta, [gas_kin, str_kin], disk, p0, lb, ub,
+                                  gas_vel_mask, gas_sig_mask, str_vel_mask, str_sig_mask,
+                                  ofile=ofile)
 
     if args.skip_plots:
         return
@@ -290,7 +254,7 @@ def main(args):
                            sig_mask=sig_mask, ofile=asym_plot)
     # - Make the gas fit plots
     fit_plot = os.path.join(args.odir, f'{oroot}-Gas-fit.png')
-    axisym.axisym_fit_plot(galmeta, gas_kin, gas_disk, fix=fix[gas_slice], ofile=fit_plot)
+    axisym.axisym_fit_plot(galmeta, gas_kin, gas_disk, fix=fix[disk.disk_slice(0)], ofile=fit_plot)
 
     # - Get the stellar mask data
     mask_plot = os.path.join(args.odir, f'{oroot}-Stars-mask.png')
@@ -309,7 +273,7 @@ def main(args):
                            sig_mask=sig_mask, ofile=asym_plot)
     # - Make the stellar fit plots
     fit_plot = os.path.join(args.odir, f'{oroot}-Stars-fit.png')
-    axisym.axisym_fit_plot(galmeta, str_kin, str_disk, fix=fix[str_slice], ofile=fit_plot)
+    axisym.axisym_fit_plot(galmeta, str_kin, str_disk, fix=fix[disk.disk_slice(1)], ofile=fit_plot)
 
     # - Get the consolidated asymmetric drift plot
     fit_plot = os.path.join(args.odir, f'{oroot}-asymdrift.png')

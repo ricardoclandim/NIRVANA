@@ -23,7 +23,7 @@ from ..models import asymmetry
 from ..models.beam import construct_beam, ConvolveFFTW, smear
 from ..models.geometry import projected_polar, disk_ellipse
 
-# TODO: Make Kinematics a subclass of Bin2D?
+
 class Kinematics:
     r"""
     Base class to hold data fit by the kinematic model.
