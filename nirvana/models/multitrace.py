@@ -1500,9 +1500,12 @@ def asymdrift_fit_maps(kin, disk, rstep, par=None, maj_wedge=30.):
     gv_ivar = np.ma.power(kin[1].bin_moments(kin[0].grid_sb, gv_var_map.filled(0.0), None)[1], -1)
     gv_ivar_map = kin[1].remap(gv_ivar.filled(0.0), mask=ad_mask)
 
-    # Get the binned stellar velocities
+    # Get the binned stellar velocities and update the mapped properties to use
+    # the new mask
     sv = np.ma.MaskedArray(kin[1].vel, mask=ad_mask)
     sv_ivar = np.ma.MaskedArray(kin[1].vel_ivar, mask=ad_mask)
+    sv_map = kin[1].remap(sv)
+    sv_ivar_map = kin[1].remap(sv_ivar)
 
     # Stellar velocity dispersion (squared) data
     sd = np.ma.MaskedArray(kin[1].sig_phys2.copy())
