@@ -926,6 +926,10 @@ class Kinematics:
         and :attr:`sig_mask`; set ``save`` to False to force these attributes to
         remain unaltered.
 
+        If all values are masked on input (either ``vel_mask`` or ``sig_mask``
+        is all True), the returned arrays will indicate that none of the values
+        were rejected because of their spatial distribution.
+
         Args:
             vel_mask (`numpy.ndarray`_, optional):
                 Velocity mask.  Shape must match :attr:`vel`.  Can be a
@@ -966,16 +970,22 @@ class Kinematics:
         else:
             _vel_mask = _vel_mask.astype(int)
             gpm = np.logical_not(self.remap(_vel_mask, masked=False, fill_value=1).astype(bool))
-            indx = find_largest_coherent_region(gpm.astype(int)).astype(int)
-            vel_rej = np.logical_not(self.bin(indx).astype(bool)) & (_vel_mask == 0)
+            if not np.any(gpm):
+                vel_rej = np.zeros(self.vel.shape, dtype=bool)
+            else:
+                indx = find_largest_coherent_region(gpm.astype(int)).astype(int)
+                vel_rej = np.logical_not(self.bin(indx).astype(bool)) & (_vel_mask == 0)
 
         if _sig_mask is None:
             sig_rej = None
         else:
             _sig_mask = _sig_mask.astype(int)
             gpm = np.logical_not(self.remap(_sig_mask, masked=False, fill_value=1).astype(bool))
-            indx = find_largest_coherent_region(gpm.astype(int)).astype(int)
-            sig_rej = np.logical_not(self.bin(indx).astype(bool)) & (_sig_mask == 0)
+            if not np.any(gpm):
+                sig_rej = np.zeros(self.sig.shape, dtype=bool)
+            else:
+                indx = find_largest_coherent_region(gpm.astype(int)).astype(int)
+                sig_rej = np.logical_not(self.bin(indx).astype(bool)) & (_sig_mask == 0)
         if save:
             self.reject(vel_rej=vel_rej, sig_rej=sig_rej)
         return vel_rej, sig_rej

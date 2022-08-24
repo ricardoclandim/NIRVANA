@@ -896,6 +896,8 @@ def find_largest_coherent_region(a):
         selects pixels that are part of the largest coherent group.
     """
     labels, n = ndimage.label(a, structure=np.ones((3,3), dtype=int))
+    if n == 0:
+        raise ValueError('No coherent regions found!')
     if n == 1:
         return labels == 1
 
