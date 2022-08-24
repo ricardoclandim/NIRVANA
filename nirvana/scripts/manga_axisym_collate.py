@@ -15,6 +15,7 @@ import nirvana
 from nirvana.data.manga import manga_paths, manga_file_names
 from nirvana.models.axisym import AxisymmetricDisk, _fit_meta_dtype
 from nirvana.models.oned import Func1D
+from nirvana.models.multitrace import _ad_meta_dtype
 from nirvana.util import fileio
 from nirvana.util.inspect import all_subclasses
 
@@ -165,6 +166,7 @@ def main(args):
 
     # Get the maximum number of radii for the binned data
     maxnr = 0
+    max_adnr = 0
     print('Finding maximum number of radial bins')
     nf = len(files)
     for i, f in enumerate(files):
@@ -173,6 +175,7 @@ def main(args):
             if args.asymdrift:
                 maxnr = max(maxnr, hdu['GAS_FITMETA'].data['BINR'].shape[1])
                 maxnr = max(maxnr, hdu['STR_FITMETA'].data['BINR'].shape[1])
+                max_adnr = max(max_adnr, hdu['ADPROF'].data['BINR'].shape[1])
             else:
                 maxnr = max(maxnr, hdu['FITMETA'].data['BINR'].shape[1])
     print(f'{nf}/{nf}')
@@ -186,6 +189,11 @@ def main(args):
                    ('QUAL', np.int)]
     _str_dtype += [('DRPALLINDX', np.int), ('DAPALLINDX', np.int), ('FINISHED', np.int),
                    ('QUAL', np.int)]
+    if args.asymdrift:
+        _ad_dtype = _ad_meta_dtype(max_adnr)
+        ad_meta_keys = [d[0] for d in _ad_dtype]
+        _ad_dtype += [('DRPALLINDX', np.int), ('DAPALLINDX', np.int), ('FINISHED', np.int),
+                      ('QUAL', np.int)]
 
     # Read the DAPall file
     with fits.open(_dapall_file) as hdu:
@@ -198,6 +206,8 @@ def main(args):
     # Collate the data
     gas_metadata = fileio.init_record_array(indx.size, _gas_dtype)
     str_metadata = fileio.init_record_array(indx.size, _str_dtype)
+    if args.asymdrift:
+        ad_metadata = fileio.init_record_array(indx.size, _ad_dtype)
     for i, j in enumerate(indx):
         print(f'Collating {i+1}/{indx.size}', end='\r')
         plate = dapall['PLATE'][j]
@@ -225,6 +235,8 @@ def main(args):
                     gas_metadata['FINISHED'][i] = 1
                     gas_metadata['QUAL'][i] = hdu[0].header['QUAL']
                     for k in gas_meta_keys:
+                        if k not in hdu[meta_ext[0]].columns.names:
+                            continue
                         if hdu[meta_ext[0]].data[k].size > 1 \
                                 and hdu[meta_ext[0]].data[k][0].shape != gas_metadata[k][i].shape:
                             nr = hdu[meta_ext[0]].data[k][0].size
@@ -262,6 +274,8 @@ def main(args):
                     str_metadata['FINISHED'][i] = 1
                     str_metadata['QUAL'][i] = hdu[0].header['QUAL']
                     for k in str_meta_keys:
+                        if k not in hdu[meta_ext[0]].columns.names:
+                            continue
                         if hdu[meta_ext[1]].data[k].size > 1 \
                                 and hdu[meta_ext[1]].data[k][0].shape != str_metadata[k][i].shape:
                             nr = hdu[meta_ext[1]].data[k][0].size
@@ -276,6 +290,38 @@ def main(args):
             str_metadata['MANGAID'][i] = dapall['MANGAID'][j]
             str_metadata['PLATE'][i] = plate
             str_metadata['IFU'][i] = ifu
+
+        if not args.asymdrift:
+            continue
+
+        ad_metadata['DRPALLINDX'][i] = dapall['DRPALLINDX'][j]
+        ad_metadata['DAPALLINDX'][i] = j
+        ad_file = oroot / str(plate) / f'{nirvana_root}-{plate}-{ifu}.fits.gz' 
+        if ad_file.exists():
+            with fits.open(ad_file) as hdu:
+                # TODO: Confirm the output has the expected model parameterization?
+                ad_metadata['FINISHED'][i] = 1
+                ad_metadata['QUAL'][i] = hdu[0].header['QUAL']
+                for k in ad_meta_keys:
+                    if k not in hdu['ADPROF'].columns.names:
+                        continue
+                    if hdu['ADPROF'].data[k].size > 1 \
+                            and hdu['ADPROF'].data[k][0].shape != ad_metadata[k][i].shape:
+                        nr = hdu['ADPROF'].data[k][0].size
+                        ad_metadata[k][i,:nr] = hdu['ADPROF'].data[k][0]
+                    else:
+                        ad_metadata[k][i] = hdu['ADPROF'].data[k][0]
+        else:
+            # Toggle flag
+            # WARNING: Create multidisk for this?  For now, these masks are the
+            # same, so it doesn't matter.
+            ad_metadata['QUAL'][i] \
+                    = str_disk.gbm.turn_on(str_disk.gbm.minimum_dtype()(0), 'NOMODEL')
+            # And save the identifier information
+            ad_metadata['MANGAID'][i] = dapall['MANGAID'][j]
+            ad_metadata['PLATE'][i] = plate
+            ad_metadata['IFU'][i] = ifu
+
     print(f'Collating {indx.size}/{indx.size}')
 
     # TODO: Add more to the headers?
@@ -290,18 +336,24 @@ def main(args):
     if dc_class[1] is not None:
         str_hdr[dc_keys[1]] = dc_class[1]
 
-    fits.HDUList([fits.PrimaryHDU(header=hdr),
-                  fits.BinTableHDU.from_columns(
+    hdus = [fits.PrimaryHDU(header=hdr),
+            fits.BinTableHDU.from_columns(
                         [fits.Column(name=n, format=fileio.rec_to_fits_type(gas_metadata[n]),
                                      dim=fileio.rec_to_fits_col_dim(gas_metadata[n]),
                                      array=gas_metadata[n]) for n in gas_metadata.dtype.names],
                         name='GAS', header=gas_hdr),
-                  fits.BinTableHDU.from_columns(
+            fits.BinTableHDU.from_columns(
                         [fits.Column(name=n, format=fileio.rec_to_fits_type(str_metadata[n]),
                                      dim=fileio.rec_to_fits_col_dim(str_metadata[n]),
                                      array=str_metadata[n]) for n in str_metadata.dtype.names],
-                        name='STARS', header=str_hdr)
-                 ]).writeto(_ofile, overwrite=True, checksum=True)
+                        name='STARS', header=str_hdr)]
+    if args.asymdrift:
+        hdus += [fits.BinTableHDU.from_columns(
+                            [fits.Column(name=n, format=fileio.rec_to_fits_type(ad_metadata[n]),
+                                     dim=fileio.rec_to_fits_col_dim(ad_metadata[n]),
+                                     array=ad_metadata[n]) for n in ad_metadata.dtype.names],
+                            name='AD')]
+    fits.HDUList(hdus).writeto(_ofile, overwrite=True, checksum=True)
     if compress:
         # Compress the file
         fileio.compress_file(str(_ofile), overwrite=True, rm_original=True)

@@ -2305,6 +2305,7 @@ def _ad_meta_dtype(nr):
     """
     """
     return [('MANGAID', '<U30'),
+            ('PLATEIFU', '<U12'),
             ('PLATE', np.int16),
             ('IFU', np.int16),
             # Azimuthally binned radial profiles
@@ -2368,6 +2369,7 @@ def asymdrift_fit_data(galmeta, kin, disk, p0, lb, ub, gas_vel_mask, gas_sig_mas
 
     adprof = fileio.init_record_array(1, _ad_meta_dtype(binr.size))
     adprof['MANGAID'] = galmeta.mangaid
+    adprof['PLATEIFU'] = f'{galmeta.plate}-{galmeta.ifu}'
     adprof['PLATE'] = galmeta.plate
     adprof['IFU'] = galmeta.ifu
     adprof['BINR'] = binr

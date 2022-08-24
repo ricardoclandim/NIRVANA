@@ -528,6 +528,7 @@ def _fit_meta_dtype(par_names, nr, parbitmask):
     mp = [(f'M_{n}'.upper(), parbitmask.minimum_dtype()) for n in par_names]
     
     return [('MANGAID', '<U30'),
+            ('PLATEIFU', '<U12'),
             ('PLATE', np.int16),
             ('IFU', np.int16),
             ('OBJRA', np.float),
@@ -914,6 +915,7 @@ def axisym_fit_data(galmeta, kin, p0, lb, ub, disk, vmask, smask, ofile=None):
 
     # Fill the fit-independent data
     metadata['MANGAID'] = galmeta.mangaid
+    metadata['PLATEIFU'] = f'{galmeta.plate}-{galmeta.ifu}'
     metadata['PLATE'] = galmeta.plate
     metadata['IFU'] = galmeta.ifu
     metadata['OBJRA'] = galmeta.ra
