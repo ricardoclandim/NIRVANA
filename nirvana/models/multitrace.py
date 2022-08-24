@@ -22,6 +22,8 @@ from ..util import plot, fileio
 from . import thindisk
 from . import axisym
 
+#warnings.simplefilter('error', RuntimeWarning)
+
 class MultiTracerDisk:
     """
     Define a class that enables multiple kinematic datasets to be simultaneously

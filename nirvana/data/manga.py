@@ -24,6 +24,7 @@ import matplotlib.image as img
 
 from astropy.io import fits
 from astropy.wcs import WCS
+from astropy import constants
 
 from .util import get_map_bin_transformations, impose_positive_definite, gaussian_fill, fill_matrix
 from .kinematics import Kinematics
@@ -1185,24 +1186,33 @@ class MaNGAGlobalPar(GlobalPar):
         ifu (:obj:`int`):
             IFU identifier
         redux_path (:obj:`str`, optional):
-            The top-level directory with all DRP output. If None,
-            this will be set to the ``MANGA_SPECTRO_REDUX``
-            environmental variable, if it is defined.
+            The top-level directory with all DRP output. If None, this will be
+            set to the ``MANGA_SPECTRO_REDUX`` environmental variable, if it is
+            defined.
+        analysis_path (:obj:`str`, optional):
+            The top-level directory with all DAP output. If None, this will be
+            set to the ``MANGA_SPECTRO_ANALYSIS`` environmental variable, if it
+            is defined.
         dr (:obj:`str`, optional):
             Data release identifier; see :func:`manga_versions`.
         drpall_file (:obj:`str`, optional):
             DRPall filename. If None, the filename is assumed to be
-            ``drpall*.fits`` and the path is constructed from other
-            parameters.
+            ``drpall*.fits`` and the path is constructed from other parameters.
         drpall_path (:obj:`str`, optional):
-            This provides the *direct* path to the drpall file,
-            circumventing the use of ``dr`` and ``redux_path``.
+            This provides the *direct* path to the drpall file, circumventing
+            the use of ``dr`` and ``redux_path``.
+        dapall_file (:obj:`str`, optional):
+            DAPall filename. If None, the filename is assumed to be
+            ``dapall*.fits`` and the path is constructed from other parameters.
+        dapall_path (:obj:`str`, optional):
+            This provides the *direct* path to the dapall file, circumventing
+            the use of ``dr`` and ``analysis_path``.
         **kwargs:
-            Additional arguments passed directly to the nominal
-            instantiation method.
+            Additional arguments passed directly to the base-class instantiation
+            method.
     """
-    def __init__(self, plate, ifu, redux_path=None, dr='DR17', drpall_file=None,
-                 drpall_path=None, **kwargs):
+    def __init__(self, plate, ifu, redux_path=None, analysis_path=None, dr='DR17',
+                 drpall_file=None, drpall_path=None, dapall_file=None, dapall_path=None, **kwargs):
 
         if drpall_file is None:
             # Get the default file name
@@ -1213,6 +1223,16 @@ class MaNGAGlobalPar(GlobalPar):
             if drpall_path is None:
                 raise ValueError('Could not define path to the DRPall file.')
             drpall_file = os.path.join(drpall_path, drpall_file)
+
+        if dapall_file is None:
+            # Get the default file name
+            dapall_file = manga_file_names(plate, ifu, dr=dr)[3]
+            if dapall_path is None:
+                # Get the default path
+                dapall_path = manga_paths(plate, ifu, dr=dr, redux_path=redux_path)[3]
+            if dapall_path is None:
+                raise ValueError('Could not define path to the DRPall file.')
+            dapall_file = os.path.join(dapall_path, dapall_file)
 
         # Read the table
         plateifu = f'{plate}-{ifu}'
@@ -1259,10 +1279,21 @@ class MaNGAGlobalPar(GlobalPar):
             reff = 1.0
             sersic_n = 1.0
 
-        z = drpall['z'][indx]
-        if z <= 0.:
-            warnings.warn('Redshift not available; adopting z=0!')
-            z = 0.
+        # For the redshift used by the DAP, we actually need the DAPall file
+        print('Using the DAPall file to set the redshift...')
+        with fits.open(dapall_file) as hdu:
+            # The redshift used by the DAP is independent of the DAPTYPE, so
+            # just use the first extension
+
+            # Find the relevant row
+            dap_indx = np.where(hdu[1].data['PLATEIFU'] == plateifu)[0]
+            if len(dap_indx) != 1:
+                raise ValueError(f'Could not find {plateifu} in {dapall_file}.')
+
+            z = hdu[1].data['Z'][dap_indx[0]]
+            if z <= -500 / constants.c.to('km/s').value:
+                warnings.warn('Redshift is <-500 km/s; adopting z=0!')
+                z = 0.
 
         # Instantiate the object
         super().__init__(ra=drpall['objra'][indx], dec=drpall['objdec'][indx], mass=mass, z=z,

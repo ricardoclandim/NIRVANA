@@ -389,6 +389,9 @@ def asymmetry_metrics(diff, growth, gpm=None):
     if gpm is not None:
         _gpm &= gpm
 
+    if not np.any(_gpm):
+        return np.array([]), np.array([]), np.zeros(len(growth)+1, dtype=float)
+
     abs_diff = np.sort(np.absolute(np.asarray(diff[_gpm])))
     n = abs_diff.size
     grw = 1-(np.arange(n)+1)/n

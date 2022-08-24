@@ -2706,11 +2706,24 @@ def axisym_iter_fit(galmeta, kin, rctype='HyperbolicTangent', dctype='Exponentia
                              base_ub=np.array([dx/3, dy/3, 350., 89., 500.]))
     print(f'If free, center constrained within +/- {dx/3:.1f} in X and +/- {dy/3:.1f} in Y.')
 
-    # TODO: Handle these issues instead of faulting
-    if np.any(np.less(p0, lb)):
-        raise ValueError('Parameter lower bounds cannot accommodate initial guess value!')
-    if np.any(np.greater(p0, ub)):
-        raise ValueError('Parameter upper bounds cannot accommodate initial guess value!')
+    # Handle boundary violations and warn the user
+    disk_par_names = disk.par_names()
+    indx = np.less(p0, lb)
+    if np.any(indx):
+#        raise ValueError('Parameter lower bounds cannot accommodate initial guess value!')
+        warnings.warn('Adjusting parameters below the lower bound!')
+        for i in np.where(indx)[0]:
+            _p0 = p0[i]
+            p0[i] = lb[i]*1.01
+            print(f'{disk_par_names[i]:>20} {_p0:20.3f} {p0[i]:20.3f}')
+    indx = np.greater(p0, ub)
+    if np.any(indx):
+        warnings.warn('Adjusting parameters above the upper bound!')
+        for i in np.where(indx)[0]:
+            _p0 = p0[i]
+            p0[i] = ub[i]/1.01
+            print(f'{disk_par_names[i]:>20} {_p0:20.3f} {p0[i]:20.3f}')
+#        raise ValueError('Parameter upper bounds cannot accommodate initial guess value!')
 
     #---------------------------------------------------------------------------
     # Setup the masks
