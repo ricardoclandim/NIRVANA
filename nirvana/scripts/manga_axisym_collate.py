@@ -57,6 +57,12 @@ def parse_args(options=None):
     parser.add_argument('-a', '--asymdrift', default=False, action='store_true',
                         help='Default is to find files resulting from nirvana_manga_axisym.  '
                              'This option changes to finding output from nirvana_manga_asymdrift.')
+    parser.add_argument('-r', '--max_nr', default=None, type=int,
+                        help='Maximum number of samples for radial profiles.  If not provided, '
+                             'set by the maximum number of samples in the files to collate.  If '
+                             'provided, code still searches files, but it will use either this '
+                             'number or the maximum number of samples in the files to collate, '
+                             'whichever is smaller.')
 
     return parser.parse_args() if options is None else parser.parse_args(options)
 
@@ -181,6 +187,12 @@ def main(args):
                 max_adnr = max(max_adnr, hdu['ADPROF'].data['BINR'].shape[1])
             else:
                 maxnr = max(maxnr, hdu['FITMETA'].data['BINR'].shape[1])
+        if args.max_nr is not None:
+            maxnr = min(args.max_nr, maxnr)
+            max_adnr = min(args.max_nr, max_adnr)
+        if (args.asymdrift and maxnr == args.max_nr and max_adnr == args.max_nr) \
+                or (not args.asymdrift and maxnr == args.max_nr):
+            break
     print(f'{nf}/{nf}')
 
     # Get the data type for the output tables

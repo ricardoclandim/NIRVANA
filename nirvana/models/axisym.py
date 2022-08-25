@@ -531,6 +531,10 @@ def _fit_meta_dtype(par_names, nr, parbitmask):
             ('PLATEIFU', '<U12'),
             ('PLATE', np.int16),
             ('IFU', np.int16),
+            ('MNGTARG1', np.int32),
+            ('MNGTARG3', np.int32),
+            ('DRP3QUAL', np.int32),
+            ('DAPQUAL', np.int32),
             ('OBJRA', np.float),
             ('OBJDEC', np.float),
             # Redshift used by the DAP to (nominally) offset the velocity field
@@ -918,6 +922,10 @@ def axisym_fit_data(galmeta, kin, p0, lb, ub, disk, vmask, smask, ofile=None):
     metadata['PLATEIFU'] = f'{galmeta.plate}-{galmeta.ifu}'
     metadata['PLATE'] = galmeta.plate
     metadata['IFU'] = galmeta.ifu
+    metadata['MNGTARG1'] = galmeta.mngtarg1
+    metadata['MNGTARG3'] = galmeta.mngtarg3
+    metadata['DRP3QUAL'] = galmeta.drp3qual
+    metadata['DAPQUAL'] = galmeta.dapqual
     metadata['OBJRA'] = galmeta.ra
     metadata['OBJDEC'] = galmeta.dec
     metadata['Z'] = galmeta.z
@@ -2701,7 +2709,8 @@ def axisym_iter_fit(galmeta, kin, rctype='HyperbolicTangent', dctype='Exponentia
     # galaxies can be off center, but the detail here and how well it works
     # hasn't been well tested.
     # TODO: Should this use grid_x instead, so that it's more uniform for all
-    # IFUs?  Or should this be set as a fraction of Reff?
+    # IFUs?  Or should this be set as a fraction of Reff?  Should this be
+    # restricted to the unmasked data?
     dx = np.mean([abs(np.amin(kin.x)), abs(np.amax(kin.x))])
     dy = np.mean([abs(np.amin(kin.y)), abs(np.amax(kin.y))])
     lb, ub = disk.par_bounds(base_lb=np.array([-dx/3, -dy/3, -350., 1., -500.]),

@@ -1242,8 +1242,8 @@ class MaNGAGlobalPar(GlobalPar):
         print('    DONE')
 
         # Find the relevant row
-        indx = np.where(drpall['PLATEIFU'] == plateifu)[0]
-        if len(indx) != 1:
+        drp_indx = np.where(drpall['PLATEIFU'] == plateifu)[0]
+        if len(drp_indx) != 1:
             raise ValueError(f'Could not find {plateifu} in {drpall_file}.')
 
         # Default to the elliptical Petrosian photometric values. These are
@@ -1255,21 +1255,21 @@ class MaNGAGlobalPar(GlobalPar):
         # Index is always included, regardless of whether or not the rest of
         # the photometric measurements are based on the elliptical Petrosian
         # analysis.
-        indx = indx[0]
-        if drpall['nsa_elpetro_th50_r'][indx] > 0:
+        drp_indx = drp_indx[0]
+        if drpall['nsa_elpetro_th50_r'][drp_indx] > 0:
             phot_key = 'elpetro'
-            mass = drpall['nsa_elpetro_mass'][indx]
-            pa = drpall['nsa_elpetro_phi'][indx]
-            ell = 1. - drpall['nsa_elpetro_ba'][indx]
-            reff = drpall['nsa_elpetro_th50_r'][indx]
-            sersic_n = drpall['nsa_sersic_n'][indx]
-        elif drpall['nsa_sersic_th50'][indx] > 0:
+            mass = drpall['nsa_elpetro_mass'][drp_indx]
+            pa = drpall['nsa_elpetro_phi'][drp_indx]
+            ell = 1. - drpall['nsa_elpetro_ba'][drp_indx]
+            reff = drpall['nsa_elpetro_th50_r'][drp_indx]
+            sersic_n = drpall['nsa_sersic_n'][drp_indx]
+        elif drpall['nsa_sersic_th50'][drp_indx] > 0:
             phot_key = 'sersic'
-            mass = drpall['nsa_sersic_mass'][indx]
-            pa = drpall['nsa_sersic_phi'][indx]
-            ell = 1. - drpall['nsa_sersic_ba'][indx]
-            reff = drpall['nsa_sersic_th50'][indx]
-            sersic_n = drpall['nsa_sersic_n'][indx]
+            mass = drpall['nsa_sersic_mass'][drp_indx]
+            pa = drpall['nsa_sersic_phi'][drp_indx]
+            ell = 1. - drpall['nsa_sersic_ba'][drp_indx]
+            reff = drpall['nsa_sersic_th50'][drp_indx]
+            sersic_n = drpall['nsa_sersic_n'][drp_indx]
         else:
             warnings.warn('Photometric data unavailable; adopting bogus defaults.')
             phot_key = None
@@ -1280,37 +1280,43 @@ class MaNGAGlobalPar(GlobalPar):
             sersic_n = 1.0
 
         # For the redshift used by the DAP, we actually need the DAPall file
-        print('Using the DAPall file to set the redshift...')
+        print('Reading DAPall file ...')
         with fits.open(dapall_file) as hdu:
             # The redshift used by the DAP is independent of the DAPTYPE, so
             # just use the first extension
+            dapall = hdu[1].data
+        print('    DONE')
 
-            # Find the relevant row
-            dap_indx = np.where(hdu[1].data['PLATEIFU'] == plateifu)[0]
-            if len(dap_indx) != 1:
-                raise ValueError(f'Could not find {plateifu} in {dapall_file}.')
+        # Find the relevant row
+        dap_indx = np.where(dapall['PLATEIFU'] == plateifu)[0]
+        if len(dap_indx) != 1:
+            raise ValueError(f'Could not find {plateifu} in {dapall_file}.')
+        dap_indx = dap_indx[0]
 
-            z = hdu[1].data['Z'][dap_indx[0]]
-            if z <= -500 / constants.c.to('km/s').value:
-                warnings.warn('Redshift is <-500 km/s; adopting z=0!')
-                z = 0.
+        z = dapall['Z'][dap_indx]
+        if z <= -500 / constants.c.to('km/s').value:
+            warnings.warn('Redshift is <-500 km/s; adopting z=0!')
+            z = 0.
 
         # Instantiate the object
-        super().__init__(ra=drpall['objra'][indx], dec=drpall['objdec'][indx], mass=mass, z=z,
+        super().__init__(ra=drpall['objra'][drp_indx], dec=drpall['objdec'][drp_indx], mass=mass, z=z,
                          pa=pa, ell=ell, reff=reff, sersic_n=sersic_n, **kwargs)
 
         # Save MaNGA-specific attributes
         self.dr = 'unknown' if dr is None else dr
-        self.mangaid = drpall['mangaid'][indx]
+        self.mangaid = drpall['mangaid'][drp_indx]
         self.plate = plate
         self.ifu = ifu
         self.drpall_file = drpall_file
+        self.mngtarg1 = drpall['mngtarg1'][drp_indx]
+        self.mngtarg3 = drpall['mngtarg3'][drp_indx]
+        self.drp3qual = drpall['drp3qual'][drp_indx]
+        self.dapqual = dapall['DAPQUAL'][dap_indx]
         self.primaryplus, self.secondary, self.ancillary, self.other \
-                = parse_manga_targeting_bits(drpall['mngtarg1'][indx],
-                                             mngtarg3=drpall['mngtarg3'][indx])
+                = parse_manga_targeting_bits(self.mngtarg1, mngtarg3=self.mngtarg3)
         self.psf_band = np.array(['g', 'r', 'i', 'z'])
-        self.psf_fwhm = np.array([drpall['gfwhm'][indx], drpall['rfwhm'][indx],
-                                  drpall['ifwhm'][indx], drpall['zfwhm'][indx]])
+        self.psf_fwhm = np.array([drpall['gfwhm'][drp_indx], drpall['rfwhm'][drp_indx],
+                                  drpall['ifwhm'][drp_indx], drpall['zfwhm'][drp_indx]])
 
         # Save some of the measured magnitudes, if they're available
         self.phot_key = phot_key
@@ -1319,8 +1325,8 @@ class MaNGAGlobalPar(GlobalPar):
             self.mag = None
         else:
             self.mag_band = np.array(['NUV', 'r', 'i'])
-            self.mag = np.array([drpall[f'nsa_{self.phot_key}_absmag'][indx][1],
-                                 drpall[f'nsa_{self.phot_key}_absmag'][indx][4],
-                                 drpall[f'nsa_{self.phot_key}_absmag'][indx][5]])
+            self.mag = np.array([drpall[f'nsa_{self.phot_key}_absmag'][drp_indx][1],
+                                 drpall[f'nsa_{self.phot_key}_absmag'][drp_indx][4],
+                                 drpall[f'nsa_{self.phot_key}_absmag'][drp_indx][5]])
 
 

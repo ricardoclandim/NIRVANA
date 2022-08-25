@@ -2308,6 +2308,10 @@ def _ad_meta_dtype(nr):
             ('PLATEIFU', '<U12'),
             ('PLATE', np.int16),
             ('IFU', np.int16),
+            ('MNGTARG1', np.int32),
+            ('MNGTARG3', np.int32),
+            ('DRP3QUAL', np.int32),
+            ('DAPQUAL', np.int32),
             # Azimuthally binned radial profiles
             ('BINR', float, (nr,)),
             ('AD', float, (nr,)),
@@ -2372,6 +2376,10 @@ def asymdrift_fit_data(galmeta, kin, disk, p0, lb, ub, gas_vel_mask, gas_sig_mas
     adprof['PLATEIFU'] = f'{galmeta.plate}-{galmeta.ifu}'
     adprof['PLATE'] = galmeta.plate
     adprof['IFU'] = galmeta.ifu
+    adprof['MNGTARG1'] = galmeta.mngtarg1
+    adprof['MNGTARG3'] = galmeta.mngtarg3
+    adprof['DRP3QUAL'] = galmeta.drp3qual
+    adprof['DAPQUAL'] = galmeta.dapqual
     adprof['BINR'] = binr
     adprof['AD'] = ad_ewmean
     adprof['AD_SDEV'] = ad_ewsdev
