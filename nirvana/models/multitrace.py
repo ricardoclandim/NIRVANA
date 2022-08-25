@@ -1623,14 +1623,17 @@ def asymdrift_fit_maps(kin, disk, rstep, par=None, maj_wedge=30.):
     ados_mod_map = kin[1].remap(ados_mod.filled(0.0), mask=ados_mask)
     ados_mod_bc_map = kin[1].remap(ados_mod_bc.filled(0.0), mask=ados_mask)
 
-    # Set the radial bins
-    binr = np.arange(rstep/2, np.amax(r), rstep)
-    binw = np.full(binr.size, rstep, dtype=float)
-
     # Mask data away from the major axes
     major_gpm = select_kinematic_axis(r, th, which='major', r_range='all', wedge=maj_wedge)
     ad_indx = major_gpm & np.logical_not(ad_mask)
     ados_indx = major_gpm & np.logical_not(ados_mask)
+
+    # Set the radial bins
+    # NOTE: ad hoc maximum radius is meant to mitigate effect of minor axis
+    # points on number radial bins.  This will limit the number of off-axis
+    # points included in galaxies with inclinations > 75 deg.
+    binr = np.arange(rstep/2, min(4*np.amax(r[ad_indx]), np.amax(r)), rstep)
+    binw = np.full(binr.size, rstep, dtype=float)
 
     # Bin the data
     _, _, _, _, _, _, _, ad_ewmean, ad_ewsdev, _, _, ad_nbin, _ \

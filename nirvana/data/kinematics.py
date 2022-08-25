@@ -1837,7 +1837,10 @@ class Kinematics:
         vrad_mod = None if vel_mod is None else (_vel_mod[indx] - vsys)/np.sin(th[indx])
 
         # Get the binned data
-        binr = np.arange(rstep/2, np.amax(r), rstep)
+        # NOTE: ad hoc maximum radius is meant to mitigate effect of minor axis
+        # points on number radial bins.  This will limit the number of off-axis
+        # points included in galaxies with inclinations > 75 deg.
+        binr = np.arange(rstep/2, min(4*np.amax(vrot_r), np.amax(r)), rstep)
         binw = np.full(binr.size, rstep, dtype=float)
 
         # Projected Velocity profiles
