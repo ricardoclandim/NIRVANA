@@ -127,8 +127,11 @@ def main(args):
         dc_keys = ['GDCMOD', 'SDCMOD']
         meta_ext = ['GAS_FITMETA', 'STR_FITMETA']
     else:
-        for i in range(len(plateifu)):
-            plate, ifu = plateifu[i].split('-')
+        # NOTE: Can't loop through plate-ifu numbers in case "full" was
+        # selected.  Need to iterate through files, pull out the plate ifu and
+        # then check if both exist.
+        for f in files:
+            plate, ifu = f.name.split('-')[3:5]
             gas_file = oroot / plate / f'{nirvana_root}-{plate}-{ifu}-Gas.fits.gz'
             str_file = oroot / plate / f'{nirvana_root}-{plate}-{ifu}-Stars.fits.gz'
             if gas_file.exists() and str_file.exists():
