@@ -1559,7 +1559,7 @@ class Kinematics:
             # Observation
             ax.text(0.00, -0.12, 'Observation:', ha='left', va='center', transform=ax.transAxes,
                     fontsize=10)
-            ax.text(1.01, -0.12, f'{galmeta.plate}-{galmeta.ifu}', ha='right', va='center',
+            ax.text(1.01, -0.12, galmeta.plateifu, ha='right', va='center',
                     transform=ax.transAxes, fontsize=10)
         # Observation
         ax.text(0.00, -0.19, r'$V_{\rm asym}$ (all: x, y, xy)', ha='left', va='center',
@@ -1840,7 +1840,9 @@ class Kinematics:
         # NOTE: ad hoc maximum radius is meant to mitigate effect of minor axis
         # points on number radial bins.  This will limit the number of off-axis
         # points included in galaxies with inclinations > 75 deg.
-        binr = np.arange(rstep/2, min(4*np.amax(vrot_r), np.amax(r)), rstep)
+        maxr = min(4*np.amax(vrot_r), np.amax(r))
+        binr = np.array([rstep/2]) if maxr < rstep/2 else np.arange(rstep/2, maxr, rstep)
+#        binr = np.arange(rstep/2, min(4*np.amax(vrot_r), np.amax(r)), rstep)
         binw = np.full(binr.size, rstep, dtype=float)
 
         # Projected Velocity profiles

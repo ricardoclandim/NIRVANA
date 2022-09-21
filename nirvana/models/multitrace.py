@@ -1202,7 +1202,7 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
     # Observation
     ax.text(0.00, -0.13, 'Observation:', ha='left', va='center', transform=ax.transAxes,
             fontsize=10)
-    ax.text(1.01, -0.13, f'{galmeta.plate}-{galmeta.ifu}', ha='right', va='center',
+    ax.text(1.01, -0.13, galmeta.plateifu, ha='right', va='center',
             transform=ax.transAxes, fontsize=10)
     # Sample selection
     ax.text(0.00, -0.21, 'Sample:', ha='left', va='center', transform=ax.transAxes, fontsize=10)
@@ -1632,7 +1632,9 @@ def asymdrift_fit_maps(kin, disk, rstep, par=None, maj_wedge=30.):
     # NOTE: ad hoc maximum radius is meant to mitigate effect of minor axis
     # points on number radial bins.  This will limit the number of off-axis
     # points included in galaxies with inclinations > 75 deg.
-    binr = np.arange(rstep/2, min(4*np.amax(r[ad_indx]), np.amax(r)), rstep)
+    maxr = min(4*np.amax(r[ad_indx]), np.amax(r))
+    binr = np.array([rstep/2]) if maxr < rstep/2 else np.arange(rstep/2, maxr, rstep)
+    #binr = np.arange(rstep/2, min(4*np.amax(r[ad_indx]), np.amax(r)), rstep)
     binw = np.full(binr.size, rstep, dtype=float)
 
     # Bin the data
@@ -2309,12 +2311,6 @@ def _ad_meta_dtype(nr):
     """
     return [('MANGAID', '<U30'),
             ('PLATEIFU', '<U12'),
-            ('PLATE', np.int16),
-            ('IFU', np.int16),
-            ('MNGTARG1', np.int32),
-            ('MNGTARG3', np.int32),
-            ('DRP3QUAL', np.int32),
-            ('DAPQUAL', np.int32),
             # Azimuthally binned radial profiles
             ('BINR', float, (nr,)),
             ('AD', float, (nr,)),
@@ -2346,6 +2342,14 @@ def asymdrift_fit_data(galmeta, kin, disk, p0, lb, ub, gas_vel_mask, gas_sig_mas
     # Create the output data file
     # - Ensure the best-fitting parameters have been distributed to the disks
     disk.distribute_par()
+    # - Propagate the global fit assessments/flags to each tracer-specific disk
+    # object
+    disk[0].global_mask = disk.global_mask
+    disk[0].fit_status = disk.fit_status
+    disk[0].fit_success = disk.fit_success
+    disk[1].global_mask = disk.global_mask
+    disk[1].fit_status = disk.fit_status
+    disk[1].fit_success = disk.fit_success
     # - Get the output data for the gas
     gas_slice = disk.disk_slice(0)
     gas_hdu = axisym.axisym_fit_data(galmeta, kin[0], p0[gas_slice], lb[gas_slice], ub[gas_slice],
@@ -2376,13 +2380,7 @@ def asymdrift_fit_data(galmeta, kin, disk, p0, lb, ub, gas_vel_mask, gas_sig_mas
 
     adprof = fileio.init_record_array(1, _ad_meta_dtype(binr.size))
     adprof['MANGAID'] = galmeta.mangaid
-    adprof['PLATEIFU'] = f'{galmeta.plate}-{galmeta.ifu}'
-    adprof['PLATE'] = galmeta.plate
-    adprof['IFU'] = galmeta.ifu
-    adprof['MNGTARG1'] = galmeta.mngtarg1
-    adprof['MNGTARG3'] = galmeta.mngtarg3
-    adprof['DRP3QUAL'] = galmeta.drp3qual
-    adprof['DAPQUAL'] = galmeta.dapqual
+    adprof['PLATEIFU'] = galmeta.plateifu
     adprof['BINR'] = binr
     adprof['AD'] = ad_ewmean
     adprof['AD_SDEV'] = ad_ewsdev

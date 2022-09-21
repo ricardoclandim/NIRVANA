@@ -12,7 +12,7 @@ import numpy as np
 from astropy.io import fits
 
 import nirvana
-from nirvana.data.manga import manga_paths, manga_file_names
+from nirvana.data.manga import manga_paths, manga_file_names, MaNGAGlobalPar
 from nirvana.models.axisym import AxisymmetricDisk, _fit_meta_dtype
 from nirvana.models.oned import Func1D
 from nirvana.models.multitrace import _ad_meta_dtype
@@ -40,11 +40,18 @@ def parse_args(options=None):
     parser.add_argument('--dr', default='MPL-11', type=str,
                         help='The MaNGA data release.  This is only used to automatically '
                              'construct the MaNGA DRPall and DAPall file names.')
+    parser.add_argument('--redux', default=None, type=str,
+                        help='Top-level directory with the MaNGA DRP output.  If not defined and '
+                             'the direct root to the files is also not defined (see --root), '
+                             'this is set by the environmental variable MANGA_SPECTRO_REDUX.')
     parser.add_argument('--analysis', default=None, type=str,
                         help='Top-level directory with the MaNGA DAP output.  If not defined, '
                              'this is set by the environmental variable MANGA_SPECTRO_ANALYSIS.  '
                              'This is only used to automatically construct the MaNGA DRPall and '
                              'DAPall file names.')
+    parser.add_argument('--drpall', default=None, type=str,
+                        help='The full path to the MaNGA DRPall file.  If None, the file name '
+                             'is constructed assuming the default paths.')
     parser.add_argument('--dapall', default=None, type=str,
                         help='The full path to the MaNGA DAPall file.  If None, the file name '
                              'is constructed assuming the default paths.')
@@ -115,14 +122,19 @@ def main(args):
         compress = False
 
     # Attempt to find the DRPall and DAPall files
-    if args.dapall is None:
-        _dapall_path = Path(manga_paths(0, 0, dr=args.dr, analysis_path=args.analysis)[3]).resolve()
-        _dapall_file = manga_file_names(0, 0, dr=args.dr)[3]
-        _dapall_file = _dapall_path / _dapall_file
-    else:
-        _dapall_file = Path(args.dapall).resolve()
+    if args.drpall is None or args.dapall is None:
+        _drpall_path, _, _, _dapall_path, _ \
+                = manga_paths(0, 0, dr=args.dr, redux_path=args.redux, analysis_path=args.analysis)
+        _drpall_file, _, _, _dapall_file, _ \
+                = manga_file_names(0, 0, dr=args.dr)
+    _drpall_file = (Path(_drpall_path).resolve() / _drpall_file) \
+                        if args.drpall is None else Path(args.drpall).resolve()
+    if not _drpall_file.exists():
+        raise FileNotFoundError(f'DRPall file {_drpall_file} does not exist!')
+    _dapall_file = (Path(_dapall_path).resolve() / _dapall_file) \
+                        if args.dapall is None else Path(args.dapall).resolve()
     if not _dapall_file.exists():
-        raise FileNotFoundError(f'{_dapall_file} does not exist!')
+        raise FileNotFoundError(f'DAPall file {_dapall_file} does not exist!')
 
     # Find the first pair of Gas and Stars files, if files are not asymdrift
     # fits
@@ -200,16 +212,21 @@ def main(args):
     _str_dtype = _fit_meta_dtype(str_disk.par_names(short=True), maxnr, str_disk.mbm)
     gas_meta_keys = [d[0] for d in _gas_dtype]
     str_meta_keys = [d[0] for d in _str_dtype]
-    _gas_dtype += [('DRPALLINDX', np.int), ('DAPALLINDX', np.int), ('FINISHED', np.int),
-                   ('QUAL', np.int)]
-    _str_dtype += [('DRPALLINDX', np.int), ('DAPALLINDX', np.int), ('FINISHED', np.int),
-                   ('QUAL', np.int)]
+    # Added columns are:
+    #   FINISHED:   Flag that the observation has the correct fit type and that
+    #               the output files exist
+    #   QUAL:       A bitmask quality flag pulled from the primary header of the
+    #               primary fit output file; see nirvana.models.thindisk.ThinDiskGlobalBitMask
+    _gas_dtype += [('FINISHED', np.int), ('QUAL', np.int)]
+    _str_dtype += [('FINISHED', np.int), ('QUAL', np.int)]
     if args.asymdrift:
         _ad_dtype = _ad_meta_dtype(max_adnr)
         ad_meta_keys = [d[0] for d in _ad_dtype]
-        _ad_dtype += [('DRPALLINDX', np.int), ('DAPALLINDX', np.int), ('FINISHED', np.int),
-                      ('QUAL', np.int)]
+        _ad_dtype += [('FINISHED', np.int), ('QUAL', np.int)]
 
+    # Read the DRPall file
+    with fits.open(_drpall_file) as hdu:
+        drpall = hdu['MANGA'].data
     # Read the DAPall file
     with fits.open(_dapall_file) as hdu:
         dapall = hdu[args.daptype].data
@@ -225,14 +242,40 @@ def main(args):
         ad_metadata = fileio.init_record_array(indx.size, _ad_dtype)
     for i, j in enumerate(indx):
         print(f'Collating {i+1}/{indx.size}', end='\r')
-        plate = dapall['PLATE'][j]
-        ifu = dapall['IFUDESIGN'][j]
 
-        gas_metadata['DRPALLINDX'][i] = dapall['DRPALLINDX'][j]
-        gas_metadata['DAPALLINDX'][i] = j
-        gas_file = f'{nirvana_root}-{plate}-{ifu}.fits.gz' if args.asymdrift \
-                        else f'{nirvana_root}-{plate}-{ifu}-Gas.fits.gz'
-        gas_file = oroot / str(plate) / gas_file
+        galmeta = MaNGAGlobalPar(dapall['PLATE'][j], dapall['IFUDESIGN'][j], drpall=drpall,
+                                 dapall=dapall)
+
+#        assert galmeta.dapindx == j, 'Bad match'
+
+        # Save all the metadata regardless of whether or not the galaxy was fit
+        gas_metadata['MANGAID'][i] = str_metadata['MANGAID'][i] = galmeta.mangaid
+        ad_metadata['MANGAID'][i] = galmeta.mangaid
+        gas_metadata['PLATEIFU'][i] = str_metadata['PLATEIFU'][i] = galmeta.plateifu
+        ad_metadata['PLATEIFU'][i] = galmeta.plateifu
+        gas_metadata['PLATE'][i] = str_metadata['PLATE'][i] = galmeta.plate
+        gas_metadata['IFU'][i] = str_metadata['IFU'][i] = galmeta.ifu
+        gas_metadata['MNGTARG1'][i] = str_metadata['MNGTARG1'][i] = galmeta.mngtarg1
+        gas_metadata['MNGTARG3'][i] = str_metadata['MNGTARG3'][i] = galmeta.mngtarg3
+        gas_metadata['DRP3QUAL'][i] = str_metadata['DRP3QUAL'][i] = galmeta.drp3qual
+        gas_metadata['DAPQUAL'][i] = str_metadata['DAPQUAL'][i] = galmeta.dapqual
+        gas_metadata['OBJRA'][i] = str_metadata['OBJRA'][i] = galmeta.ra
+        gas_metadata['OBJDEC'][i] = str_metadata['OBJDEC'][i] = galmeta.dec
+        gas_metadata['DRPALLINDX'][i] = str_metadata['DRPALLINDX'][i] = galmeta.drpindx
+        gas_metadata['DAPALLINDX'][i] = str_metadata['DAPALLINDX'][i] = galmeta.dapindx
+        gas_metadata['Z'][i] = str_metadata['Z'][i] = galmeta.z
+        gas_metadata['ASEC2KPC'][i] = str_metadata['ASEC2KPC'][i] = galmeta.kpc_per_arcsec()
+        gas_metadata['PHOTKEY'][i] = str_metadata['PHOTKEY'][i] = galmeta.phot_key
+        gas_metadata['REFF'][i] = str_metadata['REFF'][i] = galmeta.reff
+        gas_metadata['SERSICN'][i] = str_metadata['SERSICN'][i] = galmeta.sersic_n
+        gas_metadata['PA'][i] = str_metadata['PA'][i] = galmeta.pa
+        gas_metadata['ELL'][i] = str_metadata['ELL'][i] = galmeta.ell
+        gas_metadata['Q0'][i] = str_metadata['Q0'][i] = galmeta.q0
+
+        # Add the gas data
+        gas_file = f'{nirvana_root}-{galmeta.plateifu}.fits.gz' if args.asymdrift \
+                        else f'{nirvana_root}-{galmeta.plateifu}-Gas.fits.gz'
+        gas_file = oroot / str(galmeta.plate) / gas_file
         if gas_file.exists():
             with fits.open(gas_file) as hdu:
                 # Confirm the output has the expected model parameterization
@@ -262,16 +305,11 @@ def main(args):
             # Toggle flag
             gas_metadata['QUAL'][i] \
                     = gas_disk.gbm.turn_on(gas_disk.gbm.minimum_dtype()(0), 'NOMODEL')
-            # And save the identifier information
-            gas_metadata['MANGAID'][i] = dapall['MANGAID'][j]
-            gas_metadata['PLATE'][i] = plate
-            gas_metadata['IFU'][i] = ifu
 
-        str_metadata['DRPALLINDX'][i] = dapall['DRPALLINDX'][j]
-        str_metadata['DAPALLINDX'][i] = j
-        str_file = f'{nirvana_root}-{plate}-{ifu}.fits.gz' if args.asymdrift \
-                        else f'{nirvana_root}-{plate}-{ifu}-Stars.fits.gz'
-        str_file = oroot / str(plate) / str_file
+        # Add the stellar data
+        str_file = f'{nirvana_root}-{galmeta.plateifu}.fits.gz' if args.asymdrift \
+                        else f'{nirvana_root}-{galmeta.plateifu}-Stars.fits.gz'
+        str_file = oroot / str(galmeta.plate) / str_file
         if str_file.exists():
             with fits.open(str_file) as hdu:
                 # Confirm the output has the expected model parameterization
@@ -301,17 +339,12 @@ def main(args):
             # Toggle flag
             str_metadata['QUAL'][i] \
                     = str_disk.gbm.turn_on(str_disk.gbm.minimum_dtype()(0), 'NOMODEL')
-            # And save the identifier information
-            str_metadata['MANGAID'][i] = dapall['MANGAID'][j]
-            str_metadata['PLATE'][i] = plate
-            str_metadata['IFU'][i] = ifu
 
         if not args.asymdrift:
             continue
 
-        ad_metadata['DRPALLINDX'][i] = dapall['DRPALLINDX'][j]
-        ad_metadata['DAPALLINDX'][i] = j
-        ad_file = oroot / str(plate) / f'{nirvana_root}-{plate}-{ifu}.fits.gz' 
+        # Add the AD data
+        ad_file = oroot / str(galmeta.plate) / f'{nirvana_root}-{galmeta.plateifu}.fits.gz' 
         if ad_file.exists():
             with fits.open(ad_file) as hdu:
                 # TODO: Confirm the output has the expected model parameterization?
@@ -332,10 +365,6 @@ def main(args):
             # same, so it doesn't matter.
             ad_metadata['QUAL'][i] \
                     = str_disk.gbm.turn_on(str_disk.gbm.minimum_dtype()(0), 'NOMODEL')
-            # And save the identifier information
-            ad_metadata['MANGAID'][i] = dapall['MANGAID'][j]
-            ad_metadata['PLATE'][i] = plate
-            ad_metadata['IFU'][i] = ifu
 
     print(f'Collating {indx.size}/{indx.size}')
 
@@ -356,18 +385,18 @@ def main(args):
                         [fits.Column(name=n, format=fileio.rec_to_fits_type(gas_metadata[n]),
                                      dim=fileio.rec_to_fits_col_dim(gas_metadata[n]),
                                      array=gas_metadata[n]) for n in gas_metadata.dtype.names],
-                        name='GAS', header=gas_hdr),
+                            name='GAS', header=gas_hdr),
             fits.BinTableHDU.from_columns(
                         [fits.Column(name=n, format=fileio.rec_to_fits_type(str_metadata[n]),
                                      dim=fileio.rec_to_fits_col_dim(str_metadata[n]),
                                      array=str_metadata[n]) for n in str_metadata.dtype.names],
-                        name='STARS', header=str_hdr)]
+                            name='STARS', header=str_hdr)]
     if args.asymdrift:
         hdus += [fits.BinTableHDU.from_columns(
                             [fits.Column(name=n, format=fileio.rec_to_fits_type(ad_metadata[n]),
                                      dim=fileio.rec_to_fits_col_dim(ad_metadata[n]),
                                      array=ad_metadata[n]) for n in ad_metadata.dtype.names],
-                            name='AD')]
+                                name='AD')]
     fits.HDUList(hdus).writeto(_ofile, overwrite=True, checksum=True)
     if compress:
         # Compress the file

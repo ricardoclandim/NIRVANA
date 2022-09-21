@@ -168,10 +168,10 @@ def initialize_primary_header(galmeta=None):
     if galmeta is not None:
         hdr['MANGADR'] = (galmeta.dr, 'MaNGA Data Release')
         hdr['MANGAID'] = (galmeta.mangaid, 'MaNGA ID number')
-        hdr['PLATEIFU'] = (f'{galmeta.plate}-{galmeta.ifu}', 'MaNGA observation plate and IFU')
+        hdr['PLATEIFU'] = (galmeta.plateifu, 'MaNGA observation plate and IFU')
 
     # Add versioning
-    hdr['VERSPY'] = ('.'.join([ str(v) for v in sys.version_info[:3]]), 'Python version')
+    hdr['VERSPY'] = ('.'.join([str(v) for v in sys.version_info[:3]]), 'Python version')
     hdr['VERSNP'] = (np.__version__, 'Numpy version')
     hdr['VERSSCI'] = (scipy.__version__, 'Scipy version')
     hdr['VERSAST'] = (astropy.__version__, 'Astropy version')

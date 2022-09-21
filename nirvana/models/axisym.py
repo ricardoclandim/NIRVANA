@@ -537,11 +537,15 @@ def _fit_meta_dtype(par_names, nr, parbitmask):
             ('DAPQUAL', np.int32),
             ('OBJRA', np.float),
             ('OBJDEC', np.float),
+            ('DRPALLINDX', np.int),
+            ('DAPALLINDX', np.int),
             # Redshift used by the DAP to (nominally) offset the velocity field
             # to 0 bulk velocity.
             ('Z', np.float),
             # The conversion factor used to convert arcseconds to kpc
             ('ASEC2KPC', np.float),
+            # The photometric data used; should be elpetro or sersic
+            ('PHOTKEY', '<U8'),
             # NSA-fit effective radius in arcseconds
             ('REFF', np.float),
             # NSA-fit Sersic index
@@ -647,7 +651,7 @@ def _fit_meta_dtype(par_names, nr, parbitmask):
             ('RCHI2', np.float),
             # Status index of the fit returned by scipy.optimize.least_squares
             ('STATUS', np.int),
-            # A simple boolean indication that the fit did not fault
+            # Flag that the fit (scipy.optimize) reported a successful fit
             ('SUCCESS', np.int),
             # Azimuthally binned radial profiles
             ('BINR', float, (nr,)),
@@ -919,7 +923,7 @@ def axisym_fit_data(galmeta, kin, p0, lb, ub, disk, vmask, smask, ofile=None):
 
     # Fill the fit-independent data
     metadata['MANGAID'] = galmeta.mangaid
-    metadata['PLATEIFU'] = f'{galmeta.plate}-{galmeta.ifu}'
+    metadata['PLATEIFU'] = galmeta.plateifu
     metadata['PLATE'] = galmeta.plate
     metadata['IFU'] = galmeta.ifu
     metadata['MNGTARG1'] = galmeta.mngtarg1
@@ -928,8 +932,11 @@ def axisym_fit_data(galmeta, kin, p0, lb, ub, disk, vmask, smask, ofile=None):
     metadata['DAPQUAL'] = galmeta.dapqual
     metadata['OBJRA'] = galmeta.ra
     metadata['OBJDEC'] = galmeta.dec
+    metadata['DRPALLINDX'] = galmeta.drpindx
+    metadata['DAPALLINDX'] = galmeta.dapindx
     metadata['Z'] = galmeta.z
     metadata['ASEC2KPC'] = galmeta.kpc_per_arcsec()
+    metadata['PHOTKEY'] = galmeta.phot_key
     metadata['REFF'] = galmeta.reff
     metadata['SERSICN'] = galmeta.sersic_n
     metadata['PA'] = galmeta.pa
@@ -1114,7 +1121,7 @@ def axisym_fit_data(galmeta, kin, p0, lb, ub, disk, vmask, smask, ofile=None):
         psfhdr['PSFNAME'] = (kin.psf_name, 'Original PSF name, if known')
     #   - Table header
     tblhdr = prihdr.copy()
-    tblhdr['PHOT_KEY'] = 'none' if galmeta.phot_key is None else galmeta.phot_key
+#    tblhdr['PHOT_KEY'] = 'none' if galmeta.phot_key is None else galmeta.phot_key
     disk.pbm.to_header(tblhdr)
 
     hdus = [fits.PrimaryHDU(header=prihdr),
@@ -1800,7 +1807,7 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
     # Observation
     ax.text(0.00, -0.13, 'Observation:', ha='left', va='center', transform=ax.transAxes,
             fontsize=10)
-    ax.text(1.01, -0.13, f'{galmeta.plate}-{galmeta.ifu}', ha='right', va='center',
+    ax.text(1.01, -0.13, galmeta.plateifu, ha='right', va='center',
             transform=ax.transAxes, fontsize=10)
     # Kinematic tracer
     ax.text(0.00, -0.21, 'Tracer:', ha='left', va='center', transform=ax.transAxes,
@@ -2433,7 +2440,7 @@ def axisym_fit_plot_masks(galmeta, kin, disk, vel_mask, sig_mask, ofile=None):
     # Observation
     ax.text(0.00, -0.13, 'Observation:', ha='left', va='center', transform=ax.transAxes,
             fontsize=10)
-    ax.text(1.01, -0.13, f'{galmeta.plate}-{galmeta.ifu}', ha='right', va='center',
+    ax.text(1.01, -0.13, galmeta.plateifu, ha='right', va='center',
             transform=ax.transAxes, fontsize=10)
     # Sample selection
     ax.text(0.00, -0.21, 'Sample:', ha='left', va='center', transform=ax.transAxes, fontsize=10)
