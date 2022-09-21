@@ -531,14 +531,14 @@ def _fit_meta_dtype(par_names, nr, parbitmask):
             ('PLATEIFU', '<U12'),
             ('PLATE', np.int16),
             ('IFU', np.int16),
+            ('DRPALLINDX', np.int),
+            ('DAPALLINDX', np.int),
             ('MNGTARG1', np.int32),
             ('MNGTARG3', np.int32),
             ('DRP3QUAL', np.int32),
             ('DAPQUAL', np.int32),
             ('OBJRA', np.float),
             ('OBJDEC', np.float),
-            ('DRPALLINDX', np.int),
-            ('DAPALLINDX', np.int),
             # Redshift used by the DAP to (nominally) offset the velocity field
             # to 0 bulk velocity.
             ('Z', np.float),
@@ -926,14 +926,14 @@ def axisym_fit_data(galmeta, kin, p0, lb, ub, disk, vmask, smask, ofile=None):
     metadata['PLATEIFU'] = galmeta.plateifu
     metadata['PLATE'] = galmeta.plate
     metadata['IFU'] = galmeta.ifu
+    metadata['DRPALLINDX'] = galmeta.drpindx
+    metadata['DAPALLINDX'] = galmeta.dapindx
     metadata['MNGTARG1'] = galmeta.mngtarg1
     metadata['MNGTARG3'] = galmeta.mngtarg3
     metadata['DRP3QUAL'] = galmeta.drp3qual
     metadata['DAPQUAL'] = galmeta.dapqual
     metadata['OBJRA'] = galmeta.ra
     metadata['OBJDEC'] = galmeta.dec
-    metadata['DRPALLINDX'] = galmeta.drpindx
-    metadata['DAPALLINDX'] = galmeta.dapindx
     metadata['Z'] = galmeta.z
     metadata['ASEC2KPC'] = galmeta.kpc_per_arcsec()
     metadata['PHOTKEY'] = galmeta.phot_key

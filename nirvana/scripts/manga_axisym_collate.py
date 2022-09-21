@@ -250,19 +250,20 @@ def main(args):
 
         # Save all the metadata regardless of whether or not the galaxy was fit
         gas_metadata['MANGAID'][i] = str_metadata['MANGAID'][i] = galmeta.mangaid
-        ad_metadata['MANGAID'][i] = galmeta.mangaid
         gas_metadata['PLATEIFU'][i] = str_metadata['PLATEIFU'][i] = galmeta.plateifu
-        ad_metadata['PLATEIFU'][i] = galmeta.plateifu
+        if args.asymdrift:
+            ad_metadata['MANGAID'][i] = galmeta.mangaid
+            ad_metadata['PLATEIFU'][i] = galmeta.plateifu
         gas_metadata['PLATE'][i] = str_metadata['PLATE'][i] = galmeta.plate
         gas_metadata['IFU'][i] = str_metadata['IFU'][i] = galmeta.ifu
+        gas_metadata['DRPALLINDX'][i] = str_metadata['DRPALLINDX'][i] = galmeta.drpindx
+        gas_metadata['DAPALLINDX'][i] = str_metadata['DAPALLINDX'][i] = galmeta.dapindx
         gas_metadata['MNGTARG1'][i] = str_metadata['MNGTARG1'][i] = galmeta.mngtarg1
         gas_metadata['MNGTARG3'][i] = str_metadata['MNGTARG3'][i] = galmeta.mngtarg3
         gas_metadata['DRP3QUAL'][i] = str_metadata['DRP3QUAL'][i] = galmeta.drp3qual
         gas_metadata['DAPQUAL'][i] = str_metadata['DAPQUAL'][i] = galmeta.dapqual
         gas_metadata['OBJRA'][i] = str_metadata['OBJRA'][i] = galmeta.ra
         gas_metadata['OBJDEC'][i] = str_metadata['OBJDEC'][i] = galmeta.dec
-        gas_metadata['DRPALLINDX'][i] = str_metadata['DRPALLINDX'][i] = galmeta.drpindx
-        gas_metadata['DAPALLINDX'][i] = str_metadata['DAPALLINDX'][i] = galmeta.dapindx
         gas_metadata['Z'][i] = str_metadata['Z'][i] = galmeta.z
         gas_metadata['ASEC2KPC'][i] = str_metadata['ASEC2KPC'][i] = galmeta.kpc_per_arcsec()
         gas_metadata['PHOTKEY'][i] = str_metadata['PHOTKEY'][i] = galmeta.phot_key
