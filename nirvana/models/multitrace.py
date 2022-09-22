@@ -1632,7 +1632,7 @@ def asymdrift_fit_maps(kin, disk, rstep, par=None, maj_wedge=30.):
     # NOTE: ad hoc maximum radius is meant to mitigate effect of minor axis
     # points on number radial bins.  This will limit the number of off-axis
     # points included in galaxies with inclinations > 75 deg.
-    maxr = min(4*np.amax(r[ad_indx]), np.amax(r))
+    maxr = min(4*np.amax(r[ad_indx]), np.amax(r)) if np.any(ad_indx) else np.amax(r)
     binr = np.array([rstep/2]) if maxr < rstep/2 else np.arange(rstep/2, maxr, rstep)
     #binr = np.arange(rstep/2, min(4*np.amax(r[ad_indx]), np.amax(r)), rstep)
     binw = np.full(binr.size, rstep, dtype=float)

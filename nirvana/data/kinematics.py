@@ -1840,7 +1840,7 @@ class Kinematics:
         # NOTE: ad hoc maximum radius is meant to mitigate effect of minor axis
         # points on number radial bins.  This will limit the number of off-axis
         # points included in galaxies with inclinations > 75 deg.
-        maxr = min(4*np.amax(vrot_r), np.amax(r))
+        maxr = min(4*np.amax(vrot_r), np.amax(r)) if len(vrot_r) > 0 else np.amax(r)
         binr = np.array([rstep/2]) if maxr < rstep/2 else np.arange(rstep/2, maxr, rstep)
 #        binr = np.arange(rstep/2, min(4*np.amax(vrot_r), np.amax(r)), rstep)
         binw = np.full(binr.size, rstep, dtype=float)
