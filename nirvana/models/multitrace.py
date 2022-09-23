@@ -809,7 +809,10 @@ def asymdrift_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofi
                                          vsys=disk.disk[i].par[4], maj_wedge=maj_wedge)
 
     # Get the 1D model profiles
-    maxr = np.amax(np.concatenate(spax_vrot_r+spax_smaj_r))
+    # NOTE: This catches cases when there is no data, which makes the plot
+    # useless, but it avoids a fault.
+    maxr = rstep if len(spax_vrot_r) == 0 and len(spax_smaj_r) == 0 \
+                else np.amax(np.concatenate(spax_vrot_r+spax_smaj_r))
     modelr = np.arange(0, maxr, 0.1)
     vrotm = [None]*2
     smajm = [None]*2
