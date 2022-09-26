@@ -194,11 +194,23 @@ def main(args):
         print(f'{i+1}/{nf}', end='\r')
         with fits.open(f) as hdu:
             if args.asymdrift:
-                maxnr = max(maxnr, hdu['GAS_FITMETA'].data['BINR'].shape[1])
-                maxnr = max(maxnr, hdu['STR_FITMETA'].data['BINR'].shape[1])
-                max_adnr = max(max_adnr, hdu['ADPROF'].data['BINR'].shape[1])
+                try:
+                    maxnr = max(maxnr, hdu['GAS_FITMETA'].data['BINR'].shape[1])
+                except:
+                    maxnr = max(maxnr, 1)
+                try:
+                    maxnr = max(maxnr, hdu['STR_FITMETA'].data['BINR'].shape[1])
+                except:
+                    maxnr = max(maxnr, 1)
+                try:
+                    max_adnr = max(max_adnr, hdu['ADPROF'].data['BINR'].shape[1])
+                except:
+                    max_adnr = max(max_adnr, 1)
             else:
-                maxnr = max(maxnr, hdu['FITMETA'].data['BINR'].shape[1])
+                try:
+                    maxnr = max(maxnr, hdu['FITMETA'].data['BINR'].shape[1])
+                except:
+                    maxnr = max(maxnr, 1)
         if args.max_nr is not None:
             maxnr = min(args.max_nr, maxnr)
             max_adnr = min(args.max_nr, max_adnr)
