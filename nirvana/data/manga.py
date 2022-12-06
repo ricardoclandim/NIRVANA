@@ -1249,9 +1249,9 @@ class MaNGAGlobalPar(GlobalPar):
                 dapall_file = manga_file_names(plate, ifu, dr=dr)[3]
                 if dapall_path is None:
                     # Get the default path
-                    dapall_path = manga_paths(plate, ifu, dr=dr, redux_path=redux_path)[3]
+                    dapall_path = manga_paths(plate, ifu, dr=dr, analysis_path=analysis_path)[3]
                 if dapall_path is None:
-                    raise ValueError('Could not define path to the DRPall file.')
+                    raise ValueError('Could not define path to the DAPall file.')
                 dapall_file = os.path.join(dapall_path, dapall_file)
             # For the redshift used by the DAP, we actually need the DAPall file
             print('Reading DAPall file ...')

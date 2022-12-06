@@ -183,7 +183,7 @@ def main(args):
 
     # Setup the metadata
     galmeta = manga.MaNGAGlobalPar(args.plate, args.ifu, redux_path=args.redux, dr=args.dr,
-                                   drpall_path=args.root)
+                                   drpall_path=args.root, analysis_path=args.analysis)
     #---------------------------------------------------------------------------
 
     # Run the iterative fit
