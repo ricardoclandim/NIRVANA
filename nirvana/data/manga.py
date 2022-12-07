@@ -339,8 +339,7 @@ def manga_files_from_plateifu(plate, ifu, daptype='HYB10-MILESHC-MASTARHC2', dr=
 
 # TODO: Break this into two functions to download the DRPall and DAPall file
 # separately?
-def download_catalogs(dr='DR17', oroot=None, redux_path=None, analysis_path=None, overwrite=True,
-                      sasurl='https://data.sdss.org/sas/mangawork/manga/spectro'):
+def download_catalogs(dr='DR17', oroot=None, redux_path=None, analysis_path=None, overwrite=True):
     """
     Download the two main MaNGA catalog files, the DRPall and DAPall files.
 
@@ -360,8 +359,6 @@ def download_catalogs(dr='DR17', oroot=None, redux_path=None, analysis_path=None
             environmental variable, if it is defined.
         overwrite (:obj:`bool`, optional):
             Overwrite existing files.
-        sasurl (:obj:`str`, optional):
-            Top-level Science Archive Server url with the MaNGA data.
 
     Returns:
         :obj:`tuple`: The names of the two downloaded files: (1) the DRPall
@@ -381,8 +378,10 @@ def download_catalogs(dr='DR17', oroot=None, redux_path=None, analysis_path=None
         # credentials?
         user, acc, password = NETRC.authenticators('data.sdss.org')
         auth = (user, password)
+        sasurl = 'https://data.sdss.org/sas/mangawork/manga/spectro'
     else:
         auth = None
+        sasurl = f'https://data.sdss.org/sas/{dr.lower()}/manga/spectro'
 
     # Get the default relative paths, relative to the top-level reduction and
     # analysis paths
@@ -439,8 +438,7 @@ def download_catalogs(dr='DR17', oroot=None, redux_path=None, analysis_path=None
 
 
 def download_plateifu(plate, ifu, daptype='HYB10-MILESHC-MASTARHC2', dr='DR17', oroot=None, 
-                      redux_path=None, analysis_path=None, overwrite=True,
-                      sasurl='https://data.sdss.org/sas/mangawork/manga/spectro'):
+                      redux_path=None, analysis_path=None, overwrite=True):
     """
     Download the individual plate-ifu MaNGA data files.
 
@@ -471,8 +469,6 @@ def download_plateifu(plate, ifu, daptype='HYB10-MILESHC-MASTARHC2', dr='DR17', 
             environmental variable, if it is defined.
         overwrite (:obj:`bool`, optional):
             Overwrite existing files.
-        sasurl (:obj:`str`, optional):
-            Top-level Science Archive Server url with the MaNGA data.
 
     Returns:
         :obj:`tuple`: The names of the three downloaded files: (1) the DRP
@@ -493,8 +489,10 @@ def download_plateifu(plate, ifu, daptype='HYB10-MILESHC-MASTARHC2', dr='DR17', 
         # credentials?
         user, acc, password = NETRC.authenticators('data.sdss.org')
         auth = (user, password)
+        sasurl = 'https://data.sdss.org/sas/mangawork/manga/spectro'
     else:
         auth = None
+        sasurl = f'https://data.sdss.org/sas/{dr.lower()}/manga/spectro'
 
     # Get the default relative paths
     _, sas_cube_path, sas_image_path, _, sas_maps_path \
