@@ -55,7 +55,7 @@ To install NIRVANA dependencies, run:
     
     
 Run the code
-------------
+============
 
 You need first to download DAPall and DRPall files. This is done through
 
