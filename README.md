@@ -15,7 +15,6 @@ Clone the repo
 To download the DAP software and associated data, clone the `mangadap
 GitHub repo`_ by executing:
 
-.. code-block:: console
 
         git clone --single-branch --branch asymdrift  https://github.com/kbwestfall/NIRVANA.git
 
@@ -35,13 +34,11 @@ Install the NIRVANA from source
 The preferred method to install NIRVANA and ensure its dependencies are
 met is to, from the top-level, ``NIRVANA`` directory, run:
 
-.. code-block:: console
 
     pip install -e .
 
 This approach is preferred because it eases uninstalling the code:
 
-.. code-block:: console
     
     pip uninstall nirvana
 
@@ -53,7 +50,6 @@ session.
 
 To install NIRVANA dependencies, run:
 
-.. code-block:: console
 
     pip install -r requirements.txt
     
@@ -62,7 +58,6 @@ To install NIRVANA dependencies, run:
 
 You need first to download DAPall and DRPall files. This is done through
 
-.. code-block:: console
 
       nirvana_manga_catalogs --redux ./redux/ --analysis ./analysis/ --dr DR17
       
@@ -72,7 +67,6 @@ The files dapall-v3_1_1-3.1.0.fits and drpall-v3_1_1.fits will be downloaded in 
 
 To download specific data you want to analyze, run
 
-.. code-block:: console
 
      nirvana_manga_download 8485 1901 --redux ./redux/ --analysis ./analysis/ --dr DR17
      
@@ -82,7 +76,6 @@ The necessary data from MaNGA plate identifier (e.g., 8485) and ifu identifier (
 
 To analyze the data simply run
 
-.. code-block:: console
 
     nirvana_manga_axisym 8485 1901 --redux ./redux/ --analysis ./analysis/ --dr DR17
     
