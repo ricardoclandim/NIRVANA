@@ -54,7 +54,8 @@ To install NIRVANA dependencies, run:
     pip install -r requirements.txt
     
     
----
+Run the code
+------------
 
 You need first to download DAPall and DRPall files. This is done through
 
