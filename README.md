@@ -15,7 +15,7 @@ Clone the repo
 To download the DAP software and associated data, clone the `mangadap
 GitHub repo`_ by executing:
 
-    .. code-block:: console
+.. code-block:: console
 
         git clone --single-branch --branch asymdrift  https://github.com/kbwestfall/NIRVANA.git
 
