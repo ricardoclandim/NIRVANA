@@ -1,0 +1,9 @@
+#!/usr/bin/env python3
+
+from nirvana.scripts import manga_axisym_error
+
+if __name__ == '__main__':
+    manga_axisym_error.main(manga_axisym_error.parse_args())
+
+
+
