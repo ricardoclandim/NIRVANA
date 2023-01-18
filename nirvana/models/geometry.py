@@ -137,7 +137,95 @@ def deriv_rotate(x, y, rot, dxdp=None, dydp=None, drotdp=None, clockwise=False):
     dyrdp = _dydp*cosr - _y[...,None]*sinr*_drotdp[None,:] + _dxdp*sinr \
                 + _x[...,None]*cosr*_drotdp[None,:]
     return xr, yr, dxrdp, dyrdp
+    
+    
+def deriv_rotate_err(x, y, rot, dxdp=None, dydp=None, drotdp=None, clockwise=False):
+    r"""
+    Rotate the provided coordinates about :math:`(x,y) = (0,0)`, and calculate
+    the derivatives of the returned coordinates with respect to a set of input
+    parameters.
+    
+    The set of input parameters can be unknown, i.e., defined in the calling
+    method, or the single parameter of this function (``rot``).  That is, if the
+    arguments of this function depend on upstream set of parameters, their
+    derivatives with respect to these parameters should be passed to the
+    relevant keyword arguments.  Importantly, if you supply one of either
+    ``dxdp``, ``dydp``, or ``drotdp``, you must supply them all.
 
+    See additional documentation of the :func:`rotate` method.
+
+    Args:
+        x (array-like):
+            Cartesian x coordinates.
+        y (array-like):
+            Cartesian y coordinates.  Shape must match ``x``, but this is not
+            checked.
+        rot (:obj:`float`):
+            Rotation angle in radians.
+        dxdp (array-like, optional):
+            Derivative of the Cartesian x coordinates w.r.t. a set of unknown
+            parameters.  Shape has one more dimension than ``x``, where the size
+            of that dimension, :math:`m`, is is the number of parameters.  If
+            None, the provided x coordinates are assumed to be independent of
+            any model parameters.
+        dydp (array-like, optional):
+            Derivative of the Cartesian y coordinates w.r.t. a set of unknown
+            parameters.  Shape has one more dimension than ``x``, where the size
+            of that dimension, :math:`m`, is is the number of parameters.  If
+            None, the provided y coordinates are assumed to be independent of
+            any model parameters.
+        drotdp (array-like, optional):
+            Derivative of the rotation angle w.r.t. a set of unknown parameters.
+            Shape is :math:`(m,)`, where :math:`m` is the number of parameters.
+            If None, the rotation is considered to be the only model parameter.
+        clockwise (:obj:`bool`, optional):
+            Perform a clockwise rotation. Rotation is counter-clockwise by
+            default.  By definition and implementation, setting this to True is
+            identical to calling the function with a negative counter-clockwise
+            rotation.  
+
+    Returns:
+        :obj:`tuple`: Four `numpy.ndarray`_ objects: the rotated x coordinates,
+        the rotated y coordinates, the uncertainties of the rotated x coordinates
+        w.r.t. a set of parameters, and the derivative of the rotated y
+        coordinates w.r.t. a set of parameters.
+    """
+    # Check derivative input
+    isNone = [i is None for i in [dxdp, dydp, drotdp]]
+    if np.any(isNone) and not np.all(isNone):
+        raise ValueError('Must provide all of dxdp, dydp, and drotdp, or none of them.')
+
+    # Convert to numpy arrays
+    _x = np.atleast_1d(x)
+    _y = np.atleast_1d(y)
+
+    # If dxdp is None, they all should be.
+    if dxdp is None:
+        # Set the input derivatives to be with respect to rot
+        dxdp = np.zeros(_x.shape+(1,), dtype=float)
+        dydp = np.zeros(_y.shape+(1,), dtype=float)
+        drotdp = np.ones((1,), dtype=float)
+
+    if clockwise:
+        return deriv_rotate_err(x, y, -rot, dxdp=dxdp, dydp=dydp, drotdp=-drotdp)
+
+    _dxdp = np.atleast_1d(dxdp)
+    _dydp = np.atleast_1d(dydp)
+    _drotdp = np.atleast_1d(drotdp)
+
+    cosr = np.cos(rot)
+    sinr = np.sin(rot)
+    xr = _x*cosr - _y*sinr
+    yr = _y*cosr + _x*sinr
+    
+    # dxrdp and dyrdp   are the uncertainties squared sigma_xr^2 and sigma_yr^2. Note that _x, _y above are = x - xc and y - yc, where
+    # xc and yc are the x,y positions of the galactic center. Thus _dx = -dxc, _dy = -dyc
+    #sigma_xr^2 = |dxrdx|^2 sigma_xc^2 + |dxrdy|^2 sigma_yc^2 + |dxrdrot|^2 sigma_rot^2. Same reasoning for yr
+    dxrdp = (_dxdp*cosr)**2 + (_x[...,None]*sinr*_drotdp[None,:]+_y[...,None]*cosr*_drotdp[None,:])**2 + (_dydp*sinr)**2 
+    dyrdp = (_dydp*cosr)**2 + (-_y[...,None]*sinr*_drotdp[None,:]+_x[...,None]*cosr*_drotdp[None,:])**2 + (_dxdp*sinr)**2 
+    
+    return xr, yr, dxrdp, dyrdp    
+    
 
 def disk_ellipse(r, pa, inc, xc=0., yc=0., num=100):
     r"""
@@ -308,6 +396,109 @@ def deriv_projected_polar(x, y, pa, inc, dxdp=None, dydp=None, dpadp=None, dincd
     dt = dthetadx(xd, -yd, r=r)[...,None]*dxd - dthetady(xd, -yd, r=r)[...,None]*dyd
 
     return r, t, dr, dt
+    
+    
+    
+    
+def deriv_projected_polar_err(x, y, pa, inc, dxdp=None, dydp=None, dpadp=None, dincdp=None):
+    r"""
+    Calculate the in-plane polar coordinates of an inclined plane and their
+    derivatives with respect to a set of input parameters.
+
+    The set of input parameters can be unknown, i.e. defined in the calling
+    method, or the two parameters of this function (``pa``, ``inc``).  That is,
+    if the arguments of this function depend on upstream set of parameters,
+    their derivatives with respect to these parameters should be passed to the
+    relevant keyword arguments.  Importantly, if you supply one of either
+    ``dxdp``, ``dydp``, ``dpadp``, ``dincdp``, you must supply them all.
+
+    See additional documentation of the :func:`projected_polar` method.  The
+    same warning there about the calculation when :math:`i = \pi/2` holds for
+    the derivatives, as well.
+
+    Args:
+        x (array-like):
+            Cartesian x coordinates.
+        y (array-like):
+            Cartesian y coordinates.  Shape must match ``x``, but this is not
+            checked.
+        pa (:obj:`float`)
+            Position angle in radians; see :func:`projected_polar`.
+        inc (:obj:`float`)
+            Inclination in radians; see :func:`projected_polar`.
+        dxdp (array-like, optional):
+            Derivative of the Cartesian x coordinates w.r.t. a set of unknown
+            parameters.  Shape has one more dimension than ``x``, where the size
+            of that dimension, :math:`m`, is is the number of parameters.  If
+            None, the provided x coordinates are assumed to be independent of
+            any model parameters.
+        dydp (array-like, optional):
+            Derivative of the Cartesian y coordinates w.r.t. a set of unknown
+            parameters.  Shape has one more dimension than ``x``, where the size
+            of that dimension, :math:`m`, is is the number of parameters.  If
+            None, the provided y coordinates are assumed to be independent of
+            any model parameters.
+        dpadp (array-like, optional):
+            Derivative of the position angle w.r.t. a set of unknown parameters.
+            Shape is :math:`(m,)`, where :math:`m` is the number of parameters.
+            If None, the position angle is considered to be the one of the model
+            parameters.
+        dincdp (array-like, optional):
+            Derivative of the inclination w.r.t. a set of unknown parameters.
+            Shape is :math:`(m,)`, where :math:`m` is the number of parameters.
+            If None, the inclination is considered to be the one of the model
+            parameters.
+
+    Returns:
+        :obj:`tuple`: Returns four arrays with the projected radius and in-plane
+        azimuth and their derivatives (order is radius, aziumth, radius
+        derivative, azimuth derivative). The radius units are identical to the
+        provided cartesian coordinates. The azimuth is in radians over the range
+        :math:`[0,2\pi)`.
+    """
+    # Check derivative input
+    isNone = [i is None for i in [dxdp, dydp, dpadp, dincdp]]
+    if np.any(isNone) and not np.all(isNone):
+        raise ValueError('Must provide all of dxdp, dydp, dpadp, and dincdp, or none of them.')    
+
+    # Convert to numpy arrays
+    _x = np.atleast_1d(x)
+    _y = np.atleast_1d(y)
+
+    # If dxdp is None, they all should be.
+    if dxdp is None:
+        # Set the input derivatives to be with respect to pa and inc
+        dxdp = np.zeros(_x.shape+(2,), dtype=float)
+        dydp = np.zeros(_y.shape+(2,), dtype=float)
+        dpadp = np.array([1., 0.], dtype=float)
+        dincdp = np.array([0., 1.], dtype=float)
+
+    _dxdp = np.atleast_1d(dxdp)
+    _dydp = np.atleast_1d(dydp)
+    _dpadp = np.atleast_1d(dpadp)
+    _dincdp = np.atleast_1d(dincdp)
+
+    # Calculate the rotated coordinates (note the propagation of the derivative
+    # given the calculation of the applied rotation based on the position angle)
+    xd, yr, dxd, dyr = deriv_rotate_err(_x, _y, np.pi/2-pa, dxdp=_dxdp, dydp=_dydp, drotdp=-_dpadp,
+                                    clockwise=True)
+
+    # Project the y axis    dxd and dyr squared of uncertainty
+    cosi = np.cos(inc)
+    yd = yr / cosi
+    # Absolute squared of derivatives
+    dyd = dyr / cosi**2 + (yr[...,None] * _dincdp[None,:] * np.sin(inc) / cosi**2)**2
+
+    # Calculate the polar coordinates
+    r = np.sqrt(xd**2 + yd**2)
+     # Absolute squared of derivatives
+    dr = (drdx(xd, yd, r=r)[...,None])**2*dxd + (drdy(xd, yd, r=r)[...,None])**2*dyd
+
+    t = np.arctan2(-yd,xd) % (2*np.pi)
+     # Absolute squared of derivatives    
+    dt = (dthetadx(xd, -yd, r=r)[...,None])**2*dxd + (dthetady(xd, -yd, r=r)[...,None])**2*dyd
+
+    return r, t, dr, dt    
 
 
 def drdx(x, y, r=None):
