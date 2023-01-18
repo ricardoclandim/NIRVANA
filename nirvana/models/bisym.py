@@ -527,10 +527,10 @@ def fit(plate, ifu, galmeta = None, daptype='HYB10-MILESHC-MASTARHC2', dr='MPL-1
     #dynesty sampler with periodic pa and pab
     if not covar: sampler = dynesty.NestedSampler(loglike, ptform, ndim, nlive=points,
             periodic=[1,2], pool=pool,
-            ptform_args = [args], logl_args = [args], verbose=verbose)
+            ptform_args = [args], logl_args = [args])
     else: sampler = dynesty.NestedSampler(covarlike, ptform, ndim, nlive=points,
             periodic=[1,2], pool=pool,
-            ptform_args = [args], logl_args = [args], verbose=verbose)
+            ptform_args = [args], logl_args = [args])
     sampler.run_nested()
 
     if pool is not None: pool.close()
