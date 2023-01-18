@@ -80,7 +80,7 @@ def parse_args(options=None):
 def main(args):
     #set save directory
     if args.dir == '':
-        args.dir = '/data/manga/digiorgio/nirvana/'
+        args.dir = '/home/ricardo/Documents/codes/NIRVANA/'
     if not os.path.isdir(args.dir):
         raise NotADirectoryError(f'Outfile directory does not exist: {args.dir}')
 
