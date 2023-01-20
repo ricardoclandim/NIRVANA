@@ -1967,20 +1967,22 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
     ax.scatter(vrot_r[rec_indx], vrot[rec_indx], marker='.', color='C3', s=30, lw=0, alpha=0.6, zorder=2)
     
 #### added by RL - test to easily save the results
+  # Columns in the output are r,  error in r, rotation velocity, error in rot vel
     data1 = np.column_stack([vrot_r[app_indx], vrot_rerr[app_indx], vrot[app_indx], vrot_err[app_indx]])
     data2 = np.column_stack([vrot_r[rec_indx], vrot_rerr[rec_indx], vrot[rec_indx], vrot_err[rec_indx]])
-    datafile_path1 = "output_vel1.txt"
-    datafile_path2 = "output_vel2.txt"
+    datafile_path1 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}_vel1.txt'
+    datafile_path2 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}_vel2.txt'
     np.savetxt(datafile_path1 , data1,  fmt = ['%10.4f', '%10.4f','%10.4f', '%10.4f'])
     np.savetxt(datafile_path2 , data2, fmt= ['%10.4f', '%10.4f','%10.4f', '%10.4f'])
     
     data3 = np.column_stack([vrot_r[app_indx], vrot[app_indx]])
     data4 = np.column_stack([vrot_r[rec_indx], vrot[rec_indx]])
-    datafile_path3 = "output_vel1bf.txt"
-    datafile_path4 = "output_vel2bf.txt"
+    datafile_path3 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}_vel1_bf.txt'
+    datafile_path4 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}_vel2_bf.txt'
     np.savetxt(datafile_path3 , data3,  fmt = ['%10.4f', '%10.4f'])
     np.savetxt(datafile_path4 , data4, fmt= ['%10.4f', '%10.4f'])
     
+
     
 ########################    
     if np.any(indx):
