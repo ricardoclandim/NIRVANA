@@ -1968,8 +1968,12 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
     
 #### added by RL - test to easily save the results
   # Columns in the output are r,  error in r, rotation velocity, error in rot vel
-    data1 = np.column_stack([vrot_r[app_indx], vrot_rerr[app_indx], vrot[app_indx], vrot_err[app_indx]])
-    data2 = np.column_stack([vrot_r[rec_indx], vrot_rerr[rec_indx], vrot[rec_indx], vrot_err[rec_indx]])
+    data1 = np.column_stack([vrot_r[app_indx], vrot_rerr[app_indx], vrot[app_indx]/np.sin(np.radians(disk.par[3])), np.sqrt(np.square(vrot_err[app_indx]/  \
+            np.sin(np.radians(disk.par[3]))) +  np.square( vrot[app_indx]/(np.square(np.sin(np.radians(disk.par[3])))) *np.cos(np.radians(disk.par[3])) \
+               *np.radians(disk.par_err[3])))])
+    data2 = np.column_stack([vrot_r[rec_indx], vrot_rerr[rec_indx], vrot[rec_indx]/np.sin(np.radians(disk.par[3])), np.sqrt(np.square(vrot_err[rec_indx]/  \
+            np.sin(np.radians(disk.par[3]))) +  np.square( vrot[rec_indx]/(np.square(np.sin(np.radians(disk.par[3])))) *np.cos(np.radians(disk.par[3])) \
+               *np.radians(disk.par_err[3])))])
     datafile_path1 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}_vel1.txt'
     datafile_path2 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}_vel2.txt'
     np.savetxt(datafile_path1 , data1,  fmt = ['%10.4f', '%10.4f','%10.4f', '%10.4f'])
@@ -2070,6 +2074,19 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
                                        transform=ax.transAxes))
         ax.text(0.97, 0.87, r'$\sigma_{\rm los}$ [km/s]', ha='right', va='bottom',
                 transform=ax.transAxes, fontsize=10, zorder=8)
+                
+                 #### added by RL - test to easily save the results
+  # Columns in the output are r, dispersion velocity
+    
+        data5 = np.column_stack([sprof_r, sprof])
+    
+        datafile_path5 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}_disp_vel.txt'
+        np.savetxt(datafile_path5 , data5, fmt= ['%10.4f', '%10.4f'])
+         
+    
+
+    
+########################   
 
     # TODO:
     #   - Add errors (if available)?
@@ -2084,6 +2101,8 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
 
     # Reset to default style
     pyplot.rcdefaults()
+    
+  
 
 
 def axisym_init_model(galmeta, kin, rctype, dctype=None):
