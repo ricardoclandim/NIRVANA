@@ -502,6 +502,8 @@ class AxisymmetricDisk(ThinDisk):
         if not component:
             print(f'Reduced chi-square: {(vchisqr + schisqr)/(len(vfom) + len(sfom) - self.nfree)}')
             print('-'*70)
+          
+           
 
 # TODO:
 #   - This is MaNGA-specific and needs to be abstracted
@@ -532,8 +534,8 @@ def _fit_meta_dtype(par_names, nr, parbitmask):
             ('PLATEIFU', '<U12'),
             ('PLATE', np.int16),
             ('IFU', np.int16),
-            ('DRPALLINDX', np.int),
-            ('DAPALLINDX', np.int),
+            ('DRPALLINDX', int),
+            ('DAPALLINDX', int),
             ('MNGTARG1', np.int32),
             ('MNGTARG3', np.int32),
             ('DRP3QUAL', np.int32),
@@ -559,18 +561,18 @@ def _fit_meta_dtype(par_names, nr, parbitmask):
             ('Q0', np.float),
             # VNFIT is the total number of velocity measurements included in the
             # fit.
-            ('VNFIT', np.int),
+            ('VNFIT', int),
             # VNMSK is the number of velocity measurements masked for any
             # reason, including those measurements that were already masked by
             # the DAP.
-            ('VNMSK', np.int),
+            ('VNMSK', int),
             # VNFLAG is the number of velocity measurements masked by the fit for
             # any reason, meaning it does *not* include data already masked by
             # the DAP.
-            ('VNFLAG', np.int),
+            ('VNFLAG', int),
             # VNREJ is the number of velocity measurements masked by the fit
             # only due to outlier rejection.
-            ('VNREJ', np.int),
+            ('VNREJ', int),
             # VMEDE is the median observed error in the data included in the
             # fit.
             ('VMEDE', np.float),
@@ -602,18 +604,18 @@ def _fit_meta_dtype(par_names, nr, parbitmask):
             ('VASYM_ELL', np.float, (3,4)),
             # SNFIT is the total number of dispersion measurements included in
             # the fit.
-            ('SNFIT', np.int),
+            ('SNFIT', int),
             # SNMSK is the number of dispersion measurements masked for any
             # reason, including those measurements that were already masked by
             # the DAP.
-            ('SNMSK', np.int),
+            ('SNMSK', int),
             # SNFLAG is the number of dispersion measurements masked by the fit
             # for any reason, meaning it does *not* include data already masked
             # by the DAP.
-            ('SNFLAG', np.int),
+            ('SNFLAG', int),
             # SNREJ is the number of dispersion measurements masked by the fit
             # only due to outlier rejection.
-            ('SNREJ', np.int),
+            ('SNREJ', int),
             # Same as VMEDE, but for the velocity dispersion instead of the
             # velocity.
             ('SMEDE', np.float),
@@ -651,9 +653,9 @@ def _fit_meta_dtype(par_names, nr, parbitmask):
             # Reduced chi-square
             ('RCHI2', np.float),
             # Status index of the fit returned by scipy.optimize.least_squares
-            ('STATUS', np.int),
+            ('STATUS', int),
             # Flag that the fit (scipy.optimize) reported a successful fit
-            ('SUCCESS', np.int),
+            ('SUCCESS', int),
             # Azimuthally binned radial profiles
             ('BINR', float, (nr,)),
             ('V_MAJ', float, (nr,)),
@@ -1967,24 +1969,25 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
     ax.scatter(vrot_r[rec_indx], vrot[rec_indx], marker='.', color='C3', s=30, lw=0, alpha=0.6, zorder=2)
     
 #### added by RL - test to easily save the results
-  # Columns in the output are r,  error in r, rotation velocity, error in rot vel
-    data1 = np.column_stack([vrot_r[app_indx], vrot_rerr[app_indx], vrot[app_indx]/np.sin(np.radians(disk.par[3])), np.sqrt(np.square(vrot_err[app_indx]/  \
-            np.sin(np.radians(disk.par[3]))) +  np.square( vrot[app_indx]/(np.square(np.sin(np.radians(disk.par[3])))) *np.cos(np.radians(disk.par[3])) \
+  # Columns in the output are r,   rotation velocity, error in r, error in rot vel
+    data1 = np.column_stack([vrot_r[app_indx],  vrot[app_indx]/np.sin(np.radians(disk.par[3])), vrot_rerr[app_indx],\
+             np.sqrt(np.square(vrot_err[app_indx]/  \
+            np.sin(np.radians(disk.par[3]))) +  np.square( vrot[app_indx]/(np.square(np.sin(np.radians(disk.par[3])))) \
+              *np.cos(np.radians(disk.par[3])) \
                *np.radians(disk.par_err[3])))])
-    data2 = np.column_stack([vrot_r[rec_indx], vrot_rerr[rec_indx], vrot[rec_indx]/np.sin(np.radians(disk.par[3])), np.sqrt(np.square(vrot_err[rec_indx]/  \
-            np.sin(np.radians(disk.par[3]))) +  np.square( vrot[rec_indx]/(np.square(np.sin(np.radians(disk.par[3])))) *np.cos(np.radians(disk.par[3])) \
+    data2 = np.column_stack([vrot_r[rec_indx],  vrot[rec_indx]/np.sin(np.radians(disk.par[3])),vrot_rerr[rec_indx], \
+              np.sqrt(np.square(vrot_err[rec_indx]/  \
+            np.sin(np.radians(disk.par[3]))) +  np.square( vrot[rec_indx]/(np.square(np.sin(np.radians(disk.par[3]))))\
+               *np.cos(np.radians(disk.par[3])) \
                *np.radians(disk.par_err[3])))])
     datafile_path1 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}_vel1.txt'
     datafile_path2 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}_vel2.txt'
-    np.savetxt(datafile_path1 , data1,  fmt = ['%10.4f', '%10.4f','%10.4f', '%10.4f'])
-    np.savetxt(datafile_path2 , data2, fmt= ['%10.4f', '%10.4f','%10.4f', '%10.4f'])
+    np.savetxt(datafile_path1 , data1,  fmt = ['%10.4f', '%10.4f','%10.4f', '%10.4f'])#, \
+    					#header="radius     rot_vel  sigma_r  sigma_vel", comments= " ")
+    np.savetxt(datafile_path2 , data2, fmt= ['%10.4f', '%10.4f','%10.4f', '%10.4f'])#, \
+    					#header="radius     rot_vel  sigma_r  sigma_vel", comments= " ")
     
-    data3 = np.column_stack([vrot_r[app_indx], vrot[app_indx]])
-    data4 = np.column_stack([vrot_r[rec_indx], vrot[rec_indx]])
-    datafile_path3 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}_vel1_bf.txt'
-    datafile_path4 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}_vel2_bf.txt'
-    np.savetxt(datafile_path3 , data3,  fmt = ['%10.4f', '%10.4f'])
-    np.savetxt(datafile_path4 , data4, fmt= ['%10.4f', '%10.4f'])
+
     
 
     
@@ -2081,7 +2084,8 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
         data5 = np.column_stack([sprof_r, sprof])
     
         datafile_path5 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}_disp_vel.txt'
-        np.savetxt(datafile_path5 , data5, fmt= ['%10.4f', '%10.4f'])
+        np.savetxt(datafile_path5 , data5, fmt= ['%10.4f', '%10.4f'])#, \
+    					#header="radius  disp_vel", comments= " ")
          
     
 
@@ -3002,7 +3006,7 @@ def axisym_iter_fit(galmeta, kin, rctype='HyperbolicTangent', dctype='Exponentia
     # Show
     if verbose > 0:
         axisym_fit_plot(galmeta, kin, disk, fix=fix)
-
+        
     return disk, p0, lb, ub, fix, vel_mask, sig_mask
 
 
