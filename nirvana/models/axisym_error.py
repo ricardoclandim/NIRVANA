@@ -1596,6 +1596,8 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
     cb.ax.xaxis.set_ticks_position('top')
     cb.ax.xaxis.set_label_position('top')
     cax.text(-0.05, 1.1, r'$\Delta V$', ha='right', va='center', transform=cax.transAxes)
+    
+    
 
     #-------------------------------------------------------------------
     # Velocity Dispersion Residuals
@@ -1621,6 +1623,8 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
         cax.tick_params(which='both', direction='in')
         cb = fig.colorbar(im, cax=cax, orientation='horizontal') #, format=logformatter)
         cax.text(-0.05, 0.1, r'$\Delta\sigma$', ha='right', va='center', transform=cax.transAxes)
+
+
 
     #-------------------------------------------------------------------
     # Velocity Model Chi-square
@@ -1969,25 +1973,28 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
     ax.scatter(vrot_r[rec_indx], vrot[rec_indx], marker='.', color='C3', s=30, lw=0, alpha=0.6, zorder=2)
     
 #### added by RL - test to easily save the results
-  # Columns in the output are r,   rotation velocity, error in r, error in rot vel
+  # Columns in the output are r,   rotation velocity, error in r, error in rot vel, exp error in rot_vel
     data1 = np.column_stack([vrot_r[app_indx],  vrot[app_indx]/np.sin(np.radians(disk.par[3])), vrot_rerr[app_indx],\
              np.sqrt(np.square(vrot_err[app_indx]/  \
             np.sin(np.radians(disk.par[3]))) +  np.square( vrot[app_indx]/(np.square(np.sin(np.radians(disk.par[3])))) \
               *np.cos(np.radians(disk.par[3])) \
-               *np.radians(disk.par_err[3])))])
+               *np.radians(disk.par_err[3]))),vrot_exp_err[app_indx]])
     data2 = np.column_stack([vrot_r[rec_indx],  vrot[rec_indx]/np.sin(np.radians(disk.par[3])),vrot_rerr[rec_indx], \
               np.sqrt(np.square(vrot_err[rec_indx]/  \
             np.sin(np.radians(disk.par[3]))) +  np.square( vrot[rec_indx]/(np.square(np.sin(np.radians(disk.par[3]))))\
                *np.cos(np.radians(disk.par[3])) \
-               *np.radians(disk.par_err[3])))])
+               *np.radians(disk.par_err[3]))), vrot_exp_err[rec_indx]])
     datafile_path1 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}_vel1.txt'
     datafile_path2 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}_vel2.txt'
-    np.savetxt(datafile_path1 , data1,  fmt = ['%10.4f', '%10.4f','%10.4f', '%10.4f'])#, \
-    					#header="radius     rot_vel  sigma_r  sigma_vel", comments= " ")
-    np.savetxt(datafile_path2 , data2, fmt= ['%10.4f', '%10.4f','%10.4f', '%10.4f'])#, \
-    					#header="radius     rot_vel  sigma_r  sigma_vel", comments= " ")
+    np.savetxt(datafile_path1 , data1,  fmt = ['%10.4f', '%10.4f','%10.4f', '%10.4f','%10.4f'])
+    np.savetxt(datafile_path2 , data2, fmt= ['%10.4f', '%10.4f','%10.4f', '%10.4f','%10.4f'])
     
-
+  #  data3 = np.column_stack([vrot_r[app_indx], vrot[app_indx]])
+  #  data4 = np.column_stack([vrot_r[rec_indx], vrot[rec_indx]])
+  #  datafile_path3 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}_vel1_bf.txt'
+  #  datafile_path4 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}_vel2_bf.txt'
+  #  np.savetxt(datafile_path3 , data3,  fmt = ['%10.4f', '%10.4f'])
+  #  np.savetxt(datafile_path4 , data4, fmt= ['%10.4f', '%10.4f'])
     
 
     
@@ -2057,6 +2064,8 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
 
         indx = sprof_nbin > 0
         ax.scatter(sprof_r, sprof, marker='.', color='k', s=30, lw=0, alpha=0.6, zorder=2)
+#        ax.errorbar(sprof_r,sprof, yerr=sprof_exp_err, color='k', capsize=0,
+ #                   linestyle='', linewidth=1, alpha=1.0, zorder=3)
         if np.any(indx):
             ax.scatter(binr[indx], sprof_ewmean[indx], marker='o', edgecolors='none', s=100,
                        alpha=1.0, facecolors='0.5', zorder=4)
@@ -2079,15 +2088,860 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
                 transform=ax.transAxes, fontsize=10, zorder=8)
                 
                  #### added by RL - test to easily save the results
-  # Columns in the output are r, dispersion velocity
+  # Columns in the output are r, dispersion velocity, exp error in disp vel
     
-        data5 = np.column_stack([sprof_r, sprof])
-    
+        data5 = np.column_stack([sprof_r, sprof, sprof_exp_err])
         datafile_path5 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}_disp_vel.txt'
-        np.savetxt(datafile_path5 , data5, fmt= ['%10.4f', '%10.4f'])#, \
-    					#header="radius  disp_vel", comments= " ")
-         
+        np.savetxt(datafile_path5 , data5, fmt= ['%10.4f', '%10.4f','%10.4f'])
+
+
+        
+########################   
+
+    # TODO:
+    #   - Add errors (if available)?
+    #   - Surface brightness units?
+
+    if ofile is None:
+        pyplot.show()
+    else:
+        fig.canvas.print_figure(ofile, bbox_inches='tight')
+    fig.clear()
+    pyplot.close(fig)
+
+    # Reset to default style
+    pyplot.rcdefaults()
     
+  
+def axisym_fit_plot_exp_err(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=None):
+    """
+    Construct the QA plot for the result of fitting an
+    :class:`~nirvana.model.axisym.AxisymmetricDisk` model to a galaxy.
+
+    Args:
+        galmeta (:class:`~nirvana.data.meta.GlobalPar`):
+            Object with metadata for the galaxy to be fit.
+        kin (:class:`~nirvana.data.kinematics.Kinematics`):
+            Object with the data to be fit
+        disk (:class:`~nirvana.models.axisym.AxisymmetricDisk`):
+            Object that performed the fit and has the best-fitting parameters.
+        par (`numpy.ndarray`_, optional):
+            The parameters of the model.  If None are provided, the parameters
+            in ``disk`` are used.
+        par_err (`numpy.ndarray`_, optional):
+            The errors in the model parameters.  If None are provided, the
+            parameter errors in ``disk`` are used.
+        fix (`numpy.ndarray`_, optional):
+            Flags indicating the parameters that were fixed during the fit.  If
+            None, all parameters are assumed to have been free.
+        ofile (:obj:`str`, optional):
+            Output filename for the plot.  If None, the plot is shown to the
+            screen.
+    """
+    logformatter = plot.get_logformatter()
+
+    # Change the style
+    rc('font', size=8)
+
+    _par = disk.par if par is None else par
+    _par_err = disk.par_err if par_err is None else par_err
+    _fix = np.zeros(disk.np, dtype=bool) if fix is None else fix
+
+    if _par.size != disk.np:
+        raise ValueError('Number of provided parameters has the incorrect size.')
+    if _par_err.size != disk.np:
+        raise ValueError('Number of provided parameter errors has the incorrect size.')
+    if _fix.size != disk.np:
+        raise ValueError('Number of provided parameter fixing flags has the incorrect size.')
+
+    disk.par = _par
+    disk.par_err = _par_err
+
+    # Get the fit statistics
+    vfom, sfom = disk._get_fom()(disk.par, sep=True)
+    nvel = np.sum(disk.vel_gpm)
+    vsct = 0.0 if disk.scatter is None else disk.scatter[0]
+    vchi2 = np.sum(vfom**2)
+    if disk.dc is None:
+        nsig = 0
+        ssct = 0.
+        schi2 = 0.
+    else:
+        nsig = np.sum(disk.sig_gpm)
+        ssct = 0.0 if disk.scatter is None else disk.scatter[1]
+        schi2 = np.sum(sfom**2)
+    chi2 = vchi2 + schi2
+    rchi2 = chi2 / (nvel + nsig - disk.np)
+
+    # Rebuild the 2D maps
+    sb_map = kin.remap('sb')
+    snr_map = sb_map * np.ma.sqrt(kin.remap('sb_ivar', mask=kin.sb_mask))
+    v_map = kin.remap('vel')
+    v_err_map = np.ma.power(kin.remap('vel_ivar', mask=kin.vel_mask), -0.5)
+    s_map = np.ma.sqrt(kin.remap('sig_phys2', mask=kin.sig_mask))
+    s_err_map = np.ma.power(kin.remap('sig_phys2_ivar', mask=kin.sig_mask), -0.5)/2/s_map
+
+    # Construct the model data, both binned data and maps
+    models = disk.binned_model(disk.par)
+    intr_models = disk.binned_model(disk.par, ignore_beam=True)
+    if disk.dc is None:
+        vmod = models
+        vmod_map = kin.remap(vmod, mask=kin.vel_mask)
+        vmod_intr = intr_models
+        vmod_intr_map = kin.remap(vmod_intr, mask=kin.vel_mask)
+        vel_beam_corr = vmod - vmod_intr
+        vel_beam_corr_map = kin.remap(vel_beam_corr, mask=kin.vel_mask)
+        smod = None
+        smod_map = None
+        smod_intr = None
+        smod_intr_map = None
+        sig_beam_corr = None
+        sig_beam_corr_map = None
+    else:
+        vmod = models[0]
+        vmod_map = kin.remap(vmod, mask=kin.vel_mask)
+        vmod_intr = intr_models[0]
+        vmod_intr_map = kin.remap(vmod_intr, mask=kin.vel_mask)
+        vel_beam_corr = vmod - vmod_intr
+        vel_beam_corr_map = kin.remap(vel_beam_corr, mask=kin.vel_mask)
+        smod = models[1]
+        smod_map = kin.remap(smod, mask=kin.sig_mask)
+        smod_intr = intr_models[1]
+        smod_intr_map = kin.remap(smod_intr, mask=kin.sig_mask)
+        sig_beam_corr = smod**2 - smod_intr**2
+        sig_beam_corr_map = kin.remap(sig_beam_corr, mask=kin.sig_mask)
+
+    # Get the error-weighted mean radial profiles
+    fwhm = galmeta.psf_fwhm[1]  # Selects r band!
+    oversample = 1.5
+    maj_wedge = 30.
+    min_wedge = 10.
+    binr, vrot_ewmean, vrot_ewsdev, vrot_ntot, vrot_nbin, vrotm_ewmean, vrotm_ewsdev, \
+        vrad_ewmean, vrad_ewsdev, vrad_ntot, vrad_nbin, vradm_ewmean, vradm_ewsdev, \
+        sprof_ewmean, sprof_ewsdev, sprof_ntot, sprof_nbin, sprofm_ewmean, sprofm_ewsdev, \
+        smaj_ewmean, smaj_ewsdev, smaj_ntot, smaj_nbin, smajm_ewmean, smajm_ewsdev, \
+        smin_ewmean, smin_ewsdev, smin_ntot, smin_nbin, sminm_ewmean, sminm_ewsdev \
+            = kin.radial_profiles(fwhm/oversample, xc=disk.par[0], yc=disk.par[1], pa=disk.par[2],
+                                  inc=disk.par[3], vsys=disk.par[4], maj_wedge=maj_wedge,
+                                  min_wedge=min_wedge, vel_mod=vmod, sig_mod=smod)
+
+    # TODO: Add the beam-corrected radial profiles to the plot?
+#    binr_beam, vrot_ewmean_beam, vrot_ewsdev_beam, vrot_ntot_beam, vrot_nbin_beam, vrotm_ewmean_beam, vrotm_ewsdev_beam, \
+#        vrad_ewmean_beam, vrad_ewsdev_beam, vrad_ntot_beam, vrad_nbin_beam, vradm_ewmean_beam, vradm_ewsdev_beam, \
+#        sprof_ewmean_beam, sprof_ewsdev_beam, sprof_ntot_beam, sprof_nbin_beam, sprofm_ewmean_beam, sprofm_ewsdev_beam, \
+#        smaj_ewmean_beam, smaj_ewsdev_beam, smaj_ntot_beam, smaj_nbin_beam, smajm_ewmean_beam, smajm_ewsdev_beam, \
+#        smin_ewmean_beam, smin_ewsdev_beam, smin_ntot_beam, smin_nbin_beam, sminm_ewmean_beam, sminm_ewsdev_beam \
+#            = kin.radial_profiles(fwhm/oversample, xc=disk.par[0], yc=disk.par[1], pa=disk.par[2],
+#                                  inc=disk.par[3], vsys=disk.par[4], maj_wedge=maj_wedge,
+#                                  min_wedge=min_wedge, vel_mod=vmod, sig_mod=smod,
+#                                  vel_beam_corr=vel_beam_corr, sig_beam_corr=sig_beam_corr)
+
+    # Construct an ellipse that has a constant disk radius and is at the
+    # best-fit center, position angle, and inclination.  Set the radius to the
+    # maximum of the valid binned rotation curve measurements.
+    vrot_indx = vrot_nbin > 5
+    if not np.any(vrot_indx):
+        vrot_indx = vrot_nbin > 0
+    if not np.any(vrot_indx):
+        de_x, de_y = None, None
+    else:
+        de_x, de_y = disk_ellipse(np.amax(binr[vrot_indx]), *np.radians(disk.par[2:4]),
+                                  xc=disk.par[0], yc=disk.par[1])
+
+    # Get the projected rotational velocity 
+    #   - Disk-plane coordinates  and derivatives
+    r, th, dr, dth = deriv_projected_polar_err(kin.x - disk.par[0], kin.y - disk.par[1], np.radians(disk.par[2]), \
+    			 np.radians(disk.par[3]), dxdp= disk.par_err[0], dydp=disk.par_err[1], dpadp= np.radians(disk.par_err[2]),\
+    			     dincdp= np.radians(disk.par_err[3]))
+    #   - Mask for data along the major axis
+    major_gpm = select_kinematic_axis(r, th, which='major', r_range='all', wedge=maj_wedge)
+    minor_gpm = select_kinematic_axis(r, th, which='minor', r_range='all', wedge=min_wedge)
+    #   - Projected rotation velocities
+    indx = major_gpm & np.logical_not(kin.vel_mask)
+    vrot_r = r[indx]
+    vrot_th = th[indx]
+    vrot = (kin.vel[indx] - disk.par[4])/np.cos(th[indx])
+    # Uncertainty on galaxy parameters, propagated to rotation velocity, radius and theta. Reshape used to reduce the size of the array
+    vrot_rerr = np.sqrt(dr[indx]).reshape(len(np.sqrt(dr[indx])),)
+    vrot_therr =  np.sqrt(dth[indx]).reshape(len(np.sqrt(dth[indx])),)
+    vrot_err = np.sqrt(1/(np.cos(th[indx]))**2*(disk.par_err[4])**2 + (vrot*np.sin(th[indx]))**2*(dth[indx].reshape(len(dth[indx]),)))
+    
+    # Experimental uncertainty on the velocity - projected
+    vrot_exp_err = np.abs((np.sqrt(inverse(kin.vel_ivar[indx])))/np.cos(th[indx]))
+    
+    
+    
+    #   - Projected radial velocities
+    indx = minor_gpm & np.logical_not(kin.vel_mask)
+    vrad_r = r[indx]
+    vrad = (kin.vel[indx] - disk.par[4])/np.sin(th[indx])
+    
+    if smod is not None:
+        indx = np.logical_not(kin.sig_mask) & (kin.sig_phys2 > 0)
+        sprof_r = r[indx]
+        sprof = np.sqrt(kin.sig_phys2[indx])
+        # for some reason the sig_phys2  was defined  with /s/sig_phys2
+        sprof_exp_err = np.sqrt(inverse(kin.sig_phys2_ivar[indx]))/2/np.sqrt(kin.sig_phys2[indx]) 
+
+    # Get the 1D model profiles
+    maxr = np.amax(r)
+    modelr = np.arange(0, maxr, 0.1)
+    vrot_intr_model = disk.rc.sample(modelr, par=disk.rc_par())
+    if smod is not None:
+        sprof_intr_model = disk.dc.sample(modelr, par=disk.dc_par())
+
+    # Set the extent for the 2D maps
+    extent = [np.amax(kin.grid_x), np.amin(kin.grid_x), np.amin(kin.grid_y), np.amax(kin.grid_y)]
+    Dx = max(extent[0]-extent[1], extent[3]-extent[2]) # *1.01
+    skylim = np.array([ (extent[0]+extent[1] - Dx)/2., 0.0 ])
+    skylim[1] = skylim[0] + Dx
+
+    # Create the plot
+    w,h = pyplot.figaspect(1)
+    fig = pyplot.figure(figsize=(2*w,2*h))
+
+    #-------------------------------------------------------------------
+    # Surface-brightness
+    sb_lim = np.power(10.0, growth_lim(np.ma.log10(sb_map), 0.90, 1.05))
+    sb_lim = atleast_one_decade(sb_lim)
+    
+    ax = plot.init_ax(fig, [0.02, 0.775, 0.19, 0.19])
+    cax = fig.add_axes([0.05, 0.97, 0.15, 0.005])
+    cax.tick_params(which='both', direction='in')
+    ax.set_xlim(skylim[::-1])
+    ax.set_ylim(skylim)
+    plot.rotate_y_ticks(ax, 90, 'center')
+    ax.xaxis.set_major_formatter(ticker.NullFormatter())
+    ax.add_patch(patches.Circle((0.1, 0.1), fwhm/np.diff(skylim)[0]/2, transform=ax.transAxes,
+                                facecolor='0.7', edgecolor='k', zorder=4))
+    im = ax.imshow(sb_map, origin='lower', interpolation='nearest', cmap='inferno',
+                   extent=extent, norm=colors.LogNorm(vmin=sb_lim[0], vmax=sb_lim[1]), zorder=4)
+    # Mark the fitted dynamical center
+    ax.scatter(disk.par[0], disk.par[1], marker='+', color='k', s=40, lw=1, zorder=5)
+    # Plot the ellipse with constant disk radius
+    if de_x is not None:
+        ax.plot(de_x, de_y, color='w', lw=2, zorder=6, alpha=0.5)
+    # TODO: For some reason, the combination of the use of a masked array and
+    # setting the formatter to logformatter leads to weird behavior in the map.
+    # Use something like the "pallete" object described here?
+    #   https://matplotlib.org/stable/gallery/images_contours_and_fields/image_masked.html
+    cb = fig.colorbar(im, cax=cax, orientation='horizontal', format=logformatter)
+    cb.ax.xaxis.set_ticks_position('top')
+    cb.ax.xaxis.set_label_position('top')
+    cax.text(-0.05, 1.1, r'$\mu$', ha='right', va='center', transform=cax.transAxes)
+
+    #-------------------------------------------------------------------
+    # S/N
+    snr_lim = np.power(10.0, growth_lim(np.ma.log10(snr_map), 0.90, 1.05))
+    snr_lim = atleast_one_decade(snr_lim)
+
+    ax = plot.init_ax(fig, [0.02, 0.580, 0.19, 0.19])
+    cax = fig.add_axes([0.05, 0.57, 0.15, 0.005])
+    cax.tick_params(which='both', direction='in')
+    ax.set_xlim(skylim[::-1])
+    ax.set_ylim(skylim)
+    plot.rotate_y_ticks(ax, 90, 'center')
+    ax.xaxis.set_major_formatter(ticker.NullFormatter())
+    ax.add_patch(patches.Circle((0.1, 0.1), fwhm/np.diff(skylim)[0]/2, transform=ax.transAxes,
+                                facecolor='0.7', edgecolor='k', zorder=4))
+    im = ax.imshow(snr_map, origin='lower', interpolation='nearest', cmap='inferno',
+                   extent=extent, norm=colors.LogNorm(vmin=snr_lim[0], vmax=snr_lim[1]), zorder=4)
+    # Mark the fitted dynamical center
+    ax.scatter(disk.par[0], disk.par[1], marker='+', color='k', s=40, lw=1, zorder=5)
+    # Plot the ellipse with constant disk radius
+    if de_x is not None:
+        ax.plot(de_x, de_y, color='w', lw=2, zorder=6, alpha=0.5)
+    cb = fig.colorbar(im, cax=cax, orientation='horizontal', format=logformatter)
+    cax.text(-0.05, 0.1, 'S/N', ha='right', va='center', transform=cax.transAxes)
+
+    #-------------------------------------------------------------------
+    # Velocity
+    vel_lim = growth_lim(np.ma.append(v_map, vmod_map), 0.90, 1.05, midpoint=disk.par[4])
+    ax = plot.init_ax(fig, [0.215, 0.775, 0.19, 0.19])
+    cax = fig.add_axes([0.245, 0.97, 0.15, 0.005])
+    cax.tick_params(which='both', direction='in')
+    ax.set_xlim(skylim[::-1])
+    ax.set_ylim(skylim)
+    ax.xaxis.set_major_formatter(ticker.NullFormatter())
+    ax.yaxis.set_major_formatter(ticker.NullFormatter())
+    ax.add_patch(patches.Circle((0.1, 0.1), fwhm/np.diff(skylim)[0]/2, transform=ax.transAxes,
+                                facecolor='0.7', edgecolor='k', zorder=4))
+    im = ax.imshow(v_map, origin='lower', interpolation='nearest', cmap='RdBu_r',
+                   extent=extent, vmin=vel_lim[0], vmax=vel_lim[1], zorder=4)
+    # Mark the fitted dynamical center
+    ax.scatter(disk.par[0], disk.par[1], marker='+', color='k', s=40, lw=1, zorder=5)
+    # Plot the ellipse with constant disk radius
+    if de_x is not None:
+        ax.plot(de_x, de_y, color='w', lw=2, zorder=6, alpha=0.5)
+    cb = fig.colorbar(im, cax=cax, orientation='horizontal')
+    cb.ax.xaxis.set_ticks_position('top')
+    cb.ax.xaxis.set_label_position('top')
+    cax.text(-0.05, 1.1, r'$V$', ha='right', va='center', transform=cax.transAxes)
+
+    #-------------------------------------------------------------------
+    # Velocity Dispersion
+    _smaps = s_map if smod_map is None else np.ma.append(s_map, smod_map)
+    sig_lim = np.power(10.0, growth_lim(np.ma.log10(_smaps), 0.80, 1.05))
+    sig_lim = atleast_one_decade(sig_lim)
+
+    ax = plot.init_ax(fig, [0.215, 0.580, 0.19, 0.19])
+    cax = fig.add_axes([0.245, 0.57, 0.15, 0.005])
+    cax.tick_params(which='both', direction='in')
+    ax.set_xlim(skylim[::-1])
+    ax.set_ylim(skylim)
+    ax.xaxis.set_major_formatter(ticker.NullFormatter())
+    ax.yaxis.set_major_formatter(ticker.NullFormatter())
+    ax.add_patch(patches.Circle((0.1, 0.1), fwhm/np.diff(skylim)[0]/2, transform=ax.transAxes,
+                                facecolor='0.7', edgecolor='k', zorder=4))
+    im = ax.imshow(s_map, origin='lower', interpolation='nearest', cmap='viridis',
+                   extent=extent, norm=colors.LogNorm(vmin=sig_lim[0], vmax=sig_lim[1]), zorder=4)
+    # Mark the fitted dynamical center
+    ax.scatter(disk.par[0], disk.par[1], marker='+', color='k', s=40, lw=1, zorder=5)
+    # Plot the ellipse with constant disk radius
+    if de_x is not None:
+        ax.plot(de_x, de_y, color='w', lw=2, zorder=6, alpha=0.5)
+    cb = fig.colorbar(im, cax=cax, orientation='horizontal', format=logformatter)
+    cax.text(-0.05, 0.1, r'$\sigma$', ha='right', va='center', transform=cax.transAxes)
+
+    #-------------------------------------------------------------------
+    # Velocity Model
+    ax = plot.init_ax(fig, [0.410, 0.775, 0.19, 0.19])
+    cax = fig.add_axes([0.440, 0.97, 0.15, 0.005])
+    cax.tick_params(which='both', direction='in')
+    ax.set_xlim(skylim[::-1])
+    ax.set_ylim(skylim)
+    ax.xaxis.set_major_formatter(ticker.NullFormatter())
+    ax.yaxis.set_major_formatter(ticker.NullFormatter())
+    ax.add_patch(patches.Circle((0.1, 0.1), fwhm/np.diff(skylim)[0]/2, transform=ax.transAxes,
+                                facecolor='0.7', edgecolor='k', zorder=4))
+    im = ax.imshow(vmod_map, origin='lower', interpolation='nearest', cmap='RdBu_r',
+                   extent=extent, vmin=vel_lim[0], vmax=vel_lim[1], zorder=4)
+    # Mark the fitted dynamical center
+    ax.scatter(disk.par[0], disk.par[1], marker='+', color='k', s=40, lw=1, zorder=5)
+    # Plot the ellipse with constant disk radius
+    if de_x is not None:
+        ax.plot(de_x, de_y, color='w', lw=2, zorder=6, alpha=0.5)
+    cb = fig.colorbar(im, cax=cax, orientation='horizontal')
+    cb.ax.xaxis.set_ticks_position('top')
+    cb.ax.xaxis.set_label_position('top')
+    cax.text(-0.05, 1.1, r'$V_m$', ha='right', va='center', transform=cax.transAxes)
+
+    #-------------------------------------------------------------------
+    # Velocity Dispersion Model
+    ax = plot.init_ax(fig, [0.410, 0.580, 0.19, 0.19])
+    ax.set_xlim(skylim[::-1])
+    ax.set_ylim(skylim)
+    ax.xaxis.set_major_formatter(ticker.NullFormatter())
+    ax.yaxis.set_major_formatter(ticker.NullFormatter())
+    ax.add_patch(patches.Circle((0.1, 0.1), fwhm/np.diff(skylim)[0]/2, transform=ax.transAxes,
+                                facecolor='0.7', edgecolor='k', zorder=4))
+    # Mark the fitted dynamical center
+    ax.scatter(disk.par[0], disk.par[1], marker='+', color='k', s=40, lw=1, zorder=5)
+    # Plot the ellipse with constant disk radius
+    if de_x is not None:
+        ax.plot(de_x, de_y, color='w', lw=2, zorder=6, alpha=0.5)
+    if disk.dc is None:
+        ax.text(0.5, 0.3, 'No velocity dispersion model', ha='center', va='center',
+                transform=ax.transAxes)
+    else:
+        im = ax.imshow(smod_map, origin='lower', interpolation='nearest', cmap='viridis',
+                       extent=extent, norm=colors.LogNorm(vmin=sig_lim[0], vmax=sig_lim[1]),
+                       zorder=4)
+        cax = fig.add_axes([0.440, 0.57, 0.15, 0.005])
+        cax.tick_params(which='both', direction='in')
+        cb = fig.colorbar(im, cax=cax, orientation='horizontal', format=logformatter)
+        cax.text(-0.05, 0.1, r'$\sigma_m$', ha='right', va='center', transform=cax.transAxes)
+
+    #-------------------------------------------------------------------
+    # Velocity Model Residuals
+    v_resid = v_map - vmod_map
+    v_res_lim = growth_lim(v_resid, 0.80, 1.15, midpoint=0.0)
+
+    ax = plot.init_ax(fig, [0.605, 0.775, 0.19, 0.19])
+    cax = fig.add_axes([0.635, 0.97, 0.15, 0.005])
+    cax.tick_params(which='both', direction='in')
+    ax.set_xlim(skylim[::-1])
+    ax.set_ylim(skylim)
+    ax.xaxis.set_major_formatter(ticker.NullFormatter())
+    ax.yaxis.set_major_formatter(ticker.NullFormatter())
+    ax.add_patch(patches.Circle((0.1, 0.1), fwhm/np.diff(skylim)[0]/2, transform=ax.transAxes,
+                                facecolor='0.7', edgecolor='k', zorder=4))
+    im = ax.imshow(v_resid, origin='lower', interpolation='nearest', cmap='RdBu_r',
+                   extent=extent, vmin=v_res_lim[0], vmax=v_res_lim[1], zorder=4)
+    # Plot the ellipse with constant disk radius
+    if de_x is not None:
+        ax.plot(de_x, de_y, color='w', lw=2, zorder=6, alpha=0.5)
+    cb = fig.colorbar(im, cax=cax, orientation='horizontal')
+    cb.ax.xaxis.set_ticks_position('top')
+    cb.ax.xaxis.set_label_position('top')
+    cax.text(-0.05, 1.1, r'$\Delta V$', ha='right', va='center', transform=cax.transAxes)
+
+    #-------------------------------------------------------------------
+    # Velocity Dispersion Residuals
+    ax = plot.init_ax(fig, [0.605, 0.580, 0.19, 0.19])
+    ax.set_xlim(skylim[::-1])
+    ax.set_ylim(skylim)
+    ax.xaxis.set_major_formatter(ticker.NullFormatter())
+    ax.yaxis.set_major_formatter(ticker.NullFormatter())
+    ax.add_patch(patches.Circle((0.1, 0.1), fwhm/np.diff(skylim)[0]/2, transform=ax.transAxes,
+                                facecolor='0.7', edgecolor='k', zorder=4))
+    # Plot the ellipse with constant disk radius
+    if de_x is not None:
+        ax.plot(de_x, de_y, color='w', lw=2, zorder=6, alpha=0.5)
+    if disk.dc is None:
+        ax.text(0.5, 0.3, 'No velocity dispersion model', ha='center', va='center',
+                transform=ax.transAxes)
+    else:
+        s_resid = s_map - smod_map
+        s_res_lim = growth_lim(s_resid, 0.80, 1.15, midpoint=0.0)
+        im = ax.imshow(s_resid, origin='lower', interpolation='nearest', cmap='RdBu_r',
+                    extent=extent, vmin=s_res_lim[0], vmax=s_res_lim[1], zorder=4)
+        cax = fig.add_axes([0.635, 0.57, 0.15, 0.005])
+        cax.tick_params(which='both', direction='in')
+        cb = fig.colorbar(im, cax=cax, orientation='horizontal') #, format=logformatter)
+        cax.text(-0.05, 0.1, r'$\Delta\sigma$', ha='right', va='center', transform=cax.transAxes)
+
+    #-------------------------------------------------------------------
+    # Velocity Model Chi-square
+    v_chi = np.ma.divide(np.absolute(v_resid), v_err_map)
+    v_chi_lim = np.power(10.0, growth_lim(np.ma.log10(v_chi), 0.90, 1.15))
+    v_chi_lim = atleast_one_decade(v_chi_lim)
+
+    ax = plot.init_ax(fig, [0.800, 0.775, 0.19, 0.19])
+    cax = fig.add_axes([0.830, 0.97, 0.15, 0.005])
+    cax.tick_params(which='both', direction='in')
+    ax.set_xlim(skylim[::-1])
+    ax.set_ylim(skylim)
+    ax.xaxis.set_major_formatter(ticker.NullFormatter())
+    ax.yaxis.set_major_formatter(ticker.NullFormatter())
+    ax.add_patch(patches.Circle((0.1, 0.1), fwhm/np.diff(skylim)[0]/2, transform=ax.transAxes,
+                                facecolor='0.7', edgecolor='k', zorder=4))
+    im = ax.imshow(v_chi, origin='lower', interpolation='nearest', cmap='viridis',
+                   extent=extent, norm=colors.LogNorm(vmin=v_chi_lim[0], vmax=v_chi_lim[1]),
+                   zorder=4)
+    # Plot the ellipse with constant disk radius
+    if de_x is not None:
+        ax.plot(de_x, de_y, color='w', lw=2, zorder=6, alpha=0.5)
+    cb = fig.colorbar(im, cax=cax, orientation='horizontal', format=logformatter)
+    cb.ax.xaxis.set_ticks_position('top')
+    cb.ax.xaxis.set_label_position('top')
+    cax.text(-0.02, 1.1, r'$|\Delta V|/\epsilon$', ha='right', va='center',
+             transform=cax.transAxes)
+
+    #-------------------------------------------------------------------
+    # Velocity Dispersion Model Chi-square
+    ax = plot.init_ax(fig, [0.800, 0.580, 0.19, 0.19])
+    ax.set_xlim(skylim[::-1])
+    ax.set_ylim(skylim)
+    ax.xaxis.set_major_formatter(ticker.NullFormatter())
+    ax.yaxis.set_major_formatter(ticker.NullFormatter())
+    ax.add_patch(patches.Circle((0.1, 0.1), fwhm/np.diff(skylim)[0]/2, transform=ax.transAxes,
+                                facecolor='0.7', edgecolor='k', zorder=4))
+    # Plot the ellipse with constant disk radius
+    if de_x is not None:
+        ax.plot(de_x, de_y, color='w', lw=2, zorder=6, alpha=0.5)
+    if disk.dc is None:
+        ax.text(0.5, 0.3, 'No velocity dispersion model', ha='center', va='center',
+                transform=ax.transAxes)
+    else:
+        s_chi = np.ma.divide(np.absolute(s_resid), s_err_map)
+        s_chi_lim = np.power(10.0, growth_lim(np.ma.log10(s_chi), 0.90, 1.15))
+        s_chi_lim = atleast_one_decade(s_chi_lim)
+
+        cax = fig.add_axes([0.830, 0.57, 0.15, 0.005])
+        cax.tick_params(which='both', direction='in')
+        im = ax.imshow(s_chi, origin='lower', interpolation='nearest', cmap='viridis',
+                    extent=extent, norm=colors.LogNorm(vmin=s_chi_lim[0], vmax=s_chi_lim[1]),
+                    zorder=4)
+        cb = fig.colorbar(im, cax=cax, orientation='horizontal', format=logformatter)
+        cax.text(-0.02, 0.4, r'$|\Delta \sigma|/\epsilon$', ha='right', va='center',
+                transform=cax.transAxes)
+
+    #-------------------------------------------------------------------
+    # Velocity Error
+    ax = plot.init_ax(fig, [0.800, 0.305, 0.19, 0.19])
+    cax = fig.add_axes([0.830, 0.50, 0.15, 0.005])
+    cax.tick_params(which='both', direction='in')
+    ax.set_xlim(skylim[::-1])
+    ax.set_ylim(skylim)
+    #v_err_lim = growth_lim(v_err_map, 0.80, 1.15, midpoint=0.0)
+    v_err_lim = np.power(10.0, growth_lim(np.ma.log10(v_err_map), 0.90, 1.15))
+    v_err_lim = atleast_one_decade(v_err_lim)
+    ax.xaxis.set_major_formatter(ticker.NullFormatter())
+    ax.yaxis.set_major_formatter(ticker.NullFormatter())
+    #ax.add_patch(patches.Circle((0.1, 0.1), fwhm/np.diff(skylim)[0]/2, transform=ax.transAxes,
+     #                           facecolor='0.7', edgecolor='k', zorder=4))
+    im = ax.imshow(v_err_map, origin='lower', interpolation='nearest', cmap='RdBu_r',
+                   extent=extent, norm=colors.LogNorm(vmin=v_err_lim[0], vmax=v_err_lim[1]), zorder=4)
+    # Mark the fitted dynamical center
+    ax.scatter(disk.par[0], disk.par[1], marker='+', color='k', s=40, lw=1, zorder=5)
+    # Plot the ellipse with constant disk radius
+    if de_x is not None:
+        ax.plot(de_x, de_y, color='w', lw=2, zorder=6, alpha=0.5)
+    cb = fig.colorbar(im, cax=cax, orientation='horizontal', format=logformatter)
+    cb.ax.xaxis.set_ticks_position('top')
+    cb.ax.xaxis.set_label_position('top')
+    cax.text(-0.05, 1.1, r'$\epsilon_{V}$', ha='right', va='center', transform=cax.transAxes)
+
+    #-------------------------------------------------------------------
+    # Velocity Dispersion Error
+    ax = plot.init_ax(fig, [0.800, 0.110, 0.19, 0.19])
+    ax.set_xlim(skylim[::-1])
+    ax.set_ylim(skylim)
+    ax.xaxis.set_major_formatter(ticker.NullFormatter())
+    ax.yaxis.set_major_formatter(ticker.NullFormatter())
+    ax.add_patch(patches.Circle((0.1, 0.1), fwhm/np.diff(skylim)[0]/2, transform=ax.transAxes,
+                                facecolor='0.7', edgecolor='k', zorder=4))
+    # Mark the fitted dynamical center
+    ax.scatter(disk.par[0], disk.par[1], marker='+', color='k', s=40, lw=1, zorder=5)
+    # Plot the ellipse with constant disk radius
+    if de_x is not None:
+        ax.plot(de_x, de_y, color='w', lw=2, zorder=6, alpha=0.5)
+    if disk.dc is None:
+        ax.text(0.5, 0.3, 'No velocity dispersion model', ha='center', va='center',
+                transform=ax.transAxes)
+    else:
+        s_err_lim = np.power(10.0, growth_lim(np.ma.log10(s_err_map), 0.90, 1.15))
+        s_err_lim = atleast_one_decade(s_err_lim)
+        im = ax.imshow(s_err_map, origin='lower', interpolation='nearest', cmap='viridis',
+                       extent=extent, norm=colors.LogNorm(vmin=s_err_lim[0], vmax=s_err_lim[1]),
+                       zorder=4)
+        cax = fig.add_axes([0.830, 0.10, 0.15, 0.005])
+        cax.tick_params(which='both', direction='in')
+        cb = fig.colorbar(im, cax=cax, orientation='horizontal', format=logformatter)
+        cax.text(-0.05, 0.1, r'$\epsilon_{\sigma}$', ha='right', va='center', transform=cax.transAxes)
+#   
+ #-------------------------------------------------------------------
+#    # Intrinsic Velocity Model
+#    ax = plot.init_ax(fig, [0.800, 0.305, 0.19, 0.19])
+#    cax = fig.add_axes([0.830, 0.50, 0.15, 0.005])
+#    cax.tick_params(which='both', direction='in')
+#    ax.set_xlim(skylim[::-1])
+#    ax.set_ylim(skylim)
+#    ax.xaxis.set_major_formatter(ticker.NullFormatter())
+#    ax.yaxis.set_major_formatter(ticker.NullFormatter())
+#    im = ax.imshow(vmod_intr_map, origin='lower', interpolation='nearest', cmap='RdBu_r',
+#                   extent=extent, vmin=vel_lim[0], vmax=vel_lim[1], zorder=4)
+#    # Mark the fitted dynamical center
+#    ax.scatter(disk.par[0], disk.par[1], marker='+', color='k', s=40, lw=1, zorder=5)
+#    cb = fig.colorbar(im, cax=cax, orientation='horizontal')
+#    cb.ax.xaxis.set_ticks_position('top')
+#    cb.ax.xaxis.set_label_position('top')
+#    cax.text(-0.05, 1.1, 'V', ha='right', va='center', transform=cax.transAxes)
+#
+#    ax.text(0.5, 1.2, 'Intrinsic Model', ha='center', va='center', transform=ax.transAxes,
+#            fontsize=10)
+#
+#    #-------------------------------------------------------------------
+#    # Intrinsic Velocity Dispersion
+#    ax = plot.init_ax(fig, [0.800, 0.110, 0.19, 0.19])
+#    ax.set_xlim(skylim[::-1])
+#    ax.set_ylim(skylim)
+#    ax.xaxis.set_major_formatter(ticker.NullFormatter())
+#    ax.yaxis.set_major_formatter(ticker.NullFormatter())
+#    # Mark the fitted dynamical center
+#    ax.scatter(disk.par[0], disk.par[1], marker='+', color='k', s=40, lw=1, zorder=5)
+#    if disk.dc is None:
+#        ax.text(0.5, 0.3, 'No velocity dispersion model', ha='center', va='center',
+#                transform=ax.transAxes)
+#    else:
+#        im = ax.imshow(smod_intr_map, origin='lower', interpolation='nearest', cmap='viridis',
+#                       extent=extent, norm=colors.LogNorm(vmin=sig_lim[0], vmax=sig_lim[1]),
+#                       zorder=4)
+#        cax = fig.add_axes([0.830, 0.10, 0.15, 0.005])
+#        cax.tick_params(which='both', direction='in')
+#        cb = fig.colorbar(im, cax=cax, orientation='horizontal', format=logformatter)
+#        cax.text(-0.05, 0.1, r'$\sigma$', ha='right', va='center', transform=cax.transAxes)
+
+    #-------------------------------------------------------------------
+    # Annotate with the intrinsic scatter included
+    # Reduced chi-square
+    ax.text(0.00, -0.2, r'$\chi^2_\nu$', ha='left', va='center', transform=ax.transAxes,
+            fontsize=10)
+    ax.text(1.00, -0.2, f'{rchi2:.2f}', ha='right', va='center', transform=ax.transAxes,
+            fontsize=10)
+    ax.text(0.00, -0.3, r'V scatter, $\epsilon_v$:', ha='left', va='center',
+            transform=ax.transAxes, fontsize=10)
+    ax.text(1.00, -0.3, f'{vsct:.1f}', ha='right', va='center', transform=ax.transAxes,
+            fontsize=10)
+    if disk.dc is not None:
+        ax.text(0.00, -0.4, r'$\sigma^2$ scatter, $\epsilon_{\sigma^2}$:', ha='left', va='center',
+                transform=ax.transAxes, fontsize=10)
+        ax.text(1.00, -0.4, f'{ssct:.1f}', ha='right', va='center', transform=ax.transAxes,
+                fontsize=10)
+
+    #-------------------------------------------------------------------
+    # SDSS image
+    ax = fig.add_axes([0.01, 0.29, 0.23, 0.23])
+    if kin.image is not None:
+        ax.imshow(kin.image)
+    else:
+        ax.text(0.5, 0.5, 'No Image', ha='center', va='center', transform=ax.transAxes,
+                fontsize=20)
+
+    ax.text(0.5, 1.05, 'SDSS gri Composite', ha='center', va='center', transform=ax.transAxes,
+            fontsize=10)
+    ax.axes.get_xaxis().set_visible(False)
+    ax.axes.get_yaxis().set_visible(False)
+
+    if galmeta.primaryplus:
+        sample='Primary+'
+    elif galmeta.secondary:
+        sample='Secondary'
+    elif galmeta.ancillary:
+        sample='Ancillary'
+    else:
+        sample='Filler'
+
+    # MaNGA ID
+    ax.text(0.00, -0.05, 'MaNGA ID:', ha='left', va='center', transform=ax.transAxes, fontsize=10)
+    ax.text(1.01, -0.05, f'{galmeta.mangaid}', ha='right', va='center', transform=ax.transAxes,
+            fontsize=10)
+    # Observation
+    ax.text(0.00, -0.13, 'Observation:', ha='left', va='center', transform=ax.transAxes,
+            fontsize=10)
+    ax.text(1.01, -0.13, galmeta.plateifu, ha='right', va='center',
+            transform=ax.transAxes, fontsize=10)
+    # Kinematic tracer
+    ax.text(0.00, -0.21, 'Tracer:', ha='left', va='center', transform=ax.transAxes,
+            fontsize=10)
+    ax.text(1.01, -0.21, 'Unknown' if kin.tracer is None else kin.tracer, ha='right', va='center',
+            transform=ax.transAxes, fontsize=10)
+    # Sample selection
+    ax.text(0.00, -0.29, 'Sample:', ha='left', va='center', transform=ax.transAxes, fontsize=10)
+    ax.text(1.01, -0.29, f'{sample}', ha='right', va='center', transform=ax.transAxes, fontsize=10)
+    # Redshift
+    ax.text(0.00, -0.37, 'Redshift:', ha='left', va='center', transform=ax.transAxes, fontsize=10)
+    ax.text(1.01, -0.37, '{0:.4f}'.format(galmeta.z), ha='right', va='center',
+            transform=ax.transAxes, fontsize=10)
+    # Mag
+    ax.text(0.00, -0.45, 'Mag (N,r,i):', ha='left', va='center', transform=ax.transAxes,
+            fontsize=10)
+    if galmeta.mag is None:
+        ax.text(1.01, -0.45, 'Unavailable', ha='right', va='center',
+                transform=ax.transAxes, fontsize=10)
+    else:
+        ax.text(1.01, -0.45, '{0:.1f}/{1:.1f}/{2:.1f}'.format(*galmeta.mag), ha='right',
+                va='center', transform=ax.transAxes, fontsize=10)
+    # PSF FWHM
+    ax.text(0.00, -0.53, 'FWHM (g,r):', ha='left', va='center', transform=ax.transAxes,
+            fontsize=10)
+    ax.text(1.01, -0.53, '{0:.2f}, {1:.2f}'.format(*galmeta.psf_fwhm[:2]), ha='right', va='center',
+            transform=ax.transAxes, fontsize=10)
+    # Sersic n
+    ax.text(0.00, -0.61, r'Sersic $n$:', ha='left', va='center', transform=ax.transAxes,
+            fontsize=10)
+    ax.text(1.01, -0.61, '{0:.2f}'.format(galmeta.sersic_n), ha='right', va='center',
+            transform=ax.transAxes, fontsize=10)
+    # Stellar Mass
+    ax.text(0.00, -0.69, r'$\log(\mathcal{M}_\ast/\mathcal{M}_\odot$):', ha='left', va='center',
+            transform=ax.transAxes, fontsize=10)
+    ax.text(1.01, -0.69, '{0:.2f}'.format(np.log10(galmeta.mass)), ha='right', va='center',
+            transform=ax.transAxes, fontsize=10)
+    # Phot Inclination
+    ax.text(0.00, -0.77, r'$i_{\rm phot}$ [deg]', ha='left', va='center', transform=ax.transAxes,
+            fontsize=10)
+    ax.text(1.01, -0.77, '{0:.1f}'.format(galmeta.guess_inclination(lb=1., ub=89.)),
+            ha='right', va='center', transform=ax.transAxes, fontsize=10)
+    # Fitted center
+    ax.text(0.00, -0.85, r'$x_0$ [arcsec]', ha='left', va='center', transform=ax.transAxes,
+            fontsize=10, color='C3' if _fix[0] else 'k')
+    xstr = r'{0:.2f}'.format(disk.par[0]) if _fix[0] \
+            else r'{0:.2f} $\pm$ {1:.2f}'.format(disk.par[0], disk.par_err[0])
+    ax.text(1.01, -0.85, xstr,
+            ha='right', va='center', transform=ax.transAxes, fontsize=10,
+            color='C3' if _fix[0] else 'k')
+    ax.text(0.00, -0.93, r'$y_0$ [arcsec]', ha='left', va='center', transform=ax.transAxes,
+            fontsize=10, color='C3' if _fix[1] else 'k')
+    ystr = r'{0:.2f}'.format(disk.par[1]) if _fix[1] \
+            else r'{0:.2f} $\pm$ {1:.2f}'.format(disk.par[1], disk.par_err[1])
+    ax.text(1.01, -0.93, ystr,
+            ha='right', va='center', transform=ax.transAxes, fontsize=10,
+            color='C3' if _fix[1] else 'k')
+    # Position angle
+    ax.text(0.00, -1.01, r'$\phi_0$ [deg]', ha='left', va='center', transform=ax.transAxes,
+            fontsize=10, color='C3' if _fix[2] else 'k')
+    pastr = r'{0:.1f}'.format(disk.par[2]) if _fix[2] \
+            else r'{0:.1f} $\pm$ {1:.1f}'.format(disk.par[2], disk.par_err[2])
+    ax.text(1.01, -1.01, pastr,
+            ha='right', va='center', transform=ax.transAxes, fontsize=10,
+            color='C3' if _fix[2] else 'k')
+    # Kinematic Inclination
+    ax.text(0.00, -1.09, r'$i_{\rm kin}$ [deg]', ha='left', va='center', transform=ax.transAxes,
+            fontsize=10, color='C3' if _fix[3] else 'k')
+    incstr = r'{0:.1f}'.format(disk.par[3]) if _fix[3] \
+            else r'{0:.1f} $\pm$ {1:.1f}'.format(disk.par[3], disk.par_err[3])
+    ax.text(1.01, -1.09, incstr,
+            ha='right', va='center', transform=ax.transAxes, fontsize=10,
+            color='C3' if _fix[3] else 'k')
+    # Systemic velocity
+    ax.text(0.00, -1.17, r'$V_{\rm sys}$ [km/s]', ha='left', va='center', transform=ax.transAxes,
+            fontsize=10, color='C3' if _fix[4] else 'k')
+    vsysstr = r'{0:.1f}'.format(disk.par[4]) if _fix[4] \
+            else r'{0:.1f} $\pm$ {1:.1f}'.format(disk.par[4], disk.par_err[4])
+    ax.text(1.01, -1.17, vsysstr,
+            ha='right', va='center', transform=ax.transAxes, fontsize=10,
+            color='C3' if _fix[4] else 'k')
+
+    #-------------------------------------------------------------------
+    # Radial plot radius limits
+    # Select bins with sufficient data
+    vrot_indx = vrot_nbin > 5
+    if not np.any(vrot_indx):
+        vrot_indx = vrot_nbin > 0
+    vrad_indx = vrad_nbin > 5
+    if not np.any(vrad_indx):
+        vrad_indx = vrad_nbin > 0
+    if disk.dc is not None:
+        sprof_indx = sprof_nbin > 5
+        if not np.any(sprof_indx):
+            sprof_indx = sprof_nbin > 0
+
+    concat_r = binr[vrot_indx] if np.any(vrot_indx) else np.array([])
+    if disk.dc is not None and np.any(sprof_indx):
+        concat_r = np.append(concat_r, binr[sprof_indx])
+    if len(concat_r) == 0:
+        warnings.warn('No valid bins of velocity or sigma data.  Skipping radial bin plots!')
+
+        # Close off the plot
+        if ofile is None:
+            pyplot.show()
+        else:
+            fig.canvas.print_figure(ofile, bbox_inches='tight')
+        fig.clear()
+        pyplot.close(fig)
+
+        # Reset to default style
+        pyplot.rcdefaults()
+        return
+
+    # Set the radius limits for the radial plots
+    r_lim = [0.0, np.amax(concat_r)*1.1]
+
+    #-------------------------------------------------------------------
+    # Rotation curve
+#    maxrc = np.amax(np.append(vrot_ewmean[vrot_indx], vrotm_ewmean[vrot_indx])) \
+#                if np.any(vrot_indx) else np.amax(vrot_intr_model)
+#    rc_lim = [0.0, maxrc*1.1]
+
+    rc_lim = growth_lim(np.concatenate((vrot_ewmean[vrot_indx], vrotm_ewmean[vrot_indx],
+                                        vrad_ewmean[vrad_indx], vradm_ewmean[vrad_indx])),
+                        0.99, 1.3)
+
+    reff_lines = np.arange(galmeta.reff, r_lim[1], galmeta.reff) if galmeta.reff > 1 else None
+
+    ax = plot.init_ax(fig, [0.27, 0.27, 0.51, 0.23], facecolor='0.9', top=False, right=False)
+    ax.set_xlim(r_lim)
+    ax.set_ylim(rc_lim)
+    plot.rotate_y_ticks(ax, 90, 'center')
+    if smod is None:
+        ax.text(0.5, -0.13, r'$R$ [arcsec]', ha='center', va='center', transform=ax.transAxes,
+                fontsize=10)
+    else:
+        ax.xaxis.set_major_formatter(ticker.NullFormatter())
+
+    indx = vrot_nbin > 0
+#    ax.scatter(vrot_r, vrot, marker='.', color='k', s=30, lw=0, alpha=0.6, zorder=1)
+    app_indx = (vrot_th > np.pi/2) & (vrot_th < 3*np.pi/2)
+    
+    ax.scatter(vrot_r[app_indx], vrot[app_indx], marker='.', color='C0', s=30, lw=0, alpha=0.6, zorder=2)
+    ax.errorbar(vrot_r[app_indx],vrot[app_indx], yerr=vrot_exp_err[app_indx], color='C0', capsize=0,
+                    linestyle='', linewidth=1, alpha=1.0, zorder=3)
+    rec_indx = (vrot_th < np.pi/2) | (vrot_th > 3*np.pi/2)
+    
+    ax.scatter(vrot_r[rec_indx], vrot[rec_indx], marker='.', color='C3', s=30, lw=0, alpha=0.6, zorder=2)
+    ax.errorbar(vrot_r[rec_indx],vrot[rec_indx], yerr=vrot_exp_err[rec_indx], color='C3', capsize=0,
+                    linestyle='', linewidth=1, alpha=1.0, zorder=3)
+
+#    if np.any(indx):
+#       ax.scatter(binr[indx], vrot_ewmean[indx], marker='o', edgecolors='none', s=100,
+#                   alpha=1.0, facecolors='0.5', zorder=4)
+#       ax.scatter(binr[indx], vrotm_ewmean[indx], edgecolors='blueviolet', marker='o', lw=3, s=100,
+#                   alpha=1.0, facecolors='none', zorder=5)
+#        ax.errorbar(binr[indx], vrot_ewmean[indx], yerr=vrot_ewsdev[indx], color='0.5', capsize=0,
+#                    linestyle='', linewidth=1, alpha=1.0, zorder=3)
+    indx = vrad_nbin > 0
+    ax.scatter(vrad_r, vrad, marker='.', color='0.6', s=30, lw=0, alpha=0.6, zorder=2)
+#    if np.any(indx):
+#        ax.scatter(binr[indx], vrad_ewmean[indx], marker='o', edgecolors='none', s=100,
+#                   alpha=1.0, facecolors='0.7', zorder=4)
+#        ax.scatter(binr[indx], vradm_ewmean[indx], edgecolors='C1', marker='o', lw=3, s=100,
+#                   alpha=1.0, facecolors='none', zorder=5)
+#        ax.errorbar(binr[indx], vrad_ewmean[indx], yerr=vrad_ewsdev[indx], color='0.7', capsize=0,
+#                    linestyle='', linewidth=1, alpha=1.0, zorder=3)
+    ax.plot(modelr, vrot_intr_model, color='blueviolet', zorder=6, lw=0.5)
+    if reff_lines is not None:
+        for l in reff_lines:
+            ax.axvline(x=l, linestyle='--', lw=0.5, zorder=3, color='k')
+
+    asec2kpc = galmeta.kpc_per_arcsec()
+    if asec2kpc > 0:
+        axt = plot.get_twin(ax, 'x')
+        axt.set_xlim(np.array(r_lim) * galmeta.kpc_per_arcsec())
+        axt.set_ylim(rc_lim)
+        ax.text(0.5, 1.14, r'$R$ [$h^{-1}$ kpc]', ha='center', va='center', transform=ax.transAxes,
+                fontsize=10)
+    else:
+        ax.text(0.5, 1.05, 'kpc conversion unavailable', ha='center', va='center',
+                transform=ax.transAxes, fontsize=10)
+
+    kin_inc = disk.par[3]
+    axt = plot.get_twin(ax, 'y')
+    axt.set_xlim(r_lim)
+    axt.set_ylim(np.array(rc_lim)/np.sin(np.radians(kin_inc)))
+    plot.rotate_y_ticks(axt, 90, 'center')
+    axt.spines['right'].set_color('0.4')
+    axt.tick_params(which='both', axis='y', colors='0.4')
+    axt.yaxis.label.set_color('0.4')
+
+    ax.add_patch(patches.Rectangle((0.66,0.55), 0.32, 0.19, facecolor='w', lw=0, edgecolor='none',
+                                   zorder=7, alpha=0.7, transform=ax.transAxes))
+    ax.text(0.97, 0.65, r'$V\ \sin i$ [km/s; left axis]', ha='right', va='bottom',
+            transform=ax.transAxes, fontsize=10, zorder=8)
+    ax.text(0.97, 0.56, r'$V$ [km/s; right axis]', ha='right', va='bottom', color='0.4',
+            transform=ax.transAxes, fontsize=10, zorder=8)
+
+    #-------------------------------------------------------------------
+    # Velocity Dispersion profile
+    if smod is not None:
+        concat_s = np.append(sprof_ewmean[sprof_indx], sprofm_ewmean[sprof_indx]) \
+                        if np.any(sprof_indx) else sprof_intr_model
+        sprof_lim = np.power(10.0, growth_lim(np.ma.log10(concat_s), 0.9, 1.5))
+        sprof_lim = atleast_one_decade(sprof_lim)
+
+        ax = plot.init_ax(fig, [0.27, 0.04, 0.51, 0.23], facecolor='0.9')
+        ax.set_xlim(r_lim)
+        ax.set_ylim(sprof_lim)#[10,275])
+        ax.set_yscale('log')
+        ax.yaxis.set_major_formatter(logformatter)
+        plot.rotate_y_ticks(ax, 90, 'center')
+
+        indx = sprof_nbin > 0
+        ax.scatter(sprof_r, sprof, marker='.', color='k', s=30, lw=0, alpha=0.6, zorder=2)
+        ax.errorbar(sprof_r,sprof, yerr=sprof_exp_err, color='k', capsize=0,
+                    linestyle='', linewidth=1, alpha=1.0, zorder=3)
+#        if np.any(indx):
+#            ax.scatter(binr[indx], sprof_ewmean[indx], marker='o', edgecolors='none', s=100,
+#                       alpha=1.0, facecolors='0.5', zorder=4)
+#            ax.scatter(binr[indx], sprofm_ewmean[indx], edgecolors='blueviolet',
+#                       marker='o', lw=3, s=100, alpha=1.0, facecolors='none', zorder=5)
+#            ax.errorbar(binr[indx], sprof_ewmean[indx], yerr=sprof_ewsdev[indx], color='0.6',
+#                        capsize=0, linestyle='', linewidth=1, alpha=1.0, zorder=3)
+        ax.plot(modelr, sprof_intr_model, color='blueviolet', zorder=6, lw=0.5)
+        if reff_lines is not None:
+            for l in reff_lines:
+                ax.axvline(x=l, linestyle='--', lw=0.5, zorder=3, color='k')
+
+        ax.text(0.5, -0.13, r'$R$ [arcsec]', ha='center', va='center', transform=ax.transAxes,
+                fontsize=10)
+
+        ax.add_patch(patches.Rectangle((0.81,0.86), 0.17, 0.09, facecolor='w', lw=0,
+                                       edgecolor='none', zorder=7, alpha=0.7,
+                                       transform=ax.transAxes))
+        ax.text(0.97, 0.87, r'$\sigma_{\rm los}$ [km/s]', ha='right', va='bottom',
+                transform=ax.transAxes, fontsize=10, zorder=8)
+                
+ 
 
     
 ########################   
@@ -2107,6 +2961,9 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
     pyplot.rcdefaults()
     
   
+
+
+
 
 
 def axisym_init_model(galmeta, kin, rctype, dctype=None):
