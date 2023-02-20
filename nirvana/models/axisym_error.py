@@ -1394,6 +1394,10 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
     vrot_therr =  np.sqrt(dth[indx]).reshape(len(np.sqrt(dth[indx])),)
     vrot_err = np.sqrt(1/(np.cos(th[indx]))**2*(disk.par_err[4])**2 + (vrot*np.sin(th[indx]))**2*(dth[indx].reshape(len(dth[indx]),)))
     
+    # Experimental uncertainty on the velocity - projected
+    vrot_exp_err = np.abs((np.sqrt(inverse(kin.vel_ivar[indx])))/np.cos(th[indx]))
+    
+    
     #   - Projected radial velocities
     indx = minor_gpm & np.logical_not(kin.vel_mask)
     vrad_r = r[indx]
@@ -1403,6 +1407,9 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
         indx = np.logical_not(kin.sig_mask) & (kin.sig_phys2 > 0)
         sprof_r = r[indx]
         sprof = np.sqrt(kin.sig_phys2[indx])
+        
+        # for some reason the sig_phys2  was defined  with /s/sig_phys2
+        sprof_exp_err = np.sqrt(inverse(kin.sig_phys2_ivar[indx]))/2/np.sqrt(kin.sig_phys2[indx])
 
     # Get the 1D model profiles
     maxr = np.amax(r)
