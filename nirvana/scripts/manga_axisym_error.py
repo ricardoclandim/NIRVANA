@@ -12,6 +12,7 @@ from matplotlib import pyplot
 from ..data import manga
 from ..models import axisym_error
 
+
 # TODO: Setup a logger
 
 #import warnings
@@ -225,5 +226,11 @@ def main(args):
     # Create the final fit plot
     fit_plot = os.path.join(args.odir, f'{oroot}-fit.png')
     axisym_error.axisym_fit_plot(galmeta, kin, disk, fix=fix, ofile=fit_plot)
+    
+    
+    fit_plot_err = os.path.join(args.odir, f'{oroot}-fit_err.png')
+    axisym_error.axisym_fit_plot_exp_err(galmeta, kin, disk, fix=fix, ofile=fit_plot_err)
 
-
+    #vel1 = os.path.join(args.odir, f'{oroot}-vel1.txt')
+    #vel2 = os.path.join(args.odir, f'{oroot}-vel2.txt')
+    #axisym_error.save_vel(vel1,vel2)
