@@ -1397,6 +1397,11 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
     # Experimental uncertainty on the velocity - projected
     vrot_exp_err = np.abs((np.sqrt(inverse(kin.vel_ivar[indx])))/np.cos(th[indx]))
     
+    # Total uncertainty on velocity - projected
+    vrot_err_inc = np.sqrt(np.square(vrot_err/ np.sin(np.radians(disk.par[3]))) +  np.square( vrot/(np.square(np.sin(np.radians(disk.par[3]))))\
+               *np.cos(np.radians(disk.par[3])) *np.radians(disk.par_err[3])))
+    vrot_tot_err = np.sqrt(np.square(vrot_err)+np.square(vrot_exp_err))
+    vrot_tot_err_inc = np.sqrt(np.square(vrot_err_inc )+np.square(vrot_exp_err/ np.sin(np.radians(disk.par[3]))))
     
     #   - Projected radial velocities
     indx = minor_gpm & np.logical_not(kin.vel_mask)
@@ -1980,21 +1985,16 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
     ax.scatter(vrot_r[rec_indx], vrot[rec_indx], marker='.', color='C3', s=30, lw=0, alpha=0.6, zorder=2)
     
 #### added by RL - test to easily save the results
-  # Columns in the output are r,   rotation velocity, error in r, error in rot vel, exp error in rot_vel
-    data1 = np.column_stack([vrot_r[app_indx],  vrot[app_indx]/np.sin(np.radians(disk.par[3])), vrot_rerr[app_indx],\
-             np.sqrt(np.square(vrot_err[app_indx]/  \
-            np.sin(np.radians(disk.par[3]))) +  np.square( vrot[app_indx]/(np.square(np.sin(np.radians(disk.par[3])))) \
-              *np.cos(np.radians(disk.par[3])) \
-               *np.radians(disk.par_err[3]))),vrot_exp_err[app_indx]])
-    data2 = np.column_stack([vrot_r[rec_indx],  vrot[rec_indx]/np.sin(np.radians(disk.par[3])),vrot_rerr[rec_indx], \
-              np.sqrt(np.square(vrot_err[rec_indx]/  \
-            np.sin(np.radians(disk.par[3]))) +  np.square( vrot[rec_indx]/(np.square(np.sin(np.radians(disk.par[3]))))\
-               *np.cos(np.radians(disk.par[3])) \
-               *np.radians(disk.par_err[3]))), vrot_exp_err[rec_indx]])
-    datafile_path1 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}_vel1.txt'
-    datafile_path2 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}_vel2.txt'
-    np.savetxt(datafile_path1 , data1,  fmt = ['%10.4f', '%10.4f','%10.4f', '%10.4f','%10.4f'])
-    np.savetxt(datafile_path2 , data2, fmt= ['%10.4f', '%10.4f','%10.4f', '%10.4f','%10.4f'])
+  # Columns in the output are r,   rotation velocity, error in r, error in rot vel, experimental error in rot_vel, total error = sqrt(vrot_err^2 + verot_exp_err^2)
+    data1 = np.column_stack([vrot_r[app_indx],  vrot[app_indx]/np.sin(np.radians(disk.par[3])), vrot_rerr[app_indx],  vrot_err_inc[app_indx], \
+    		vrot_exp_err[app_indx]/np.sin(np.radians(disk.par[3])),vrot_tot_err_inc[app_indx]])
+                   
+    data2 = np.column_stack([vrot_r[rec_indx],  vrot[rec_indx]/np.sin(np.radians(disk.par[3])),vrot_rerr[rec_indx], vrot_err_inc[rec_indx], \
+    		vrot_exp_err[rec_indx]/np.sin(np.radians(disk.par[3])),vrot_tot_err_inc[rec_indx]])
+    datafile_path1 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}-{disk.rc.__class__.__name__}_vel1.txt'
+    datafile_path2 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}-{disk.rc.__class__.__name__}_vel2.txt'
+    np.savetxt(datafile_path1 , data1,  fmt = ['%10.4f', '%10.4f','%10.4f', '%10.4f','%10.4f','%10.4f'])
+    np.savetxt(datafile_path2 , data2, fmt= ['%10.4f', '%10.4f','%10.4f', '%10.4f','%10.4f','%10.4f'])
     
   #  data3 = np.column_stack([vrot_r[app_indx], vrot[app_indx]])
   #  data4 = np.column_stack([vrot_r[rec_indx], vrot[rec_indx]])
@@ -2098,7 +2098,7 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
   # Columns in the output are r, dispersion velocity, exp error in disp vel
     
         data5 = np.column_stack([sprof_r, sprof, sprof_exp_err])
-        datafile_path5 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}_disp_vel.txt'
+        datafile_path5 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}-{disk.dc.__class__.__name__}_disp_vel.txt'
         np.savetxt(datafile_path5 , data5, fmt= ['%10.4f', '%10.4f','%10.4f'])
 
 
@@ -2273,10 +2273,14 @@ def axisym_fit_plot_exp_err(galmeta, kin, disk, par=None, par_err=None, fix=None
     vrot_therr =  np.sqrt(dth[indx]).reshape(len(np.sqrt(dth[indx])),)
     vrot_err = np.sqrt(1/(np.cos(th[indx]))**2*(disk.par_err[4])**2 + (vrot*np.sin(th[indx]))**2*(dth[indx].reshape(len(dth[indx]),)))
     
+    
     # Experimental uncertainty on the velocity - projected
     vrot_exp_err = np.abs((np.sqrt(inverse(kin.vel_ivar[indx])))/np.cos(th[indx]))
-    
-    
+    # Total uncertainty on velocity - projected
+    vrot_err_inc = np.sqrt(np.square(vrot_err/ np.sin(np.radians(disk.par[3]))) +  np.square( vrot/(np.square(np.sin(np.radians(disk.par[3]))))\
+               *np.cos(np.radians(disk.par[3])) *np.radians(disk.par_err[3])))
+    vrot_tot_err = np.sqrt(np.square(vrot_err)+np.square(vrot_exp_err))
+    vrot_tot_err_inc = np.sqrt(np.square(vrot_err_inc )+np.square(vrot_exp_err/ np.sin(np.radians(disk.par[3]))))
     
     #   - Projected radial velocities
     indx = minor_gpm & np.logical_not(kin.vel_mask)
@@ -2852,12 +2856,12 @@ def axisym_fit_plot_exp_err(galmeta, kin, disk, par=None, par_err=None, fix=None
     app_indx = (vrot_th > np.pi/2) & (vrot_th < 3*np.pi/2)
     
     ax.scatter(vrot_r[app_indx], vrot[app_indx], marker='.', color='C0', s=30, lw=0, alpha=0.6, zorder=2)
-    ax.errorbar(vrot_r[app_indx],vrot[app_indx], yerr=vrot_exp_err[app_indx], color='C0', capsize=0,
+    ax.errorbar(vrot_r[app_indx],vrot[app_indx], yerr=vrot_tot_err_inc[app_indx], color='C0', capsize=0,
                     linestyle='', linewidth=1, alpha=1.0, zorder=3)
     rec_indx = (vrot_th < np.pi/2) | (vrot_th > 3*np.pi/2)
     
     ax.scatter(vrot_r[rec_indx], vrot[rec_indx], marker='.', color='C3', s=30, lw=0, alpha=0.6, zorder=2)
-    ax.errorbar(vrot_r[rec_indx],vrot[rec_indx], yerr=vrot_exp_err[rec_indx], color='C3', capsize=0,
+    ax.errorbar(vrot_r[rec_indx],vrot[rec_indx], yerr=vrot_tot_err_inc[rec_indx], color='C3', capsize=0,
                     linestyle='', linewidth=1, alpha=1.0, zorder=3)
 
 #    if np.any(indx):
