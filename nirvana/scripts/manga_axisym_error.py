@@ -11,6 +11,7 @@ from matplotlib import pyplot
 
 from ..data import manga
 from ..models import axisym_error
+ 
 
 
 # TODO: Setup a logger
@@ -230,6 +231,9 @@ def main(args):
     
     fit_plot_err = os.path.join(args.odir, f'{oroot}-fit_err.png')
     axisym_error.axisym_fit_plot_exp_err(galmeta, kin, disk, fix=fix, ofile=fit_plot_err)
+    
+    print(disk.par_names())
+    print(disk.fisher_matrix(disk.par, kin, sb_wgt=True, scatter=disk.scatter, ignore_covar=True, fix=np.logical_not(disk.free), inverse = True))
 
     #vel1 = os.path.join(args.odir, f'{oroot}-vel1.txt')
     #vel2 = os.path.join(args.odir, f'{oroot}-vel2.txt')
