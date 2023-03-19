@@ -29,6 +29,8 @@ from ..util import fileio
 
 from .thindisk import ThinDisk
 
+
+
 #warnings.simplefilter('error', RuntimeWarning)
 
 class AxisymmetricDisk(ThinDisk):
@@ -1996,13 +1998,17 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
     np.savetxt(datafile_path1 , data1,  fmt = ['%10.4f', '%10.4f','%10.4f', '%10.4f','%10.4f','%10.4f'])
     np.savetxt(datafile_path2 , data2, fmt= ['%10.4f', '%10.4f','%10.4f', '%10.4f','%10.4f','%10.4f'])
     
+    
+    
   #  data3 = np.column_stack([vrot_r[app_indx], vrot[app_indx]])
   #  data4 = np.column_stack([vrot_r[rec_indx], vrot[rec_indx]])
   #  datafile_path3 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}_vel1_bf.txt'
   #  datafile_path4 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}_vel2_bf.txt'
   #  np.savetxt(datafile_path3 , data3,  fmt = ['%10.4f', '%10.4f'])
   #  np.savetxt(datafile_path4 , data4, fmt= ['%10.4f', '%10.4f'])
-    
+     
+   
+   
 
     
 ########################    
@@ -2268,6 +2274,7 @@ def axisym_fit_plot_exp_err(galmeta, kin, disk, par=None, par_err=None, fix=None
     vrot_r = r[indx]
     vrot_th = th[indx]
     vrot = (kin.vel[indx] - disk.par[4])/np.cos(th[indx])
+    
     # Uncertainty on galaxy parameters, propagated to rotation velocity, radius and theta. Reshape used to reduce the size of the array
     vrot_rerr = np.sqrt(dr[indx]).reshape(len(np.sqrt(dr[indx])),)
     vrot_therr =  np.sqrt(dth[indx]).reshape(len(np.sqrt(dth[indx])),)
@@ -2852,6 +2859,7 @@ def axisym_fit_plot_exp_err(galmeta, kin, disk, par=None, par_err=None, fix=None
         ax.xaxis.set_major_formatter(ticker.NullFormatter())
 
     indx = vrot_nbin > 0
+    
 #    ax.scatter(vrot_r, vrot, marker='.', color='k', s=30, lw=0, alpha=0.6, zorder=1)
     app_indx = (vrot_th > np.pi/2) & (vrot_th < 3*np.pi/2)
     
@@ -2953,7 +2961,7 @@ def axisym_fit_plot_exp_err(galmeta, kin, disk, par=None, par_err=None, fix=None
                 transform=ax.transAxes, fontsize=10, zorder=8)
                 
  
-
+        
     
 ########################   
 
@@ -2971,7 +2979,8 @@ def axisym_fit_plot_exp_err(galmeta, kin, disk, par=None, par_err=None, fix=None
     # Reset to default style
     pyplot.rcdefaults()
     
-  
+    
+    #print(disk.fisher_matrix(disk.par, kin, sb_wgt=True, scatter=disk.scatter, ignore_covar=True, fix=np.logical_not(disk.free)))
 
 
 
