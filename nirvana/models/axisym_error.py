@@ -16,7 +16,7 @@ from matplotlib import pyplot, rc, patches, ticker, colors
 
 from astropy.io import fits
 
-from .geometry import projected_polar, deriv_projected_polar, disk_ellipse, deriv_projected_polar_err
+from .geometry import projected_polar, deriv_projected_polar, disk_ellipse, deriv_projected_polar_err, deriv_projected_polar_err_covar, dthetady, dthetadx
 from .beam import smear, deriv_smear
 from . import oned 
 from . import asymmetry
@@ -1380,9 +1380,19 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
 
     # Get the projected rotational velocity 
     #   - Disk-plane coordinates  and derivatives
-    r, th, dr, dth = deriv_projected_polar_err(kin.x - disk.par[0], kin.y - disk.par[1], np.radians(disk.par[2]), \
+    #print(disk.par_names())
+    #fisher = disk.fisher_matrix(disk.par, kin, sb_wgt=True, scatter=disk.scatter, ignore_covar=True, fix=np.logical_not(disk.free), inverse = True)
+    #r, th, dr, dth = deriv_projected_polar_err(kin.x - disk.par[0], kin.y - disk.par[1], np.radians(disk.par[2]), \
+    #			 np.radians(disk.par[3]), dxdp= disk.par_err[0], dydp=disk.par_err[1], dpadp= np.radians(disk.par_err[2]),\
+    #			     dincdp= np.radians(disk.par_err[3]))
+    
+    
+    r, th, dr, dth, xd, yd, dxrdx, dxrdy, dyrdx, dyrdy, dxrdrot, dyrdrot, dthetadx, dthetady  = deriv_projected_polar_err_covar(kin.x - disk.par[0], kin.y - disk.par[1], np.radians(disk.par[2]), \
     			 np.radians(disk.par[3]), dxdp= disk.par_err[0], dydp=disk.par_err[1], dpadp= np.radians(disk.par_err[2]),\
-    			     dincdp= np.radians(disk.par_err[3]))
+    			     dincdp= np.radians(disk.par_err[3]), dxdydp = 1, dpadxdp = 1, dpadydp = 1, \
+                         dincdxdp = 1, dincdydp = 1, dpadincdp = 1)
+                         
+    
     #   - Mask for data along the major axis
     major_gpm = select_kinematic_axis(r, th, which='major', r_range='all', wedge=maj_wedge)
     minor_gpm = select_kinematic_axis(r, th, which='minor', r_range='all', wedge=min_wedge)
@@ -1391,17 +1401,49 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
     vrot_r = r[indx]
     vrot_th = th[indx]
     vrot = (kin.vel[indx] - disk.par[4])/np.cos(th[indx])
+    
     # Uncertainty on galaxy parameters, propagated to rotation velocity, radius and theta. Reshape used to reduce the size of the array
-    vrot_rerr = np.sqrt(dr[indx]).reshape(len(np.sqrt(dr[indx])),)
-    vrot_therr =  np.sqrt(dth[indx]).reshape(len(np.sqrt(dth[indx])),)
-    vrot_err = np.sqrt(1/(np.cos(th[indx]))**2*(disk.par_err[4])**2 + (vrot*np.sin(th[indx]))**2*(dth[indx].reshape(len(dth[indx]),)))
+    vrot_rerr = np.sqrt(dr[indx]) 
+    vrot_therr =  np.sqrt(dth[indx]) 
+    
+    
+    #vrot_err = np.sqrt(1/(np.cos(th[indx]))**2*(disk.par_err[4])**2 + ((vrot*np.sin(th[indx])/np.cos(th[indx]))**2)*(dth[indx].reshape(len(dth[indx]),)))
+    
+    
+    fisher = disk.fisher_matrix(disk.par, kin, sb_wgt=True, scatter=disk.scatter, ignore_covar=True, fix=np.logical_not(disk.free), inverse = True)
+    dxdidp = 1
+    dydidp = 1
+    drotdidp = 1
+    dpadidp = 1
+    
+    
+    
+    vrot_err = np.sqrt(1/(np.cos(th[indx]))**2*(disk.par_err[4])**2 + (vrot*np.sin(th[indx])/np.cos(th[indx]))**2\
+    	*(dth[indx].reshape(len(dth[indx]),))\
+    	+2*(-1)/(np.cos(th[indx]))*vrot*np.sin(th[indx])/np.cos(th[indx])*\
+    	(((dthetadx[indx]).reshape(len(dthetadx[indx],)))*\
+    	((dxrdx)*dxdidp + (dxrdy)*dydidp +  (dxrdrot[indx].reshape(len(dxrdrot[indx]),))*drotdidp) + \
+    	 (((dthetady[indx]).reshape(len(dthetady[indx],)))/np.cos(np.radians(disk.par[3]))*\
+    	 ((dyrdx)*dxdidp + (dyrdy)*dydidp +(dyrdrot[indx].reshape(len(dyrdrot[indx]),)))*drotdidp) + \
+    	 ((dthetady[indx]).reshape(len(dthetadx[indx],)))*yd[indx]*np.sin(np.radians(disk.par[3]))/np.cos(np.radians(disk.par[3])*dpadidp)))
+    	
+    
     
     # Experimental uncertainty on the velocity - projected
     vrot_exp_err = np.abs((np.sqrt(inverse(kin.vel_ivar[indx])))/np.cos(th[indx]))
     
     # Total uncertainty on velocity - projected
+#    vrot_err_inc = np.sqrt(np.square(vrot_err/ np.sin(np.radians(disk.par[3]))) +  np.square( vrot/(np.square(np.sin(np.radians(disk.par[3]))))\
+#               *np.cos(np.radians(disk.par[3])) *np.radians(disk.par_err[3])))
+               
     vrot_err_inc = np.sqrt(np.square(vrot_err/ np.sin(np.radians(disk.par[3]))) +  np.square( vrot/(np.square(np.sin(np.radians(disk.par[3]))))\
-               *np.cos(np.radians(disk.par[3])) *np.radians(disk.par_err[3])))
+               *np.cos(np.radians(disk.par[3])) *np.radians(disk.par_err[3])) \
+              -2*vrot**2*(dthetady[indx].reshape(len(dthetadx[indx],)))*yd[indx]*np.sin(th[indx])/(np.sin(np.radians(disk.par[3]))*np.cos(th[indx]))*np.radians(disk.par_err[3])\
+               -2*np.cos(np.radians(disk.par[3]))/np.sin(np.radians(disk.par[3]))**2*(vrot)*np.sin(th[indx])/np.cos(th[indx])*\
+               (((dthetadx[indx].reshape(len(dthetadx[indx],)))*(dxrdx*dxdidp +  dxrdy*dydidp  + (dxrdrot[indx].reshape(len(dxrdrot[indx]),))*drotdidp))  + \
+                (dthetady[indx].reshape(len(dthetadx[indx],)))/np.cos(np.radians(disk.par[3]))*\
+                (dyrdx*dxdidp +  dyrdy*dydidp  + (dyrdrot[indx].reshape(len(dyrdrot[indx]),))*drotdidp) -1/np.cos(th[indx])   ))
+    
     vrot_tot_err = np.sqrt(np.square(vrot_err)+np.square(vrot_exp_err))
     vrot_tot_err_inc = np.sqrt(np.square(vrot_err_inc )+np.square(vrot_exp_err/ np.sin(np.radians(disk.par[3]))))
     

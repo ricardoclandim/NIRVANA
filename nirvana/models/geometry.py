@@ -296,7 +296,7 @@ def deriv_rotate_err_covar(x, y, rot, dxdp=None, dydp=None, drotdp=None, dxdydp=
         drotdp = np.ones((1,), dtype=float)
 
     if clockwise:
-        return deriv_rotate_err_covar(x, y, -rot, dxdp=dxdp, dydp=dydp, drotdp=-drotdp, dxdydp = dxdydp,  dxdrotdp=dxdrotdp, dydrotdp= dydrotdp)
+        return deriv_rotate_err_covar(x, y, -rot, dxdp=dxdp, dydp=dydp, drotdp=drotdp, dxdydp = dxdydp,  dxdrotdp=dxdrotdp, dydrotdp= dydrotdp)
 
     _dxdp = np.atleast_1d(dxdp)
     _dydp = np.atleast_1d(dydp)
@@ -316,9 +316,16 @@ def deriv_rotate_err_covar(x, y, rot, dxdp=None, dydp=None, drotdp=None, dxdydp=
     dxrdp = (_dxdp*cosr)**2 + (_x[...,None]*sinr*_drotdp[None,:]+_y[...,None]*cosr*_drotdp[None,:])**2 + (_dydp*sinr)**2  + \
     		2*(cosr)*(_x[...,None]*sinr+_y[...,None]*cosr)*_dxdrotdp[None,:] + 2*cosr*sinr*_dxdydp + 2*sinr*(_x[...,None]*sinr+_y[...,None]*cosr)*_dydrotdp[None,:]
     dyrdp = (_dydp*cosr)**2 + (-_y[...,None]*sinr*_drotdp[None,:]+_x[...,None]*cosr*_drotdp[None,:])**2 + (_dxdp*sinr)**2 + \
-               2*(cosr)*(-_y[...,None]*sinr+_x[...,None]*cosr)*_dydrotdp[None,:] + 2*cosr*sinr*_dxdydp + 2*sinr*(-_y[...,None]*sinr+_x[...,None]*cosr)*_dxdrotdp[None,:]     
-    
-    return xr, yr, dxrdp, dyrdp   
+               2*(cosr)*(-_y[...,None]*sinr+_x[...,None]*cosr)*_dydrotdp[None,:] + 2*cosr*sinr*_dxdydp + 2*sinr*(-_y[...,None]*sinr+_x[...,None]*cosr)*_dxdrotdp[None,:]  
+               
+    dxdyrdp =  (_dxdp)**2*cosr*sinr   - (_dydp)**2*sinr*cosr   \
+    		+(- _x[...,None]*sinr*_drotdp[None,:]-_y[...,None]*cosr*_drotdp[None,:])*(-_y[...,None]*sinr*_drotdp[None,:]\
+    		+_x[...,None]*cosr*_drotdp[None,:]) \
+    		+(cosr**2 - sinr**2)*_dxdydp \
+    		+ (cosr*(-_y[...,None]*sinr+_x[...,None]*cosr)+ (- _x[...,None]*sinr*-_y[...,None]*cosr)*sinr )*_dxdrotdp \
+    		+ (-sinr*(-_y[...,None]*sinr+_x[...,None]*cosr)+ (- _x[...,None]*sinr*-_y[...,None]*cosr)*cosr )*_dydrotdp
+    		
+    return xr, yr, dxrdp, dyrdp, dxdyrdp   
     
 
 def disk_ellipse(r, pa, inc, xc=0., yc=0., num=100):
@@ -595,23 +602,20 @@ def deriv_projected_polar_err(x, y, pa, inc, dxdp=None, dydp=None, dpadp=None, d
     return r, t, dr, dt    
     
     
-def deriv_projected_polar_err_covar(x, y, pa, inc, dxdp=None, dydp=None, dpadp=None, dincdp=None, dxdydp = None, dadxdp = None, dadydp = None, \
+def deriv_projected_polar_err_covar(x, y, pa, inc, dxdp=None, dydp=None, dpadp=None, dincdp=None, dxdydp = None, dpadxdp = None, dpadydp = None, \
                          dincdxdp = None, dincdydp = None, dpadincdp = None):
     r"""
     Calculate the in-plane polar coordinates of an inclined plane and their
     derivatives with respect to a set of input parameters.
-
     The set of input parameters can be unknown, i.e. defined in the calling
     method, or the two parameters of this function (``pa``, ``inc``).  That is,
     if the arguments of this function depend on upstream set of parameters,
     their derivatives with respect to these parameters should be passed to the
     relevant keyword arguments.  Importantly, if you supply one of either
     ``dxdp``, ``dydp``, ``dpadp``, ``dincdp``, you must supply them all.
-
     See additional documentation of the :func:`projected_polar` method.  The
     same warning there about the calculation when :math:`i = \pi/2` holds for
     the derivatives, as well.
-
     Args:
         x (array-like):
             Cartesian x coordinates.
@@ -644,7 +648,6 @@ def deriv_projected_polar_err_covar(x, y, pa, inc, dxdp=None, dydp=None, dpadp=N
             Shape is :math:`(m,)`, where :math:`m` is the number of parameters.
             If None, the inclination is considered to be the one of the model
             parameters.
-
     Returns:
         :obj:`tuple`: Returns four arrays with the projected radius and in-plane
         azimuth and their derivatives (order is radius, aziumth, radius
@@ -678,30 +681,52 @@ def deriv_projected_polar_err_covar(x, y, pa, inc, dxdp=None, dydp=None, dpadp=N
     _dpadydp = np.atleast_1d(dpadydp)
     _dincdxdp = np.atleast_1d(dincdxdp)
     _dincdydp = np.atleast_1d(dincdydp)
-    _dincdpadp = np.atleast_1d(dincdpadp)
-    
+    _dpadincdp = np.atleast_1d(dpadincdp)
+
 
     # Calculate the rotated coordinates (note the propagation of the derivative
     # given the calculation of the applied rotation based on the position angle)
-    xd, yr, dxd, dyr = deriv_rotate_err_covar(_x, _y, np.pi/2-pa, dxdp=_dxdp, dydp=_dydp, drotdp=-_dpadp, dxdydp=_dxdydp, dxdrotdp=_dpadxdp, dydrotdp= _dpadydp,
-                                    clockwise=True)
+    xd, yr, dxd, dyr, dxddyr = deriv_rotate_err_covar(_x, _y, np.pi/2-pa, dxdp=_dxdp, dydp=_dydp, drotdp=_dpadp, dxdydp=_dxdydp, dxdrotdp=_dpadxdp, dydrotdp= _dpadydp, clockwise=True)
 
     # Project the y axis    dxd and dyr squared of uncertainty
+    rot = -(np.pi/2-pa)
     cosi = np.cos(inc)
     yd = yr / cosi
-    # Absolute squared of derivatives
-    dyd = dyr / cosi**2 + (yr[...,None] * _dincdp[None,:] * np.sin(inc) / cosi**2)**2
+    cosr = np.cos(rot)
+    sinr = np.sin(rot)
+    #xr = _x*cosr - _y*sinr
+    #yr = _y*cosr + _x*sinr
+    dxrdx = cosr
+    dxrdy = -sinr
+    dyrdx = sinr
+    dyrdy = cosr
+    dxrdrot =- _x[...,None]*sinr - _y[...,None]*cosr
+    dyrdrot = -_y[...,None]*sinr + _x[...,None]*cosr
+    # Absolute squared of derivatives   + 2 dyd/dyr dyd/di sigma_{yr i}
+    dyd = dyr / cosi**2 + (yr[...,None] * _dincdp[None,:] * np.sin(inc) / cosi**2)**2 \
+    	+ (2*sinr*_dincdxdp[...,None] + 2*(cosr)*_dincdydp +2*(-_y[...,None]*sinr + _x[...,None]*cosr)*_dpadincdp[...,None])\
+    	*(1/cosi)*(yr[...,None] * np.sin(inc) / cosi**2)
+    
 
     # Calculate the polar coordinates
     r = np.sqrt(xd**2 + yd**2)
      # Absolute squared of derivatives
-    dr = (drdx(xd, yd, r=r)[...,None])**2*dxd + (drdy(xd, yd, r=r)[...,None])**2*dyd
+    dr = (drdx(xd, yd, r=r)[...,None])**2*dxd + (drdy(xd, yd, r=r)[...,None])**2*dyd\
+    	+ 2*drdx(xd, yd, r=r)[...,None]*drdy(xd, yd, r=r)[...,None]*yr[...,None]*np.sin(inc) / cosi**2 *(cosr*_dincdxdp[...,None] + cosr*_dincdydp[...,None] \
+    	+(dxrdrot)*_dpadincdp[...,None]) \
+    	+ 2*drdx(xd, yd, r=r)[...,None]*drdy(xd, yd, r=r)[...,None]/cosi *dxddyr
 
     t = np.arctan2(-yd,xd) % (2*np.pi)
+    dthetadx_s = dthetadx(xd, -yd, r=r)[...,None]
+    dthetady_s = dthetadx(xd, -yd, r=r)[...,None]
      # Absolute squared of derivatives    
-    dt = (dthetadx(xd, -yd, r=r)[...,None])**2*dxd + (dthetady(xd, -yd, r=r)[...,None])**2*dyd
-
-    return r, t, dr, dt    
+    dt = (dthetadx(xd, -yd, r=r)[...,None])**2*dxd + (dthetady(xd, -yd, r=r)[...,None])**2*dyd\
+    	+ 2*dthetadx(xd, -yd, r=r)[...,None]*dthetady(xd, -yd, r=r)[...,None]*yr[...,None]*np.sin(inc) / cosi**2 *(cosr*_dincdxdp[...,None] +\
+    	 cosr*_dincdydp[...,None] +(dxrdrot)*_dpadincdp[...,None]) \
+    	+ 2*dthetadx(xd, -yd, r=r)[...,None]*dthetady(xd, -yd, r=r)[...,None]/cosi *dxddyr
+    	
+   
+    return r, t, dr, dt, xd, yd, dxrdx, dxrdy, dyrdx, dyrdy, dxrdrot, dyrdrot, dthetadx_s, dthetady_s   
 
 
 def drdx(x, y, r=None):
