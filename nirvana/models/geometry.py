@@ -221,10 +221,17 @@ def deriv_rotate_err(x, y, rot, dxdp=None, dydp=None, drotdp=None, clockwise=Fal
     # dxrdp and dyrdp   are the uncertainties squared sigma_xr^2 and sigma_yr^2. Note that _x, _y above are = x - xc and y - yc, where
     # xc and yc are the x,y positions of the galactic center. Thus _dx = -dxc, _dy = -dyc
     #sigma_xr^2 = |dxrdx|^2 sigma_xc^2 + |dxrdy|^2 sigma_yc^2 + |dxrdrot|^2 sigma_rot^2. Same reasoning for yr
-    dxrdp = (_dxdp*cosr)**2 + (_x[...,None]*sinr*_drotdp[None,:]+_y[...,None]*cosr*_drotdp[None,:])**2 + (_dydp*sinr)**2 
+    dxrdp = (_dxdp*cosr)**2 + (_x[...,None]*sinr*_drotdp[None,:]+_y[...,None]*cosr*_drotdp[None,:])**2 + (_dydp*sinr)**2  
+    		
     dyrdp = (_dydp*cosr)**2 + (-_y[...,None]*sinr*_drotdp[None,:]+_x[...,None]*cosr*_drotdp[None,:])**2 + (_dxdp*sinr)**2 
-    
-    return xr, yr, dxrdp, dyrdp  
+              
+               
+    dxdyrdp =  (_dxdp)**2*cosr*sinr   - (_dydp)**2*sinr*cosr   \
+    		+(- _x[...,None]*sinr*_drotdp[None,:]-_y[...,None]*cosr*_drotdp[None,:])*(-_y[...,None]*sinr*_drotdp[None,:]\
+    		+_x[...,None]*cosr*_drotdp[None,:]) 
+    		
+    #print(dxdyrdp)		
+    return xr, yr, dxrdp, dyrdp, dxdyrdp   
     
     
 def deriv_rotate_err_covar(x, y, rot, dxdp=None, dydp=None, drotdp=None, dxdydp=None, dxdrotdp=None, dydrotdp=None, clockwise=False):
@@ -581,7 +588,7 @@ def deriv_projected_polar_err(x, y, pa, inc, dxdp=None, dydp=None, dpadp=None, d
 
     # Calculate the rotated coordinates (note the propagation of the derivative
     # given the calculation of the applied rotation based on the position angle)
-    xd, yr, dxd, dyr = deriv_rotate_err(_x, _y, np.pi/2-pa, dxdp=_dxdp, dydp=_dydp, drotdp=-_dpadp,
+    xd, yr, dxd, dyr, dxddyr = deriv_rotate_err(_x, _y, np.pi/2-pa, dxdp=_dxdp, dydp=_dydp, drotdp=-_dpadp,
                                     clockwise=True)
 
     # Project the y axis    dxd and dyr squared of uncertainty
@@ -589,17 +596,23 @@ def deriv_projected_polar_err(x, y, pa, inc, dxdp=None, dydp=None, dpadp=None, d
     yd = yr / cosi
     # Absolute squared of derivatives
     dyd = dyr / cosi**2 + (yr[...,None] * _dincdp[None,:] * np.sin(inc) / cosi**2)**2
+    
 
     # Calculate the polar coordinates
     r = np.sqrt(xd**2 + yd**2)
      # Absolute squared of derivatives
-    dr = (drdx(xd, yd, r=r)[...,None])**2*dxd + (drdy(xd, yd, r=r)[...,None])**2*dyd
+    dr = (drdx(xd, yd, r=r)[...,None])**2*dxd + (drdy(xd, yd, r=r)[...,None])**2*dyd\
+    	+ 2*drdx(xd, yd, r=r)[...,None]*drdy(xd, yd, r=r)[...,None]/cosi *dxddyr
 
     t = np.arctan2(-yd,xd) % (2*np.pi)
+    dthetadx_s = dthetadx(xd, -yd, r=r)[...,None]
+    dthetady_s = dthetadx(xd, -yd, r=r)[...,None]
      # Absolute squared of derivatives    
-    dt = (dthetadx(xd, -yd, r=r)[...,None])**2*dxd + (dthetady(xd, -yd, r=r)[...,None])**2*dyd
-
-    return r, t, dr, dt    
+    dt = (dthetadx(xd, -yd, r=r)[...,None])**2*dxd + (dthetady(xd, -yd, r=r)[...,None])**2*dyd\
+          + 2*dthetadx(xd, -yd, r=r)[...,None]*dthetady(xd, -yd, r=r)[...,None]/cosi *dxddyr
+    
+    
+    return  r, t, dr, dt, xd, yd, dthetadx_s, dthetady_s
     
     
 def deriv_projected_polar_err_covar(x, y, pa, inc, dxdp=None, dydp=None, dpadp=None, dincdp=None, dxdydp = None, dpadxdp = None, dpadydp = None, \

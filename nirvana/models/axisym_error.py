@@ -36,10 +36,8 @@ from .thindisk import ThinDisk
 class AxisymmetricDisk(ThinDisk):
     r"""
     Simple model for an axisymmetric disk.
-
     The model assumes the disk is infinitely thin and has a single set of
     geometric parameters:
-
         - :math:`x_c, y_c`: The coordinates of the galaxy dynamical center.
         - :math:`\phi`: The position angle of the galaxy (the angle from N
           through E)
@@ -48,25 +46,20 @@ class AxisymmetricDisk(ThinDisk):
           face-on disk.
         - :math:`V_{\rm sys}`: The systemic (bulk) velocity of the galaxy
           taken as the line-of-sight velocity at the dynamical center.
-
     In addition to these parameters, the model instantiation requires class
     instances that define the rotation curve and velocity dispersion profile.
     These classes must have:
-
         - an ``np`` attribute that provides the number of parameters in the
           model
         - a ``guess_par`` method that provide initial guess parameters for
           the model, and
         - ``lb`` and ``ub`` attributes that provide the lower and upper
           bounds for the model parameters.
-
     Importantly, note that the model fits the parameters for the *projected*
     rotation curve. I.e., that amplitude of the fitted function is actually
     :math:`V_\theta\ \sin i`.
-
     .. todo::
         Describe the attributes
-
     Args:
         rc (:class:`~nirvana.models.oned.Func1D`, optional):
             The parameterization to use for the disk rotation curve.  If None,
@@ -74,7 +67,6 @@ class AxisymmetricDisk(ThinDisk):
         dc (:class:`~nirvana.models.oned.Func1D`, optional):
             The parameterization to use for the disk dispersion profile.  If
             None, the dispersion profile is not included in the fit!
-
     """
     def __init__(self, rc=None, dc=None):
         # Rotation curve
@@ -100,11 +92,9 @@ class AxisymmetricDisk(ThinDisk):
     def guess_par(self):
         """
         Return a list of generic guess parameters.
-
         .. todo::
             Could enable this to base the guess on the data to be fit, but at
             the moment these are hard-coded numbers.
-
         Returns:
             `numpy.ndarray`_: Vector of guess parameters
         """
@@ -114,11 +104,9 @@ class AxisymmetricDisk(ThinDisk):
     def par_names(self, short=False):
         """
         Return a list of strings with the parameter names.
-
         Args:
             short (:obj:`bool`, optional):
                 Return truncated nomenclature for the parameter names.
-
         Returns:
             :obj:`list`: List of parameter name strings.
         """
@@ -143,11 +131,9 @@ class AxisymmetricDisk(ThinDisk):
         """
         Return the rotation curve parameters. Returns None if parameters are
         not defined yet.
-
         Args:
             err (:obj:`bool`, optional):
                 Return the parameter errors instead of the parameter values.
-
         Returns:
             `numpy.ndarray`_: Vector with parameters or parameter errors for the
             rotation curve.
@@ -159,11 +145,9 @@ class AxisymmetricDisk(ThinDisk):
         """
         Return the dispersion profile parameters. Returns None if parameters
         are not defined yet or if no dispersion profile has been defined.
-
         Args:
             err (:obj:`bool`, optional):
                 Return the parameter errors instead of the parameter values.
-
         Returns:
             `numpy.ndarray`_: Vector with parameters or parameter errors for the
             dispersion profile.
@@ -174,16 +158,13 @@ class AxisymmetricDisk(ThinDisk):
     def par_bounds(self, base_lb=None, base_ub=None):
         """
         Return the lower and upper boundaries on the model parameters.
-
         The default geometric bounds (see ``base_lb``, ``base_ub``) are set
         by the minimum and maximum available x and y coordinates, -350 to 350
         for the position angle, 1 to 89 for the inclination, and -300 to 300
         for the systemic velocity.
-
         .. todo::
             Could enable this to base the bounds on the data to be fit, but
             at the moment these are hard-coded numbers.
-
         Args:
             base_lb (`numpy.ndarray`_, optional):
                 The lower bounds for the "base" parameters: x0, y0, pa, inc,
@@ -191,7 +172,6 @@ class AxisymmetricDisk(ThinDisk):
             base_ub (`numpy.ndarray`_, optional):
                 The upper bounds for the "base" parameters: x0, y0, pa, inc,
                 vsys. If None, the defaults are used (see above).
-
         Returns:
             :obj:`tuple`: A two-tuple providing, respectively, the lower and
             upper boundaries for all model parameters.
@@ -207,7 +187,6 @@ class AxisymmetricDisk(ThinDisk):
               ignore_beam=False):
         """
         Evaluate the model.
-
         Note that arguments passed to this function overwrite any existing
         attributes of the object, and subsequent calls to this function will
         continue to use existing attributes, unless they are overwritten.  For
@@ -216,14 +195,12 @@ class AxisymmetricDisk(ThinDisk):
         provide a new** ``beam`` will use the existing :attr:`beam_fft`.  To
         remove all internal attributes to get a "clean" instantiation, either
         define a new :class:`AxisymmetricDisk` instance or use :func:`reinit`.
-
         .. warning::
             
             Input coordinates and surface-brightness data types are all
             converted to `numpy.float64`_.  This is always true, even though
             this is only needed when using
             :class:`~nirvana.models.beam.ConvolveFFTW`.
-
         Args:
             par (`numpy.ndarray`_, optional):
                 The list of parameters to use. If None, the internal
@@ -258,7 +235,6 @@ class AxisymmetricDisk(ThinDisk):
             ignore_beam (:obj:`bool`, optional):
                 Ignore the beam-smearing when constructing the model. I.e.,
                 construct the *intrinsic* model.
-
         Returns:
             `numpy.ndarray`_, :obj:`tuple`: The velocity field model, and the
             velocity dispersion field model, if the latter is included
@@ -290,7 +266,6 @@ class AxisymmetricDisk(ThinDisk):
                     ignore_beam=False):
         """
         Evaluate the derivative of the model w.r.t all input parameters.
-
         Note that arguments passed to this function overwrite any existing
         attributes of the object, and subsequent calls to this function will
         continue to use existing attributes, unless they are overwritten.  For
@@ -299,14 +274,12 @@ class AxisymmetricDisk(ThinDisk):
         provide a new** ``beam`` will use the existing :attr:`beam_fft`.  To
         remove all internal attributes to get a "clean" instantiation, either
         define a new :class:`AxisymmetricDisk` instance or use :func:`reinit`.
-
         .. warning::
             
             Input coordinates and surface-brightness data types are all
             converted to `numpy.float64`_.  This is always true, even though
             this is only needed when using
             :class:`~nirvana.models.beam.ConvolveFFTW`.
-
         Args:
             par (`numpy.ndarray`_, optional):
                 The list of parameters to use. If None, the internal
@@ -341,7 +314,6 @@ class AxisymmetricDisk(ThinDisk):
             ignore_beam (:obj:`bool`, optional):
                 Ignore the beam-smearing when constructing the model. I.e.,
                 construct the *intrinsic* model.
-
         Returns:
             `numpy.ndarray`_, :obj:`tuple`: The velocity field model, and the
             velocity dispersion field model, if the latter is included
@@ -410,7 +382,6 @@ class AxisymmetricDisk(ThinDisk):
     def report(self, fit_message=None, component=False):
         """
         Report the current parameters of the model to the screen.
-
         Args:
             fit_message (:obj:`str`, optional):
                 The status message returned by the fit optimization.
@@ -514,13 +485,11 @@ def _fit_meta_dtype(par_names, nr, parbitmask):
     """
     Set the data type for a `numpy.recarray`_ used to hold metadata of the
     best-fit model.
-
     Args:
         par_names (array-like):
             Array of strings with the short names for the model parameters.
         nr (:obj:`int`):
             Number radial bins for azimuthally averaged profiles
-
     Returns:
         :obj:`list`: The list of tuples providing the name, data type, and shape
         of each `numpy.recarray`_ column.
@@ -728,7 +697,6 @@ def _fit_meta_dtype(par_names, nr, parbitmask):
 def axisym_fit_data(galmeta, kin, p0, lb, ub, disk, vmask, smask, ofile=None):
     """
     Construct a fits file with the best-fit results.
-
     Args:
         galmeta (:class:`~nirvana.data.meta.GlobalPar`):
             Object with metadata for the galaxy to be fit.
@@ -751,7 +719,6 @@ def axisym_fit_data(galmeta, kin, p0, lb, ub, disk, vmask, smask, ofile=None):
         ofile (:obj:`str`, optional):
             Output filename.  File names ending in '.gz' will be compressed.  If
             None, no file is written.
-
     Returns:
         `astropy.io.fits.HDUList`_: The list of HDUs with the fit results.
     """
@@ -1247,7 +1214,6 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
     """
     Construct the QA plot for the result of fitting an
     :class:`~nirvana.model.axisym.AxisymmetricDisk` model to a galaxy.
-
     Args:
         galmeta (:class:`~nirvana.data.meta.GlobalPar`):
             Object with metadata for the galaxy to be fit.
@@ -1380,17 +1346,12 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
 
     # Get the projected rotational velocity 
     #   - Disk-plane coordinates  and derivatives
-    #print(disk.par_names())
-    #fisher = disk.fisher_matrix(disk.par, kin, sb_wgt=True, scatter=disk.scatter, ignore_covar=True, fix=np.logical_not(disk.free), inverse = True)
-    #r, th, dr, dth = deriv_projected_polar_err(kin.x - disk.par[0], kin.y - disk.par[1], np.radians(disk.par[2]), \
-    #			 np.radians(disk.par[3]), dxdp= disk.par_err[0], dydp=disk.par_err[1], dpadp= np.radians(disk.par_err[2]),\
-    #			     dincdp= np.radians(disk.par_err[3]))
+    
+    r, th = projected_polar(kin.x - disk.par[0], kin.y - disk.par[1], np.radians(disk.par[2]), \
+    			 np.radians(disk.par[3]))
     
     
-    r, th, dr, dth, xd, yd, dxrdx, dxrdy, dyrdx, dyrdy, dxrdrot, dyrdrot, dthetadx, dthetady  = deriv_projected_polar_err_covar(kin.x - disk.par[0], kin.y - disk.par[1], np.radians(disk.par[2]), \
-    			 np.radians(disk.par[3]), dxdp= disk.par_err[0], dydp=disk.par_err[1], dpadp= np.radians(disk.par_err[2]),\
-    			     dincdp= np.radians(disk.par_err[3]), dxdydp = 1, dpadxdp = 1, dpadydp = 1, \
-                         dincdxdp = 1, dincdydp = 1, dpadincdp = 1)
+    
                          
     
     #   - Mask for data along the major axis
@@ -1402,50 +1363,7 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
     vrot_th = th[indx]
     vrot = (kin.vel[indx] - disk.par[4])/np.cos(th[indx])
     
-    # Uncertainty on galaxy parameters, propagated to rotation velocity, radius and theta. Reshape used to reduce the size of the array
-    vrot_rerr = np.sqrt(dr[indx]) 
-    vrot_therr =  np.sqrt(dth[indx]) 
-    
-    
-    #vrot_err = np.sqrt(1/(np.cos(th[indx]))**2*(disk.par_err[4])**2 + ((vrot*np.sin(th[indx])/np.cos(th[indx]))**2)*(dth[indx].reshape(len(dth[indx]),)))
-    
-    
-    fisher = disk.fisher_matrix(disk.par, kin, sb_wgt=True, scatter=disk.scatter, ignore_covar=True, fix=np.logical_not(disk.free), inverse = True)
-    dxdidp = 1
-    dydidp = 1
-    drotdidp = 1
-    dpadidp = 1
-    
-    
-    
-    vrot_err = np.sqrt(1/(np.cos(th[indx]))**2*(disk.par_err[4])**2 + (vrot*np.sin(th[indx])/np.cos(th[indx]))**2\
-    	*(dth[indx].reshape(len(dth[indx]),))\
-    	+2*(-1)/(np.cos(th[indx]))*vrot*np.sin(th[indx])/np.cos(th[indx])*\
-    	(((dthetadx[indx]).reshape(len(dthetadx[indx],)))*\
-    	((dxrdx)*dxdidp + (dxrdy)*dydidp +  (dxrdrot[indx].reshape(len(dxrdrot[indx]),))*drotdidp) + \
-    	 (((dthetady[indx]).reshape(len(dthetady[indx],)))/np.cos(np.radians(disk.par[3]))*\
-    	 ((dyrdx)*dxdidp + (dyrdy)*dydidp +(dyrdrot[indx].reshape(len(dyrdrot[indx]),)))*drotdidp) + \
-    	 ((dthetady[indx]).reshape(len(dthetadx[indx],)))*yd[indx]*np.sin(np.radians(disk.par[3]))/np.cos(np.radians(disk.par[3])*dpadidp)))
-    	
-    
-    
-    # Experimental uncertainty on the velocity - projected
-    vrot_exp_err = np.abs((np.sqrt(inverse(kin.vel_ivar[indx])))/np.cos(th[indx]))
-    
-    # Total uncertainty on velocity - projected
-#    vrot_err_inc = np.sqrt(np.square(vrot_err/ np.sin(np.radians(disk.par[3]))) +  np.square( vrot/(np.square(np.sin(np.radians(disk.par[3]))))\
-#               *np.cos(np.radians(disk.par[3])) *np.radians(disk.par_err[3])))
-               
-    vrot_err_inc = np.sqrt(np.square(vrot_err/ np.sin(np.radians(disk.par[3]))) +  np.square( vrot/(np.square(np.sin(np.radians(disk.par[3]))))\
-               *np.cos(np.radians(disk.par[3])) *np.radians(disk.par_err[3])) \
-              -2*vrot**2*(dthetady[indx].reshape(len(dthetadx[indx],)))*yd[indx]*np.sin(th[indx])/(np.sin(np.radians(disk.par[3]))*np.cos(th[indx]))*np.radians(disk.par_err[3])\
-               -2*np.cos(np.radians(disk.par[3]))/np.sin(np.radians(disk.par[3]))**2*(vrot)*np.sin(th[indx])/np.cos(th[indx])*\
-               (((dthetadx[indx].reshape(len(dthetadx[indx],)))*(dxrdx*dxdidp +  dxrdy*dydidp  + (dxrdrot[indx].reshape(len(dxrdrot[indx]),))*drotdidp))  + \
-                (dthetady[indx].reshape(len(dthetadx[indx],)))/np.cos(np.radians(disk.par[3]))*\
-                (dyrdx*dxdidp +  dyrdy*dydidp  + (dyrdrot[indx].reshape(len(dyrdrot[indx]),))*drotdidp) -1/np.cos(th[indx])   ))
-    
-    vrot_tot_err = np.sqrt(np.square(vrot_err)+np.square(vrot_exp_err))
-    vrot_tot_err_inc = np.sqrt(np.square(vrot_err_inc )+np.square(vrot_exp_err/ np.sin(np.radians(disk.par[3]))))
+   
     
     #   - Projected radial velocities
     indx = minor_gpm & np.logical_not(kin.vel_mask)
@@ -2028,32 +1946,7 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
     
     ax.scatter(vrot_r[rec_indx], vrot[rec_indx], marker='.', color='C3', s=30, lw=0, alpha=0.6, zorder=2)
     
-#### added by RL - test to easily save the results
-  # Columns in the output are r,   rotation velocity, error in r, error in rot vel, experimental error in rot_vel, total error = sqrt(vrot_err^2 + verot_exp_err^2)
-    data1 = np.column_stack([vrot_r[app_indx],  vrot[app_indx]/np.sin(np.radians(disk.par[3])), vrot_rerr[app_indx],  vrot_err_inc[app_indx], \
-    		vrot_exp_err[app_indx]/np.sin(np.radians(disk.par[3])),vrot_tot_err_inc[app_indx]])
-                   
-    data2 = np.column_stack([vrot_r[rec_indx],  vrot[rec_indx]/np.sin(np.radians(disk.par[3])),vrot_rerr[rec_indx], vrot_err_inc[rec_indx], \
-    		vrot_exp_err[rec_indx]/np.sin(np.radians(disk.par[3])),vrot_tot_err_inc[rec_indx]])
-    datafile_path1 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}-{disk.rc.__class__.__name__}_vel1.txt'
-    datafile_path2 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}-{disk.rc.__class__.__name__}_vel2.txt'
-    np.savetxt(datafile_path1 , data1,  fmt = ['%10.4f', '%10.4f','%10.4f', '%10.4f','%10.4f','%10.4f'])
-    np.savetxt(datafile_path2 , data2, fmt= ['%10.4f', '%10.4f','%10.4f', '%10.4f','%10.4f','%10.4f'])
-    
-    
-    
-  #  data3 = np.column_stack([vrot_r[app_indx], vrot[app_indx]])
-  #  data4 = np.column_stack([vrot_r[rec_indx], vrot[rec_indx]])
-  #  datafile_path3 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}_vel1_bf.txt'
-  #  datafile_path4 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}_vel2_bf.txt'
-  #  np.savetxt(datafile_path3 , data3,  fmt = ['%10.4f', '%10.4f'])
-  #  np.savetxt(datafile_path4 , data4, fmt= ['%10.4f', '%10.4f'])
-     
-   
-   
 
-    
-########################    
     if np.any(indx):
         ax.scatter(binr[indx], vrot_ewmean[indx], marker='o', edgecolors='none', s=100,
                    alpha=1.0, facecolors='0.5', zorder=4)
@@ -2142,16 +2035,7 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
         ax.text(0.97, 0.87, r'$\sigma_{\rm los}$ [km/s]', ha='right', va='bottom',
                 transform=ax.transAxes, fontsize=10, zorder=8)
                 
-                 #### added by RL - test to easily save the results
-  # Columns in the output are r, dispersion velocity, exp error in disp vel
-    
-        data5 = np.column_stack([sprof_r, sprof, sprof_exp_err])
-        datafile_path5 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}-{disk.dc.__class__.__name__}_disp_vel.txt'
-        np.savetxt(datafile_path5 , data5, fmt= ['%10.4f', '%10.4f','%10.4f'])
-
-
-        
-########################   
+ 
 
     # TODO:
     #   - Add errors (if available)?
@@ -2168,11 +2052,10 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
     pyplot.rcdefaults()
     
   
-def axisym_fit_plot_exp_err(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=None):
+def axisym_fit_plot_exp_err(galmeta, kin, disk, par=None, par_err=None, fix=None, fisher=None, ofile=None):
     """
     Construct the QA plot for the result of fitting an
     :class:`~nirvana.model.axisym.AxisymmetricDisk` model to a galaxy.
-
     Args:
         galmeta (:class:`~nirvana.data.meta.GlobalPar`):
             Object with metadata for the galaxy to be fit.
@@ -2192,6 +2075,8 @@ def axisym_fit_plot_exp_err(galmeta, kin, disk, par=None, par_err=None, fix=None
         ofile (:obj:`str`, optional):
             Output filename for the plot.  If None, the plot is shown to the
             screen.
+        fisher (`numpy.ndarray`_, optional):
+            Uncertainties from cov mat of the estimated parameter using fisher_matrix function
     """
     logformatter = plot.get_logformatter()
 
@@ -2302,34 +2187,123 @@ def axisym_fit_plot_exp_err(galmeta, kin, disk, par=None, par_err=None, fix=None
     else:
         de_x, de_y = disk_ellipse(np.amax(binr[vrot_indx]), *np.radians(disk.par[2:4]),
                                   xc=disk.par[0], yc=disk.par[1])
-
+    	
     # Get the projected rotational velocity 
     #   - Disk-plane coordinates  and derivatives
-    r, th, dr, dth = deriv_projected_polar_err(kin.x - disk.par[0], kin.y - disk.par[1], np.radians(disk.par[2]), \
-    			 np.radians(disk.par[3]), dxdp= disk.par_err[0], dydp=disk.par_err[1], dpadp= np.radians(disk.par_err[2]),\
-    			     dincdp= np.radians(disk.par_err[3]))
+    if fisher is not None:
+        r, th, dr, dth, xd, yd, dxrdx, dxrdy, dyrdx, dyrdy, dxrdrot, dyrdrot, dthetadx, dthetady  = deriv_projected_polar_err_covar(kin.x - disk.par[0], kin.y - disk.par[1],\
+             np.radians(disk.par[2]),  np.radians(disk.par[3]), dxdp= disk.par_err[0], dydp=disk.par_err[1], dpadp= np.radians(disk.par_err[2]),\
+    			     dincdp= np.radians(disk.par_err[3]), dxdydp = (fisher[0,1]), dpadxdp = (fisher[0,2])*np.pi/180, \
+    			     dpadydp = (fisher[1,2])*np.pi/180, dincdxdp = (fisher[0,3])*np.pi/180, \
+    			     dincdydp = (fisher[1,3])*np.pi/180, dpadincdp = (fisher[2,3])*(np.pi/180)**2)
+        #print(list(filter(lambda x: (x<0),dr)))
+                
+        
     #   - Mask for data along the major axis
-    major_gpm = select_kinematic_axis(r, th, which='major', r_range='all', wedge=maj_wedge)
-    minor_gpm = select_kinematic_axis(r, th, which='minor', r_range='all', wedge=min_wedge)
+        major_gpm = select_kinematic_axis(r, th, which='major', r_range='all', wedge=maj_wedge)
+        minor_gpm = select_kinematic_axis(r, th, which='minor', r_range='all', wedge=min_wedge)
     #   - Projected rotation velocities
-    indx = major_gpm & np.logical_not(kin.vel_mask)
-    vrot_r = r[indx]
-    vrot_th = th[indx]
-    vrot = (kin.vel[indx] - disk.par[4])/np.cos(th[indx])
+        indx = major_gpm & np.logical_not(kin.vel_mask)
+        vrot_r = r[indx]
+        vrot_th = th[indx]
+        vrot = (kin.vel[indx] - disk.par[4])/np.cos(th[indx])
     
     # Uncertainty on galaxy parameters, propagated to rotation velocity, radius and theta. Reshape used to reduce the size of the array
-    vrot_rerr = np.sqrt(dr[indx]).reshape(len(np.sqrt(dr[indx])),)
-    vrot_therr =  np.sqrt(dth[indx]).reshape(len(np.sqrt(dth[indx])),)
-    vrot_err = np.sqrt(1/(np.cos(th[indx]))**2*(disk.par_err[4])**2 + (vrot*np.sin(th[indx]))**2*(dth[indx].reshape(len(dth[indx]),)))
+        vrot_rerr = np.sqrt(dr[indx]) 
+        vrot_therr =  np.sqrt(dth[indx]) 
     
+    
+    #vrot_err = np.sqrt(1/(np.cos(th[indx]))**2*(disk.par_err[4])**2 + ((vrot*np.sin(th[indx])/np.cos(th[indx]))**2)*(dth[indx].reshape(len(dth[indx]),)))
+    
+    
+    #fisher = disk.fisher_matrix(disk.par, kin, sb_wgt=True, scatter=disk.scatter, ignore_covar=True, fix=np.logical_not(disk.free), inverse = True)
+        dxdvsysdp = (fisher[0,4])*np.pi/180
+        dydvsysdp = (fisher[1,4])*np.pi/180
+        drotdvsysdp = (fisher[2,4])*(np.pi/180)
+        dvsysdidp = (fisher[3,4])*(np.pi/180)
+        
+        dxdidp = (fisher[0,3])*np.pi/180
+        dydidp = (fisher[1,3])*np.pi/180
+        drotdidp = (fisher[2,3])*(np.pi/180)**2
+        
+    
+    
+    
+        vrot_err = np.sqrt(np.absolute(1/(np.cos(th[indx]))**2*(disk.par_err[4])**2 + (vrot*np.sin(th[indx])/np.cos(th[indx]))**2\
+    	*(dth[indx].reshape(len(dth[indx]),))\
+    	+2*(-1)/(np.cos(th[indx]))*vrot*np.sin(th[indx])/np.cos(th[indx])*\
+    	(((dthetadx[indx]).reshape(len(dthetadx[indx],)))*\
+    	((dxrdx)*dxdvsysdp + (dxrdy)*dydvsysdp +  (dxrdrot[indx].reshape(len(dxrdrot[indx]),))*drotdvsysdp) + \
+    	 (((dthetady[indx]).reshape(len(dthetady[indx],)))/np.cos(np.radians(disk.par[3]))*\
+    	 ((dyrdx)*dxdvsysdp + (dyrdy)*dydvsysdp +(dyrdrot[indx].reshape(len(dyrdrot[indx]),)))*drotdvsysdp) + \
+    	 ((dthetady[indx]).reshape(len(dthetadx[indx],)))*yd[indx]*np.sin(np.radians(disk.par[3]))/np.cos(np.radians(disk.par[3])*dvsysdidp))))
+    	
+        
     
     # Experimental uncertainty on the velocity - projected
-    vrot_exp_err = np.abs((np.sqrt(inverse(kin.vel_ivar[indx])))/np.cos(th[indx]))
+        vrot_exp_err = np.abs((np.sqrt(inverse(kin.vel_ivar[indx])))/np.cos(th[indx]))
+    
     # Total uncertainty on velocity - projected
-    vrot_err_inc = np.sqrt(np.square(vrot_err/ np.sin(np.radians(disk.par[3]))) +  np.square( vrot/(np.square(np.sin(np.radians(disk.par[3]))))\
-               *np.cos(np.radians(disk.par[3])) *np.radians(disk.par_err[3])))
-    vrot_tot_err = np.sqrt(np.square(vrot_err)+np.square(vrot_exp_err))
-    vrot_tot_err_inc = np.sqrt(np.square(vrot_err_inc )+np.square(vrot_exp_err/ np.sin(np.radians(disk.par[3]))))
+#    vrot_err_inc = np.sqrt(np.square(vrot_err/ np.sin(np.radians(disk.par[3]))) +  np.square( vrot/(np.square(np.sin(np.radians(disk.par[3]))))\
+#               *np.cos(np.radians(disk.par[3])) *np.radians(disk.par_err[3])))
+               
+        vrot_err_inc = np.sqrt(np.absolute(np.square(vrot_err/ np.sin(np.radians(disk.par[3]))) +  np.square( vrot/(np.square(np.sin(np.radians(disk.par[3]))))\
+               *np.cos(np.radians(disk.par[3])) *np.radians(disk.par_err[3])) \
+              -2*vrot**2*(dthetady[indx].reshape(len(dthetady[indx],)))*yd[indx]*np.sin(th[indx])/((np.sin(np.radians(disk.par[3])))**2\
+              *np.cos(th[indx]))*(np.radians(disk.par_err[3]))**2\
+               -2*np.cos(np.radians(disk.par[3]))/np.sin(np.radians(disk.par[3]))**2*(vrot)*np.sin(th[indx])/np.cos(th[indx])*\
+               (((dthetadx[indx].reshape(len(dthetadx[indx],)))*(dxrdx*dxdidp +  dxrdy*dydidp  + (dxrdrot[indx].reshape(len(dxrdrot[indx]),))*drotdidp))  + \
+                (dthetady[indx].reshape(len(dthetadx[indx],)))/np.cos(np.radians(disk.par[3]))*\
+                (dyrdx*dxdidp +  dyrdy*dydidp  + (dyrdrot[indx].reshape(len(dyrdrot[indx]),))*drotdidp) -dvsysdidp/np.cos(th[indx])   )))
+    
+        vrot_tot_err = np.sqrt(np.square(vrot_err)+np.square(vrot_exp_err))
+        vrot_tot_err_inc = np.sqrt(np.square(vrot_err_inc )+np.square(vrot_exp_err/ np.sin(np.radians(disk.par[3]))))
+    
+#------------------------------    
+    else:
+        r, th, dr, dth, xd, yd, dthetadx, dthetady = deriv_projected_polar_err(kin.x - disk.par[0], kin.y - disk.par[1], np.radians(disk.par[2]), \
+    			 np.radians(disk.par[3]), dxdp= disk.par_err[0], dydp=disk.par_err[1], dpadp= np.radians(disk.par_err[2]),\
+    			     dincdp= np.radians(disk.par_err[3]))                     
+    
+    #   - Mask for data along the major axis
+        major_gpm = select_kinematic_axis(r, th, which='major', r_range='all', wedge=maj_wedge)
+        minor_gpm = select_kinematic_axis(r, th, which='minor', r_range='all', wedge=min_wedge)
+    #   - Projected rotation velocities
+        indx = major_gpm & np.logical_not(kin.vel_mask)
+        vrot_r = r[indx]
+        vrot_th = th[indx]
+        vrot = (kin.vel[indx] - disk.par[4])/np.cos(th[indx])
+    
+    # Uncertainty on galaxy parameters, propagated to rotation velocity, radius and theta. Reshape used to reduce the size of the array
+        vrot_rerr = np.sqrt(dr[indx]) 
+        vrot_therr =  np.sqrt(dth[indx]) 
+    
+    
+    #vrot_err = np.sqrt(1/(np.cos(th[indx]))**2*(disk.par_err[4])**2 + ((vrot*np.sin(th[indx])/np.cos(th[indx]))**2)*(dth[indx].reshape(len(dth[indx]),)))
+    
+    
+        vrot_err = np.sqrt(1/(np.cos(th[indx]))**2*(disk.par_err[4])**2 + (vrot*np.sin(th[indx])/np.cos(th[indx]))**2\
+    	          *(dth[indx].reshape(len(dth[indx]),))\
+    	           )
+    	
+        
+    
+    # Experimental uncertainty on the velocity - projected
+        vrot_exp_err = np.abs((np.sqrt(inverse(kin.vel_ivar[indx])))/np.cos(th[indx]))
+    
+    # Total uncertainty on velocity - projected
+#    vrot_err_inc = np.sqrt(np.square(vrot_err/ np.sin(np.radians(disk.par[3]))) +  np.square( vrot/(np.square(np.sin(np.radians(disk.par[3]))))\
+#               *np.cos(np.radians(disk.par[3])) *np.radians(disk.par_err[3])))
+               
+        vrot_err_inc = np.sqrt(np.square(vrot_err/ np.sin(np.radians(disk.par[3]))) +  np.square( vrot/(np.square(np.sin(np.radians(disk.par[3]))))\
+               *np.cos(np.radians(disk.par[3])) *np.radians(disk.par_err[3])) \
+              -2*vrot**2*(dthetady[indx].reshape(len(dthetady[indx],)))*yd[indx]*np.sin(th[indx])/((np.sin(np.radians(disk.par[3])))**2*np.cos(th[indx]))*(np.radians(disk.par_err[3]))**2\
+               )
+        print(list(filter(lambda x: (x<0),vrot_err_inc)))
+    
+        vrot_tot_err = np.sqrt(np.square(vrot_err)+np.square(vrot_exp_err))
+        vrot_tot_err_inc = np.sqrt(np.square(vrot_err_inc )+np.square(vrot_exp_err/ np.sin(np.radians(disk.par[3]))))
+#----------------------------------------------------------------    
     
     #   - Projected radial velocities
     indx = minor_gpm & np.logical_not(kin.vel_mask)
@@ -2913,6 +2887,35 @@ def axisym_fit_plot_exp_err(galmeta, kin, disk, par=None, par_err=None, fix=None
     ax.scatter(vrot_r[rec_indx], vrot[rec_indx], marker='.', color='C3', s=30, lw=0, alpha=0.6, zorder=2)
     ax.errorbar(vrot_r[rec_indx],vrot[rec_indx], yerr=vrot_tot_err_inc[rec_indx], color='C3', capsize=0,
                     linestyle='', linewidth=1, alpha=1.0, zorder=3)
+                    
+#### added by RL - test to easily save the results
+  # Columns in the output are r,   rotation velocity, error in r, error in rot vel, experimental error in rot_vel, total error = sqrt(vrot_err^2 + verot_exp_err^2)
+    data1 = np.column_stack([vrot_r[app_indx],  vrot[app_indx]/np.sin(np.radians(disk.par[3])), vrot_rerr[app_indx],  vrot_err_inc[app_indx], \
+    		vrot_exp_err[app_indx]/np.sin(np.radians(disk.par[3])),vrot_tot_err_inc[app_indx]])
+                   
+    data2 = np.column_stack([vrot_r[rec_indx],  vrot[rec_indx]/np.sin(np.radians(disk.par[3])),vrot_rerr[rec_indx], vrot_err_inc[rec_indx], \
+    		vrot_exp_err[rec_indx]/np.sin(np.radians(disk.par[3])),vrot_tot_err_inc[rec_indx]])
+    datafile_path1 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}-{disk.rc.__class__.__name__}_vel1.txt'
+    datafile_path2 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}-{disk.rc.__class__.__name__}_vel2.txt'
+    np.savetxt(datafile_path1 , data1,  fmt = ['%10.4f', '%10.4f','%10.4f', '%10.4f','%10.4f','%10.4f'])
+    np.savetxt(datafile_path2 , data2, fmt= ['%10.4f', '%10.4f','%10.4f', '%10.4f','%10.4f','%10.4f'])
+    
+    
+    
+  #  data3 = np.column_stack([vrot_r[app_indx], vrot[app_indx]])
+  #  data4 = np.column_stack([vrot_r[rec_indx], vrot[rec_indx]])
+  #  datafile_path3 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}_vel1_bf.txt'
+  #  datafile_path4 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}_vel2_bf.txt'
+  #  np.savetxt(datafile_path3 , data3,  fmt = ['%10.4f', '%10.4f'])
+  #  np.savetxt(datafile_path4 , data4, fmt= ['%10.4f', '%10.4f'])
+     
+   
+   
+
+    
+########################                        
+                                   
+                    
 
 #    if np.any(indx):
 #       ax.scatter(binr[indx], vrot_ewmean[indx], marker='o', edgecolors='none', s=100,
@@ -3002,8 +3005,13 @@ def axisym_fit_plot_exp_err(galmeta, kin, disk, par=None, par_err=None, fix=None
         ax.text(0.97, 0.87, r'$\sigma_{\rm los}$ [km/s]', ha='right', va='bottom',
                 transform=ax.transAxes, fontsize=10, zorder=8)
                 
- 
-        
+ #### added by RL - test to easily save the results
+  # Columns in the output are r, dispersion velocity, exp error in disp vel
+    
+        data5 = np.column_stack([sprof_r, sprof, sprof_exp_err])
+        datafile_path5 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}-{disk.dc.__class__.__name__}_disp_vel.txt'
+        np.savetxt(datafile_path5 , data5, fmt= ['%10.4f', '%10.4f','%10.4f'])
+
     
 ########################   
 
@@ -3084,7 +3092,6 @@ def axisym_fit_plot_masks(galmeta, kin, disk, vel_mask, sig_mask, ofile=None):
     """
     Construct the QA plot for the result of fitting an
     :class:`~nirvana.model.axisym.AxisymmetricDisk` model to a galaxy.
-
     Args:
         galmeta (:class:`~nirvana.data.meta.GlobalPar`):
             Object with metadata for the galaxy to be fit.
@@ -3485,19 +3492,14 @@ def axisym_iter_fit(galmeta, kin, rctype='HyperbolicTangent', dctype='Exponentia
                     analytic_jac=True, fit_scatter=True, verbose=0):
     r"""
     Iteratively fit kinematic data with an axisymmetric disk model.
-
     Constraints are as follows:
-
         #. The center is constrained to be in the middle third of the available
            range in x and y.
-
     The iterations are as follows:
-
         #. Fit all data but fix the inclination to the value returned by
            :func:`~nirvana.data.meta.GlobalPar.guess_inclination` and fix the
            center to be :math:`(x,y) = (0,0)`.  If available, covariance is
            ignored.
-
         #. Reject outliers in both velocity and velocity dispersion (if the
            latter is being fit) using
            :func:`~nirvana.models.thindisk.ThinDisk.reject`.  The rejection
@@ -3506,7 +3508,6 @@ def axisym_iter_fit(galmeta, kin, rctype='HyperbolicTangent', dctype='Exponentia
            intrinsic scatter estimates provided by
            :func:`~nirvana.models.thindisk.ThinDisk.reject` are
            *not* included in the fit and, if available, covariance is ignored.
-
         #. Reject outliers in both velocity and velocity dispersion (if the
            latter is being fit) using
            :func:`~nirvana.models.thindisk.ThinDisk.reject`.  The rejection
@@ -3515,7 +3516,6 @@ def axisym_iter_fit(galmeta, kin, rctype='HyperbolicTangent', dctype='Exponentia
            point. This iteration also uses the intrinsic scatter estimates
            provided by :func:`~nirvana.models.thindisk.ThinDisk.reject`;
            however, covariance is still ignored.
-
         #. Recover all fit rejections (i.e., keep any masks in place that are
            tied to the data quality, but remove any masks associated with fit
            quality).  Then use :func:`~nirvana.models.thindisk.ThinDisk.reject`
@@ -3529,7 +3529,6 @@ def axisym_iter_fit(galmeta, kin, rctype='HyperbolicTangent', dctype='Exponentia
            scatter estimates provided by
            :func:`~nirvana.models.thindisk.ThinDisk.reject`.  Covariance is
            still ignored.
-
         #. Reject outliers in both velocity and velocity dispersion (if the
            latter is being fit) using
            :func:`~nirvana.models.thindisk.ThinDisk.reject`.  The rejection
@@ -3540,12 +3539,10 @@ def axisym_iter_fit(galmeta, kin, rctype='HyperbolicTangent', dctype='Exponentia
            rejection and intrinsic scatter determination; however, the
            covariance *is* used by the fit, as available and if ``ignore_covar``
            is False.
-
         #. Redo the previous iteration in exactly the same way, except outlier
            rejection and intrinsic-scatter determination now use the covariance,
            as available and if ``ignore_covar`` is False.  The rejection sigma
            used is the *fourth* element in the provided list.
-
         #. If a lower inclination threshold is set (see ``low_inc``) and the
            best-fitting inclination is below this value (assuming the
            inclination is freely fit), a final iteration refits the data by
@@ -3559,7 +3556,6 @@ def axisym_iter_fit(galmeta, kin, rctype='HyperbolicTangent', dctype='Exponentia
         - Allow guess RC and DC parameters and bounds to be input, or switch to
           requiring the 1D model class instances to be provided, like in
           :class:`~nirvana.models.axisym.AxisymmetricDisk`.
-
     Args:
         galmeta (:class:`~nirvana.data.meta.GlobalPar`):
             Object with metadata for the galaxy to be fit.
@@ -3639,7 +3635,6 @@ def axisym_iter_fit(galmeta, kin, rctype='HyperbolicTangent', dctype='Exponentia
         verbose (:obj:`int`, optional):
             Verbosity level: 0=only status output written to terminal; 1=show 
             fit result QA plot; 2=full output
-
     Returns:
         :obj:`tuple`: Returns 7 objects: (1) the
         :class:`~nirvana.models.axisym.AxisymmetricDisk` instance used during
