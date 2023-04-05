@@ -230,11 +230,33 @@ def main(args):
     
     
     fit_plot_err = os.path.join(args.odir, f'{oroot}-fit_err.png')
-    axisym_error.axisym_fit_plot_exp_err(galmeta, kin, disk, fix=fix, ofile=fit_plot_err)
+    #axisym_error.axisym_fit_plot_exp_err(galmeta, kin, disk, fix=fix, ofile=fit_plot_err)
     
+    
+    
+    fisher = disk.fisher_matrix(disk.par, kin, sb_wgt=True, scatter=disk.scatter, ignore_covar=True, fix=np.logical_not(disk.free), inverse = True)
+    
+    ### had to run axisym_iter_fit again because there is a bug in nirvana that changes 'disk' attributes when I run fisher.
+    disk, p0, lb, ub, fix, vel_mask, sig_mask \
+            = axisym_error.axisym_iter_fit(galmeta, kin, rctype=args.rc, dctype=args.dc,
+                                     fitdisp=args.disp, ignore_covar=not args.covar,
+                                     max_vel_err=args.max_vel_err, max_sig_err=args.max_sig_err,
+                                     min_vel_snr=args.min_vel_snr, min_sig_snr=args.min_sig_snr,
+                                     vel_sigma_rej=args.vel_rej, sig_sigma_rej=args.sig_rej,
+                                     fix_cen=args.fix_cen, fix_inc=args.fix_inc,
+                                     low_inc=args.low_inc, min_unmasked=args.min_unmasked,
+                                     select_coherent=args.coherent, fit_scatter=args.fit_scatter,
+                                     verbose=args.verbose)
     print(disk.par_names())
-    print(disk.fisher_matrix(disk.par, kin, sb_wgt=True, scatter=disk.scatter, ignore_covar=True, fix=np.logical_not(disk.free), inverse = True))
-
+    print(np.sqrt(fisher[0,0])*np.sqrt(fisher[1,1]) -np.absolute(fisher[0,1]), np.sqrt(fisher[0,0])*np.sqrt(fisher[2,2]) -np.absolute(fisher[0,2]), np.sqrt(fisher[0,0])*np.sqrt(fisher[3,3]) -np.absolute(fisher[0,3])\
+    	,np.sqrt(fisher[0,0])*np.sqrt(fisher[4,4]) -np.absolute(fisher[0,4]) )
+    	
+    print(np.sqrt(fisher[1,1])*np.sqrt(fisher[2,2]) -np.absolute(fisher[1,2]), np.sqrt(fisher[1,1])*np.sqrt(fisher[3,3]) -np.absolute(fisher[1,3]), np.sqrt(fisher[1,1])*np.sqrt(fisher[4,4]) -np.absolute(fisher[1,4]) )
+    print(np.sqrt(fisher[2,2])*np.sqrt(fisher[3,3]) -np.absolute(fisher[2,3]), np.sqrt(fisher[2,2])*np.sqrt(fisher[4,4]) -np.absolute(fisher[2,4]) )
+    print(np.sqrt(fisher[3,3])*np.sqrt(fisher[4,4]) -np.absolute(fisher[3,4]) )
+    
+    axisym_error.axisym_fit_plot_exp_err(galmeta, kin, disk, fix=fix, fisher=fisher, ofile=fit_plot_err)
+    
     #vel1 = os.path.join(args.odir, f'{oroot}-vel1.txt')
     #vel2 = os.path.join(args.odir, f'{oroot}-vel2.txt')
     #axisym_error.save_vel(vel1,vel2)
