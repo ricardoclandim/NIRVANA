@@ -610,9 +610,12 @@ def deriv_projected_polar_err(x, y, pa, inc, dxdp=None, dydp=None, dpadp=None, d
      # Absolute squared of derivatives    
     dt = (dthetadx(xd, -yd, r=r)[...,None])**2*dxd + (dthetady(xd, -yd, r=r)[...,None])**2*dyd\
           + 2*dthetadx(xd, -yd, r=r)[...,None]*dthetady(xd, -yd, r=r)[...,None]/cosi *dxddyr
+          
+    drdt = (drdx(xd, yd, r=r)[...,None])*(dthetadx(xd, -yd, r=r)[...,None])*dxd + (drdy(xd, yd, r=r)[...,None])*(dthetady(xd, -yd, r=r)[...,None])*dyd\
+    	 + (drdx(xd, yd, r=r)[...,None]*dthetady(xd, -yd, r=r)[...,None]+drdy(xd, yd, r=r)[...,None]*dthetadx(xd, -yd, r=r)[...,None])/cosi *dxddyr
     
     
-    return  r, t, dr, dt, xd, yd, dthetadx_s, dthetady_s
+    return  r, t, dr, dt, xd, yd, dthetadx_s, dthetady_s, drdt, drdx(xd, yd, r=r)[...,None], drdy(xd, yd, r=r)[...,None] 
     
     
 def deriv_projected_polar_err_covar(x, y, pa, inc, dxdp=None, dydp=None, dpadp=None, dincdp=None, dxdydp = None, dpadxdp = None, dpadydp = None, \
@@ -738,8 +741,13 @@ def deriv_projected_polar_err_covar(x, y, pa, inc, dxdp=None, dydp=None, dpadp=N
     	 cosr*_dincdydp[...,None] +(dxrdrot)*_dpadincdp[...,None]) \
     	+ 2*dthetadx(xd, -yd, r=r)[...,None]*dthetady(xd, -yd, r=r)[...,None]/cosi *dxddyr
     	
+    drdt = (drdx(xd, yd, r=r)[...,None])*(dthetadx(xd, -yd, r=r)[...,None])*dxd + (drdy(xd, yd, r=r)[...,None])*(dthetady(xd, -yd, r=r)[...,None])*dyd\
+    	+ (drdx(xd, yd, r=r)[...,None]*dthetady(xd, -yd, r=r)[...,None]+drdy(xd, yd, r=r)[...,None]*dthetadx(xd, -yd, r=r)[...,None])*yr[...,None]*np.sin(inc) / cosi**2 *(cosr*_dincdxdp[...,None] + cosr*_dincdydp[...,None] \
+    	+(dxrdrot)*_dpadincdp[...,None]) \
+    	+ (drdx(xd, yd, r=r)[...,None]*dthetady(xd, -yd, r=r)[...,None]+drdy(xd, yd, r=r)[...,None]*dthetadx(xd, -yd, r=r)[...,None])/cosi *dxddyr
+    	
    
-    return r, t, dr, dt, xd, yd, dxrdx, dxrdy, dyrdx, dyrdy, dxrdrot, dyrdrot, dthetadx_s, dthetady_s   
+    return r, t, dr, dt, xd, yd, dxrdx, dxrdy, dyrdx, dyrdy, dxrdrot, dyrdrot, dthetadx_s, dthetady_s,  drdt, drdx(xd, yd, r=r)[...,None], drdy(xd, yd, r=r)[...,None]   
 
 
 def drdx(x, y, r=None):
