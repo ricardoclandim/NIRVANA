@@ -2259,18 +2259,32 @@ def axisym_fit_plot_exp_err(galmeta, kin, disk, par=None, par_err=None, fix=None
         vrot_tot_err = np.sqrt(np.square(vrot_err)+np.square(vrot_exp_err))
         vrot_tot_err_inc = np.sqrt(np.square(vrot_err_inc )+np.square(vrot_exp_err/ np.sin(np.radians(disk.par[3]))))
         
-       
-        vrot_err_inc_cross = np.sqrt(np.absolute(drdt[indx].reshape(len(drdt[indx],))  \
+        v_test = vrot_err_inc*vrot_rerr.reshape(len(vrot_rerr,))
+        
+        
+        
+        			
+        		
+ 	
+        
+        vrot_err_inc_cross = vrot*np.sin(th[indx])/(np.cos(th[indx])*np.sin(np.radians(disk.par[3])))*(drdt[indx].reshape(len(drdt[indx],))  \
+                              +(dthetady[indx].reshape(len(dthetadx[indx],)))*(drdy[indx].reshape(len(drdy[indx],)))*\
+                              ((yd[indx]*np.sin(np.radians(disk.par[3]))/(np.cos(np.radians(disk.par[3]))))**2*(np.radians(disk.par_err[3]))**2 \
+                              + 2*yd[indx]*np.sin(np.radians(disk.par[3]))/(np.cos(np.radians(disk.par[3])))*(dyrdx*dxdidp +dyrdy*dydidp +\
+                               dyrdrot[indx].reshape(len(dyrdrot[indx]),)*drotdidp) ) \
+                              + ((dthetady[indx].reshape(len(dthetady[indx],)))*(drdx[indx].reshape(len(drdx[indx],)))+\
+                              (dthetadx[indx].reshape(len(dthetadx[indx],)))*(drdy[indx].reshape(len(drdy[indx],))))\
+                              *(yd[indx]*np.sin(np.radians(disk.par[3]))/(np.cos(np.radians(disk.par[3])))*(dxrdx*dxdidp +dxrdy*dydidp + dxrdrot[indx].reshape(len(dxrdrot[indx]),)*drotdidp))  \
+                              )\
         			+ drdy[indx].reshape(len(drdy[indx],))*(dyrdx*dxdidp +dyrdy*dydidp + dyrdrot[indx].reshape(len(dyrdrot[indx]),)*drotdidp + \
-        			yd[indx]*np.sin(np.radians(disk.par[3]))/(np.cos(np.radians(disk.par[3])))*disk.par_err[3]**2)\
+        			yd[indx]*np.sin(np.radians(disk.par[3]))/(np.cos(np.radians(disk.par[3])))*(np.radians(disk.par_err[3]))**2)\
         			*(-vrot/(np.sin(np.radians(disk.par[3])))**2*np.cos(np.radians(disk.par[3]))) \
         			+ drdy[indx].reshape(len(drdy[indx],))*(dyrdx*dxdvsysdp +dyrdy*dydvsysdp + dyrdrot[indx].reshape(len(dyrdrot[indx]),)*drotdvsysdp)\
         			*(-1/(np.cos(th[indx])*np.sin(np.radians(disk.par[3]))))\
        			+ drdx[indx].reshape(len(drdx[indx],))*(dxrdx*dxdidp +dxrdy*dydidp + dxrdrot[indx].reshape(len(dxrdrot[indx]),)*drotdidp)\
        			*(-vrot/(np.sin(np.radians(disk.par[3])))**2*np.cos(np.radians(disk.par[3]))) \
        			+ drdx[indx].reshape(len(drdx[indx],))*(dxrdx*dxdvsysdp +dxrdy*dydvsysdp + dxrdrot[indx].reshape(len(dxrdrot[indx]),)*drotdvsysdp)\
-       			*(-1/(np.cos(th[indx])*np.sin(np.radians(disk.par[3]))))\
-       			))
+       			*(-1/(np.cos(th[indx])*np.sin(np.radians(disk.par[3]))))
         			
     
 #------------------------------    
@@ -2318,13 +2332,14 @@ def axisym_fit_plot_exp_err(galmeta, kin, disk, par=None, par_err=None, fix=None
         vrot_tot_err = np.sqrt(np.square(vrot_err)+np.square(vrot_exp_err))
         vrot_tot_err_inc = np.sqrt(np.square(vrot_err_inc )+np.square(vrot_exp_err/ np.sin(np.radians(disk.par[3]))))
         
+        v_test = vrot_err_inc*vrot_rerr.reshape(len(vrot_rerr,))
         
-        
-        vrot_err_inc_cross = np.sqrt(np.absolute(drdt[indx].reshape(len(drdt[indx],))  \
-        			+ drdy[indx].reshape(len(drdy[indx],))*( \
-        			yd[indx]*np.sin(np.radians(disk.par[3]))/(np.cos(np.radians(disk.par[3])))*disk.par_err[3]**2)\
-        			*(-vrot/(np.sin(np.radians(disk.par[3])))**2*np.cos(np.radians(disk.par[3]))) \
-        			    			))
+        vrot_err_inc_cross = vrot*np.sin(th[indx])/(np.cos(th[indx])*np.sin(np.radians(disk.par[3])))*(drdt[indx].reshape(len(drdt[indx],))  \
+                              +(dthetady[indx].reshape(len(dthetadx[indx],)))*(drdy[indx].reshape(len(drdy[indx],)))*\
+                              (yd[indx]*np.sin(np.radians(disk.par[3]))/(np.cos(np.radians(disk.par[3]))))**2*(np.radians(disk.par_err[3]))**2) + drdy[indx].reshape(len(drdy[indx],))*( \
+        			yd[indx]*np.sin(np.radians(disk.par[3]))/(np.cos(np.radians(disk.par[3])))*np.radians(disk.par_err[3])**2)\
+        			*(-vrot/(np.sin(np.radians(disk.par[3])))**2*np.cos(np.radians(disk.par[3]))) 
+        			    			
        			
 #----------------------------------------------------------------    
     
@@ -2915,14 +2930,16 @@ def axisym_fit_plot_exp_err(galmeta, kin, disk, par=None, par_err=None, fix=None
   # Columns in the output are r,   rotation velocity, error in r, error in rot vel, experimental error in rot_vel, total error = sqrt(vrot_err^2 + verot_exp_err^2), 
   # sqrt(sigma v r) and  sqrt(sigma v r)/sigma_v
     data1 = np.column_stack([vrot_r[app_indx],  vrot[app_indx]/np.sin(np.radians(disk.par[3])), vrot_rerr[app_indx],  vrot_err_inc[app_indx], \
-    		vrot_exp_err[app_indx]/np.sin(np.radians(disk.par[3])),vrot_tot_err_inc[app_indx], vrot_err_inc_cross[app_indx], vrot_err_inc_cross[app_indx]/vrot_err_inc[app_indx]])
+    		vrot_exp_err[app_indx]/np.sin(np.radians(disk.par[3])),vrot_tot_err_inc[app_indx], vrot_err_inc_cross[app_indx], np.sqrt(np.absolute(vrot_err_inc_cross[app_indx])), v_test[app_indx]-vrot_err_inc_cross[app_indx].reshape(len(vrot_err_inc_cross[app_indx]),)])
                    
     data2 = np.column_stack([vrot_r[rec_indx],  vrot[rec_indx]/np.sin(np.radians(disk.par[3])),vrot_rerr[rec_indx], vrot_err_inc[rec_indx], \
-    		vrot_exp_err[rec_indx]/np.sin(np.radians(disk.par[3])),vrot_tot_err_inc[rec_indx], vrot_err_inc_cross[rec_indx], vrot_err_inc_cross[rec_indx]/vrot_err_inc[rec_indx]])
+    		vrot_exp_err[rec_indx]/np.sin(np.radians(disk.par[3])),vrot_tot_err_inc[rec_indx], vrot_err_inc_cross[rec_indx], np.sqrt(np.absolute(vrot_err_inc_cross[rec_indx])), v_test[rec_indx]-vrot_err_inc_cross[rec_indx].reshape(len(vrot_err_inc_cross[rec_indx]),)])
+    
+   
     datafile_path1 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}-{disk.rc.__class__.__name__}_vel1.txt'
     datafile_path2 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}-{disk.rc.__class__.__name__}_vel2.txt'
-    np.savetxt(datafile_path1 , data1,  fmt = ['%10.4f', '%10.4f','%10.4f', '%10.4f','%10.4f','%10.4f','%10.4f','%10.4f'])
-    np.savetxt(datafile_path2 , data2, fmt= ['%10.4f', '%10.4f','%10.4f', '%10.4f','%10.4f','%10.4f','%10.4f','%10.4f'])
+    np.savetxt(datafile_path1 , data1,  fmt = ['%10.4f', '%10.4f','%10.4f', '%10.4f','%10.4f','%10.4f','%10.4f','%10.4f','%10.4f'])
+    np.savetxt(datafile_path2 , data2, fmt= ['%10.4f', '%10.4f','%10.4f', '%10.4f','%10.4f','%10.4f','%10.4f','%10.4f','%10.4f'])
     
     
     
