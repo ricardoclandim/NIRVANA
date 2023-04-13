@@ -2214,10 +2214,11 @@ def axisym_fit_plot_exp_err(galmeta, kin, disk, par=None, par_err=None, fix=None
         vrot_therr =  np.sqrt(dth[indx]) 
     
     
-    #vrot_err = np.sqrt(1/(np.cos(th[indx]))**2*(disk.par_err[4])**2 + ((vrot*np.sin(th[indx])/np.cos(th[indx]))**2)*(dth[indx].reshape(len(dth[indx]),)))
+        #fisher = disk.fisher_matrix(disk.par, kin, sb_wgt=True, scatter=disk.scatter, ignore_covar=True, fix=np.logical_not(disk.free), inverse = True)
+        
+        
     
-    
-    #fisher = disk.fisher_matrix(disk.par, kin, sb_wgt=True, scatter=disk.scatter, ignore_covar=True, fix=np.logical_not(disk.free), inverse = True)
+        # transform covariance from degrees to radians 
         dxdvsysdp = (fisher[0,4])*np.pi/180
         dydvsysdp = (fisher[1,4])*np.pi/180
         drotdvsysdp = (fisher[2,4])*(np.pi/180)
@@ -2248,8 +2249,6 @@ def axisym_fit_plot_exp_err(galmeta, kin, disk, par=None, par_err=None, fix=None
         vrot_exp_err = np.abs((np.sqrt(inverse(kin.vel_ivar[indx])))/np.cos(th[indx]))
     
         # Total uncertainty on velocity - projected
-#    vrot_err_inc = np.sqrt(np.square(vrot_err/ np.sin(np.radians(disk.par[3]))) +  np.square( vrot/(np.square(np.sin(np.radians(disk.par[3]))))\
-#               *np.cos(np.radians(disk.par[3])) *np.radians(disk.par_err[3])))
         
         vrot_err_inc = np.sqrt(np.square(vrot_err/ sini) +  np.square( hi*np.radians(disk.par_err[3])) \
               +2*hi*dvdtheta*(dthetady[indx].reshape(len(dthetady[indx],)))*yd[indx]*sini/cosi*np.radians(disk.par_err[3])**2\
@@ -2295,21 +2294,21 @@ def axisym_fit_plot_exp_err(galmeta, kin, disk, par=None, par_err=None, fix=None
     			 np.radians(disk.par[3]), dxdp= disk.par_err[0], dydp=disk.par_err[1], dpadp= np.radians(disk.par_err[2]),\
     			     dincdp= np.radians(disk.par_err[3]))                     
     
-    #   - Mask for data along the major axis
+        #   - Mask for data along the major axis
         major_gpm = select_kinematic_axis(r, th, which='major', r_range='all', wedge=maj_wedge)
         minor_gpm = select_kinematic_axis(r, th, which='minor', r_range='all', wedge=min_wedge)
-    #   - Projected rotation velocities
+        #   - Projected rotation velocities
         indx = major_gpm & np.logical_not(kin.vel_mask)
         vrot_r = r[indx]
         vrot_th = th[indx]
         vrot = (kin.vel[indx] - disk.par[4])/np.cos(th[indx])
     
-    # Uncertainty on galaxy parameters, propagated to rotation velocity, radius and theta. Reshape used to reduce the size of the array
+        # Uncertainty on galaxy parameters, propagated to rotation velocity, radius and theta. Reshape used to reduce the size of the array
         vrot_rerr = np.sqrt(dr[indx]) 
         vrot_therr =  np.sqrt(dth[indx]) 
     
     
-    #vrot_err = np.sqrt(1/(np.cos(th[indx]))**2*(disk.par_err[4])**2 + ((vrot*np.sin(th[indx])/np.cos(th[indx]))**2)*(dth[indx].reshape(len(dth[indx]),)))
+
     
     
         vrot_err = np.sqrt(1/(np.cos(th[indx]))**2*(disk.par_err[4])**2 + (vrot*np.sin(th[indx])/np.cos(th[indx]))**2\
@@ -2318,13 +2317,10 @@ def axisym_fit_plot_exp_err(galmeta, kin, disk, par=None, par_err=None, fix=None
     	
         
     
-    # Experimental uncertainty on the velocity - projected
+        # Experimental uncertainty on the velocity - projected
         vrot_exp_err = np.abs((np.sqrt(inverse(kin.vel_ivar[indx])))/np.cos(th[indx]))
     
-    # Total uncertainty on velocity - projected
-#    vrot_err_inc = np.sqrt(np.square(vrot_err/ np.sin(np.radians(disk.par[3]))) +  np.square( vrot/(np.square(np.sin(np.radians(disk.par[3]))))\
-#               *np.cos(np.radians(disk.par[3])) *np.radians(disk.par_err[3])))
-               
+        # Total uncertainty on velocity - projected
         vrot_err_inc = np.sqrt(np.square(vrot_err/ np.sin(np.radians(disk.par[3]))) +  np.square( vrot/(np.square(np.sin(np.radians(disk.par[3]))))\
                *np.cos(np.radians(disk.par[3])) *np.radians(disk.par_err[3])) \
               -2*vrot**2*(dthetady[indx].reshape(len(dthetady[indx],)))*yd[indx]*np.sin(th[indx])/((np.sin(np.radians(disk.par[3])))**2\
