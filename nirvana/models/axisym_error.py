@@ -2191,24 +2191,25 @@ def axisym_fit_plot_exp_err(galmeta, kin, disk, par=None, par_err=None, fix=None
     # Get the projected rotational velocity 
     #   - Disk-plane coordinates  and derivatives
     if fisher is not None:
-        r, th, dr, dth, xd, yd, dxrdx, dxrdy, dyrdx, dyrdy, dxrdrot, dyrdrot, dthetadx, dthetady, drdt, drdx, drdy  = deriv_projected_polar_err_covar(kin.x - disk.par[0], kin.y - disk.par[1],\
+        r, th, dr, dth, xd, yd, dxrdx, dxrdy, dyrdx, dyrdy, dxrdrot, dyrdrot, dthetadx, dthetady, drdt, drdx, drdy  = \
+        deriv_projected_polar_err_covar(kin.x - disk.par[0], kin.y - disk.par[1],\
              np.radians(disk.par[2]),  np.radians(disk.par[3]), dxdp= disk.par_err[0], dydp=disk.par_err[1], dpadp= np.radians(disk.par_err[2]),\
     			     dincdp= np.radians(disk.par_err[3]), dxdydp = (fisher[0,1]), dpadxdp = (fisher[0,2])*np.pi/180, \
     			     dpadydp = (fisher[1,2])*np.pi/180, dincdxdp = (fisher[0,3])*np.pi/180, \
     			     dincdydp = (fisher[1,3])*np.pi/180, dpadincdp = (fisher[2,3])*(np.pi/180)**2)
-        #print(list(filter(lambda x: (x<0),dr)))
+       
                 
         
-    #   - Mask for data along the major axis
+        #   - Mask for data along the major axis
         major_gpm = select_kinematic_axis(r, th, which='major', r_range='all', wedge=maj_wedge)
         minor_gpm = select_kinematic_axis(r, th, which='minor', r_range='all', wedge=min_wedge)
-    #   - Projected rotation velocities
+        #   - Projected rotation velocities
         indx = major_gpm & np.logical_not(kin.vel_mask)
         vrot_r = r[indx]
         vrot_th = th[indx]
         vrot = (kin.vel[indx] - disk.par[4])/np.cos(th[indx])
     
-    # Uncertainty on galaxy parameters, propagated to rotation velocity, radius and theta. Reshape used to reduce the size of the array
+        # Uncertainty on galaxy parameters, propagated to rotation velocity, radius and theta. Reshape used to reduce the size of the array
         vrot_rerr = np.sqrt(dr[indx]) 
         vrot_therr =  np.sqrt(dth[indx]) 
     
@@ -2226,65 +2227,66 @@ def axisym_fit_plot_exp_err(galmeta, kin, disk, par=None, par_err=None, fix=None
         dydidp = (fisher[1,3])*np.pi/180
         drotdidp = (fisher[2,3])*(np.pi/180)**2
         
+        cosi = np.cos(np.radians(disk.par[3]))
+        sini = np.sin(np.radians(disk.par[3]))
     
-    
-    
-        vrot_err = np.sqrt(np.absolute(1/(np.cos(th[indx]))**2*(disk.par_err[4])**2 + (vrot*np.sin(th[indx])/np.cos(th[indx]))**2\
+        hi = -vrot*cosi/sini**2
+        dvdtheta = vrot*np.sin(th[indx])/(np.cos(th[indx])*sini)
+        
+        vrot_err = np.sqrt(1/(np.cos(th[indx]))**2*(disk.par_err[4])**2 + (vrot*np.sin(th[indx])/np.cos(th[indx]))**2\
     	*(dth[indx].reshape(len(dth[indx]),))\
     	+2*(-1)/(np.cos(th[indx]))*vrot*np.sin(th[indx])/np.cos(th[indx])*\
     	(((dthetadx[indx]).reshape(len(dthetadx[indx],)))*\
-    	((dxrdx)*dxdvsysdp + (dxrdy)*dydvsysdp +  (dxrdrot[indx].reshape(len(dxrdrot[indx]),))*drotdvsysdp) + \
-    	 (((dthetady[indx]).reshape(len(dthetady[indx],)))/np.cos(np.radians(disk.par[3]))*\
-    	 ((dyrdx)*dxdvsysdp + (dyrdy)*dydvsysdp +(dyrdrot[indx].reshape(len(dyrdrot[indx]),)))*drotdvsysdp) + \
-    	 ((dthetady[indx]).reshape(len(dthetadx[indx],)))*yd[indx]*np.sin(np.radians(disk.par[3]))/np.cos(np.radians(disk.par[3])*dvsysdidp))))
+    	(dxrdx*dxdvsysdp + dxrdy*dydvsysdp +  dxrdrot[indx].reshape(len(dxrdrot[indx]),)*drotdvsysdp) + \
+    	 dthetady[indx].reshape(len(dthetady[indx],))/cosi*\
+    	 (dyrdx*dxdvsysdp + dyrdy*dydvsysdp +dyrdrot[indx].reshape(len(dyrdrot[indx]),)*drotdvsysdp) + \
+    	 dthetady[indx].reshape(len(dthetadx[indx],))*yd[indx]*sini/cosi*dvsysdidp))
     	
         
     
-    # Experimental uncertainty on the velocity - projected
+        # Experimental uncertainty on the velocity - projected
         vrot_exp_err = np.abs((np.sqrt(inverse(kin.vel_ivar[indx])))/np.cos(th[indx]))
     
-    # Total uncertainty on velocity - projected
+        # Total uncertainty on velocity - projected
 #    vrot_err_inc = np.sqrt(np.square(vrot_err/ np.sin(np.radians(disk.par[3]))) +  np.square( vrot/(np.square(np.sin(np.radians(disk.par[3]))))\
 #               *np.cos(np.radians(disk.par[3])) *np.radians(disk.par_err[3])))
-               
-        vrot_err_inc = np.sqrt(np.absolute(np.square(vrot_err/ np.sin(np.radians(disk.par[3]))) +  np.square( vrot/(np.square(np.sin(np.radians(disk.par[3]))))\
-               *np.cos(np.radians(disk.par[3])) *np.radians(disk.par_err[3])) \
-              -2*vrot**2*(dthetady[indx].reshape(len(dthetady[indx],)))*yd[indx]*np.sin(th[indx])/((np.sin(np.radians(disk.par[3])))**2\
-              *np.cos(th[indx]))*(np.radians(disk.par_err[3]))**2\
-               -2*np.cos(np.radians(disk.par[3]))/np.sin(np.radians(disk.par[3]))**2*(vrot)*np.sin(th[indx])/np.cos(th[indx])*\
-               (((dthetadx[indx].reshape(len(dthetadx[indx],)))*(dxrdx*dxdidp +  dxrdy*dydidp  + (dxrdrot[indx].reshape(len(dxrdrot[indx]),))*drotdidp))  + \
-                (dthetady[indx].reshape(len(dthetadx[indx],)))/np.cos(np.radians(disk.par[3]))*\
-                (dyrdx*dxdidp +  dyrdy*dydidp  + (dyrdrot[indx].reshape(len(dyrdrot[indx]),))*drotdidp) -dvsysdidp/np.cos(th[indx])   )))
+        
+        vrot_err_inc = np.sqrt(np.square(vrot_err/ sini) +  np.square( hi*np.radians(disk.par_err[3])) \
+              +2*hi*dvdtheta*(dthetady[indx].reshape(len(dthetady[indx],)))*yd[indx]*sini/cosi*np.radians(disk.par_err[3])**2\
+               +2*hi*dvdtheta*\
+               (  ((dthetadx[indx].reshape(len(dthetadx[indx],)))*(dxrdx*dxdidp +  dxrdy*dydidp  + (dxrdrot[indx].reshape(len(dxrdrot[indx]),))*drotdidp))  + \
+                (dthetady[indx].reshape(len(dthetadx[indx],)))/cosi*\
+                (dyrdx*dxdidp +  dyrdy*dydidp  + (dyrdrot[indx].reshape(len(dyrdrot[indx]),))*drotdidp)  ) -2*hi*dvsysdidp/(np.cos(th[indx])*sini)   )
     
         vrot_tot_err = np.sqrt(np.square(vrot_err)+np.square(vrot_exp_err))
-        vrot_tot_err_inc = np.sqrt(np.square(vrot_err_inc )+np.square(vrot_exp_err/ np.sin(np.radians(disk.par[3]))))
+        vrot_tot_err_inc = np.sqrt(np.square(vrot_err_inc )+np.square(vrot_exp_err/ sini))
         
+        # check to see if sigma_ab <= sigma_a*sigma_b
         v_test = vrot_err_inc*vrot_rerr.reshape(len(vrot_rerr,))
         
         
+        # covariance of rotation velocity and radius
         
-        			
-        		
- 	
-        
-        vrot_err_inc_cross = vrot*np.sin(th[indx])/(np.cos(th[indx])*np.sin(np.radians(disk.par[3])))*(drdt[indx].reshape(len(drdt[indx],))  \
-                              +(dthetady[indx].reshape(len(dthetadx[indx],)))*(drdy[indx].reshape(len(drdy[indx],)))*\
-                              ((yd[indx]*np.sin(np.radians(disk.par[3]))/(np.cos(np.radians(disk.par[3]))))**2*(np.radians(disk.par_err[3]))**2 \
-                              + 2*yd[indx]*np.sin(np.radians(disk.par[3]))/(np.cos(np.radians(disk.par[3])))*(dyrdx*dxdidp +dyrdy*dydidp +\
-                               dyrdrot[indx].reshape(len(dyrdrot[indx]),)*drotdidp) ) \
-                              + ((dthetady[indx].reshape(len(dthetady[indx],)))*(drdx[indx].reshape(len(drdx[indx],)))+\
-                              (dthetadx[indx].reshape(len(dthetadx[indx],)))*(drdy[indx].reshape(len(drdy[indx],))))\
-                              *(yd[indx]*np.sin(np.radians(disk.par[3]))/(np.cos(np.radians(disk.par[3])))*(dxrdx*dxdidp +dxrdy*dydidp + dxrdrot[indx].reshape(len(dxrdrot[indx]),)*drotdidp))  \
+        vrot_err_inc_cross = vrot*np.sin(th[indx])/(np.cos(th[indx])*sini)*\
+        			(drdt[indx].reshape(len(drdt[indx],))  \
+                              +dthetady[indx].reshape(len(dthetadx[indx],))*drdy[indx].reshape(len(drdy[indx],))*\
+                              (  (yd[indx]*sini/(cosi))**2*np.radians(disk.par_err[3])**2 \
+                              + 2*yd[indx]*sini/(cosi)*(dyrdx*dxdidp/cosi +dyrdy*dydidp/cosi +\
+                               dyrdrot[indx].reshape(len(dyrdrot[indx]),)/cosi*drotdidp) ) \
+                              + (dthetady[indx].reshape(len(dthetady[indx],))*drdx[indx].reshape(len(drdx[indx],))+\
+                              dthetadx[indx].reshape(len(dthetadx[indx],))*drdy[indx].reshape(len(drdy[indx],)))\
+                              *(yd[indx]*sini/(cosi)\
+                              *(dxrdx*dxdidp +dxrdy*dydidp + dxrdrot[indx].reshape(len(dxrdrot[indx]),)*drotdidp))  \
                               )\
-        			+ drdy[indx].reshape(len(drdy[indx],))*(dyrdx*dxdidp +dyrdy*dydidp + dyrdrot[indx].reshape(len(dyrdrot[indx]),)*drotdidp + \
-        			yd[indx]*np.sin(np.radians(disk.par[3]))/(np.cos(np.radians(disk.par[3])))*(np.radians(disk.par_err[3]))**2)\
-        			*(-vrot/(np.sin(np.radians(disk.par[3])))**2*np.cos(np.radians(disk.par[3]))) \
-        			+ drdy[indx].reshape(len(drdy[indx],))*(dyrdx*dxdvsysdp +dyrdy*dydvsysdp + dyrdrot[indx].reshape(len(dyrdrot[indx]),)*drotdvsysdp)\
-        			*(-1/(np.cos(th[indx])*np.sin(np.radians(disk.par[3]))))\
+        			+ drdy[indx].reshape(len(drdy[indx],))*(dyrdx*dxdidp/cosi +dyrdy*dydidp/cosi + dyrdrot[indx].reshape(len(dyrdrot[indx]),)*drotdidp/cosi + \
+        			yd[indx]*sini/(cosi)*(np.radians(disk.par_err[3]))**2)\
+        			*(-vrot/(sini)**2*cosi) \
+        			+ drdy[indx].reshape(len(drdy[indx],))*(dyrdx*dxdvsysdp/cosi +dyrdy*dydvsysdp/cosi + dyrdrot[indx].reshape(len(dyrdrot[indx]),)*drotdvsysdp/cosi)\
+        			*(-1/(np.cos(th[indx])*sini))\
        			+ drdx[indx].reshape(len(drdx[indx],))*(dxrdx*dxdidp +dxrdy*dydidp + dxrdrot[indx].reshape(len(dxrdrot[indx]),)*drotdidp)\
-       			*(-vrot/(np.sin(np.radians(disk.par[3])))**2*np.cos(np.radians(disk.par[3]))) \
+       			*(-vrot/(sini)**2*cosi) \
        			+ drdx[indx].reshape(len(drdx[indx],))*(dxrdx*dxdvsysdp +dxrdy*dydvsysdp + dxrdrot[indx].reshape(len(dxrdrot[indx]),)*drotdvsysdp)\
-       			*(-1/(np.cos(th[indx])*np.sin(np.radians(disk.par[3]))))
+       			*(-1/(np.cos(th[indx])*sini))
         			
     
 #------------------------------    
@@ -2325,23 +2327,27 @@ def axisym_fit_plot_exp_err(galmeta, kin, disk, par=None, par_err=None, fix=None
                
         vrot_err_inc = np.sqrt(np.square(vrot_err/ np.sin(np.radians(disk.par[3]))) +  np.square( vrot/(np.square(np.sin(np.radians(disk.par[3]))))\
                *np.cos(np.radians(disk.par[3])) *np.radians(disk.par_err[3])) \
-              -2*vrot**2*(dthetady[indx].reshape(len(dthetady[indx],)))*yd[indx]*np.sin(th[indx])/((np.sin(np.radians(disk.par[3])))**2*np.cos(th[indx]))*(np.radians(disk.par_err[3]))**2\
+              -2*vrot**2*(dthetady[indx].reshape(len(dthetady[indx],)))*yd[indx]*np.sin(th[indx])/((np.sin(np.radians(disk.par[3])))**2\
+              *np.cos(th[indx]))*(np.radians(disk.par_err[3]))**2\
                )
-        #print(list(filter(lambda x: (x<0),vrot_err_inc)))
-    
+            
         vrot_tot_err = np.sqrt(np.square(vrot_err)+np.square(vrot_exp_err))
         vrot_tot_err_inc = np.sqrt(np.square(vrot_err_inc )+np.square(vrot_exp_err/ np.sin(np.radians(disk.par[3]))))
         
+        # check to see if sigma_ab <= sigma_a*sigma_b
         v_test = vrot_err_inc*vrot_rerr.reshape(len(vrot_rerr,))
         
+        
+        # covariance of rotation velocity and radius
         vrot_err_inc_cross = vrot*np.sin(th[indx])/(np.cos(th[indx])*np.sin(np.radians(disk.par[3])))*(drdt[indx].reshape(len(drdt[indx],))  \
                               +(dthetady[indx].reshape(len(dthetadx[indx],)))*(drdy[indx].reshape(len(drdy[indx],)))*\
-                              (yd[indx]*np.sin(np.radians(disk.par[3]))/(np.cos(np.radians(disk.par[3]))))**2*(np.radians(disk.par_err[3]))**2) + drdy[indx].reshape(len(drdy[indx],))*( \
+                              (yd[indx]*np.sin(np.radians(disk.par[3]))/(np.cos(np.radians(disk.par[3]))))**2*(np.radians(disk.par_err[3]))**2) +\
+                               drdy[indx].reshape(len(drdy[indx],))*( \
         			yd[indx]*np.sin(np.radians(disk.par[3]))/(np.cos(np.radians(disk.par[3])))*np.radians(disk.par_err[3])**2)\
         			*(-vrot/(np.sin(np.radians(disk.par[3])))**2*np.cos(np.radians(disk.par[3]))) 
         			    			
        			
-#----------------------------------------------------------------    
+    #----------------------------------------------------------------    
     
     #   - Projected radial velocities
     indx = minor_gpm & np.logical_not(kin.vel_mask)
@@ -2352,7 +2358,7 @@ def axisym_fit_plot_exp_err(galmeta, kin, disk, par=None, par_err=None, fix=None
         indx = np.logical_not(kin.sig_mask) & (kin.sig_phys2 > 0)
         sprof_r = r[indx]
         sprof = np.sqrt(kin.sig_phys2[indx])
-        # for some reason the sig_phys2  was defined  with /s/sig_phys2
+        # sig_phys2  was defined  with /s/sig_phys2
         sprof_exp_err = np.sqrt(inverse(kin.sig_phys2_ivar[indx]))/2/np.sqrt(kin.sig_phys2[indx]) 
 
     # Get the 1D model profiles
