@@ -233,7 +233,8 @@ def main(args):
     #axisym_error.axisym_fit_plot_exp_err(galmeta, kin, disk, fix=fix, ofile=fit_plot_err)
     
     
-    
+    #--------------------------------------------------------------------------------------------------
+    # calculate the covariance matrix (inverse of fisher matrix)
     fisher = disk.fisher_matrix(disk.par, kin, sb_wgt=True, scatter=disk.scatter, ignore_covar=True, fix=np.logical_not(disk.free), inverse = True)
     
     ### had to run axisym_iter_fit again because there is a bug in nirvana that changes 'disk' attributes when I run fisher.
@@ -255,7 +256,9 @@ def main(args):
     print(np.sqrt(fisher[2,2])*np.sqrt(fisher[3,3]) -np.absolute(fisher[2,3]), np.sqrt(fisher[2,2])*np.sqrt(fisher[4,4]) -np.absolute(fisher[2,4]) )
     print(np.sqrt(fisher[3,3])*np.sqrt(fisher[4,4]) -np.absolute(fisher[3,4]) )
     
-    axisym_error.axisym_fit_plot_exp_err(galmeta, kin, disk, fix=fix, fisher=fisher, ofile=fit_plot_err)
+    axisym_error.axisym_fit_plot_exp_err(galmeta, kin, disk, fix=fix, fisher=None, ofile=fit_plot_err)
+   
+   # print(fisher)
     
     #vel1 = os.path.join(args.odir, f'{oroot}-vel1.txt')
     #vel2 = os.path.join(args.odir, f'{oroot}-vel2.txt')
