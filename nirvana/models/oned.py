@@ -243,11 +243,12 @@ class PiecewiseLinear(Func1D):
             warnings.warn('As provided, edges for PiecewiseLinear were not sorted.')
         if par is not None and len(par) != self.edges.size:
             raise ValueError('Provided number of parameters does not match the number of edges.')
-        super().__init__(self.guess_par(self.edge.size) if par is None else par)
+        #super().__init__(self.guess_par(self.edges.size) if par is None else par)
+        super().__init__(self.guess_par() if par is None else par)
         self.lb, self.ub = self.par_bounds(minv=minv, maxv=maxv)
 
     @staticmethod
-    def guess_par(npar):
+    def guess_par():
         """
         Guess parameters for the function.
 
@@ -258,7 +259,7 @@ class PiecewiseLinear(Func1D):
         Returns:
             `numpy.ndarray`_: Guess parameters.
         """
-        return np.ones(npar, dtype=float)
+        return np.ones(7, dtype=float)  
 
     def par_names(self, short=False):
         """

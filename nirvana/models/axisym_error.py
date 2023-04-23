@@ -98,7 +98,12 @@ class AxisymmetricDisk(ThinDisk):
         Returns:
             `numpy.ndarray`_: Vector of guess parameters
         """
+        #if rc == 'PiecewiseLinear':
+        print(self.rc.guess_par())
         gp = np.concatenate((super().guess_par(), self.rc.guess_par()))
+       # else:
+       #     gp = np.concatenate((super().guess_par(), self.rc.guess_par())) 
+            
         return gp if self.dc is None else np.append(gp, self.dc.guess_par())
 
     def par_names(self, short=False):
@@ -2052,7 +2057,7 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
     pyplot.rcdefaults()
     
   
-def axisym_fit_plot_exp_err(galmeta, kin, disk, par=None, par_err=None, fix=None, fisher=None, ofile=None):
+def axisym_fit_plot_exp_err(galmeta, kin, disk, par=None, par_err=None, fix=None, fisher=None, ofile=None, save_vrot=False):
     """
     Construct the QA plot for the result of fitting an
     :class:`~nirvana.model.axisym.AxisymmetricDisk` model to a galaxy.
@@ -2076,7 +2081,9 @@ def axisym_fit_plot_exp_err(galmeta, kin, disk, par=None, par_err=None, fix=None
             Output filename for the plot.  If None, the plot is shown to the
             screen.
         fisher (`numpy.ndarray`_, optional):
-            Uncertainties from cov mat of the estimated parameter using fisher_matrix function
+            Uncertainties from cov mat of the estimated parameter using fisher_matrix function.
+       save_vrot  (str, optional): 
+            'Save projected rotation velocity and uncertainties')  
     """
     logformatter = plot.get_logformatter()
 
@@ -2288,7 +2295,7 @@ def axisym_fit_plot_exp_err(galmeta, kin, disk, par=None, par_err=None, fix=None
        			*(-1/(np.cos(th[indx])*sini))
         			
     
-#------------------------------    
+    #------------------------------    
     else:
         r, th, dr, dth, xd, yd, dthetadx, dthetady, drdt, drdx, drdy = deriv_projected_polar_err(kin.x - disk.par[0], kin.y - disk.par[1], np.radians(disk.par[2]), \
     			 np.radians(disk.par[3]), dxdp= disk.par_err[0], dydp=disk.par_err[1], dpadp= np.radians(disk.par_err[2]),\
@@ -2928,34 +2935,23 @@ def axisym_fit_plot_exp_err(galmeta, kin, disk, par=None, par_err=None, fix=None
     ax.errorbar(vrot_r[rec_indx],vrot[rec_indx], yerr=vrot_tot_err_inc[rec_indx], color='C3', capsize=0,
                     linestyle='', linewidth=1, alpha=1.0, zorder=3)
                     
-#### added by RL - test to easily save the results
+    if save_vrot == True:                
+  #  Save the results
   # Columns in the output are r,   rotation velocity, error in r, error in rot vel, experimental error in rot_vel, total error = sqrt(vrot_err^2 + verot_exp_err^2), 
-  # sqrt(sigma v r) and  sqrt(sigma v r)/sigma_v
-    data1 = np.column_stack([vrot_r[app_indx],  vrot[app_indx]/np.sin(np.radians(disk.par[3])), vrot_rerr[app_indx],  vrot_err_inc[app_indx], \
-    		vrot_exp_err[app_indx]/np.sin(np.radians(disk.par[3])),vrot_tot_err_inc[app_indx], vrot_err_inc_cross[app_indx], np.sqrt(np.absolute(vrot_err_inc_cross[app_indx])), v_test[app_indx]-vrot_err_inc_cross[app_indx].reshape(len(vrot_err_inc_cross[app_indx]),)])
+  # sigma v r, sqrt(sigma v r) and  sigma v r)
+       data1 = np.column_stack([vrot_r[app_indx],  vrot[app_indx]/np.sin(np.radians(disk.par[3])), vrot_rerr[app_indx],  vrot_err_inc[app_indx], \
+    		vrot_exp_err[app_indx]/np.sin(np.radians(disk.par[3])),vrot_tot_err_inc[app_indx], vrot_err_inc_cross[app_indx],\
+    		 np.sqrt(np.absolute(vrot_err_inc_cross[app_indx])), v_test[app_indx]-vrot_err_inc_cross[app_indx].reshape(len(vrot_err_inc_cross[app_indx]),)])
                    
-    data2 = np.column_stack([vrot_r[rec_indx],  vrot[rec_indx]/np.sin(np.radians(disk.par[3])),vrot_rerr[rec_indx], vrot_err_inc[rec_indx], \
-    		vrot_exp_err[rec_indx]/np.sin(np.radians(disk.par[3])),vrot_tot_err_inc[rec_indx], vrot_err_inc_cross[rec_indx], np.sqrt(np.absolute(vrot_err_inc_cross[rec_indx])), v_test[rec_indx]-vrot_err_inc_cross[rec_indx].reshape(len(vrot_err_inc_cross[rec_indx]),)])
-    
-   
-    datafile_path1 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}-{disk.rc.__class__.__name__}_vel1.txt'
-    datafile_path2 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}-{disk.rc.__class__.__name__}_vel2.txt'
-    np.savetxt(datafile_path1 , data1,  fmt = ['%10.4f', '%10.4f','%10.4f', '%10.4f','%10.4f','%10.4f','%10.4f','%10.4f','%10.4f'])
-    np.savetxt(datafile_path2 , data2, fmt= ['%10.4f', '%10.4f','%10.4f', '%10.4f','%10.4f','%10.4f','%10.4f','%10.4f','%10.4f'])
-    
-    
-    
-  #  data3 = np.column_stack([vrot_r[app_indx], vrot[app_indx]])
-  #  data4 = np.column_stack([vrot_r[rec_indx], vrot[rec_indx]])
-  #  datafile_path3 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}_vel1_bf.txt'
-  #  datafile_path4 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}_vel2_bf.txt'
-  #  np.savetxt(datafile_path3 , data3,  fmt = ['%10.4f', '%10.4f'])
-  #  np.savetxt(datafile_path4 , data4, fmt= ['%10.4f', '%10.4f'])
-     
-   
-   
+       data2 = np.column_stack([vrot_r[rec_indx],  vrot[rec_indx]/np.sin(np.radians(disk.par[3])),vrot_rerr[rec_indx], vrot_err_inc[rec_indx], \
+    		vrot_exp_err[rec_indx]/np.sin(np.radians(disk.par[3])),vrot_tot_err_inc[rec_indx], vrot_err_inc_cross[rec_indx],\
+    		 np.sqrt(np.absolute(vrot_err_inc_cross[rec_indx])), v_test[rec_indx]-vrot_err_inc_cross[rec_indx].reshape(len(vrot_err_inc_cross[rec_indx]),)])
+       
+       datafile_path1 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}-{disk.rc.__class__.__name__}_vel1.txt'
+       datafile_path2 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}-{disk.rc.__class__.__name__}_vel2.txt'
+       np.savetxt(datafile_path1 , data1,  fmt = ['%10.4f', '%10.4f','%10.4f', '%10.4f','%10.4f','%10.4f','%10.4f','%10.4f','%10.4f'])
+       np.savetxt(datafile_path2 , data2, fmt= ['%10.4f', '%10.4f','%10.4f', '%10.4f','%10.4f','%10.4f','%10.4f','%10.4f','%10.4f'])
 
-    
 ########################                        
                                    
                     
@@ -3047,13 +3043,13 @@ def axisym_fit_plot_exp_err(galmeta, kin, disk, par=None, par_err=None, fix=None
                                        transform=ax.transAxes))
         ax.text(0.97, 0.87, r'$\sigma_{\rm los}$ [km/s]', ha='right', va='bottom',
                 transform=ax.transAxes, fontsize=10, zorder=8)
-                
- #### added by RL - test to easily save the results
-  # Columns in the output are r, dispersion velocity, exp error in disp vel
-    
-        data5 = np.column_stack([sprof_r, sprof, sprof_exp_err])
-        datafile_path5 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}-{disk.dc.__class__.__name__}_disp_vel.txt'
-        np.savetxt(datafile_path5 , data5, fmt= ['%10.4f', '%10.4f','%10.4f'])
+        
+        if save_vrot == True:          
+        # Save the results
+        # Columns in the output are r, dispersion velocity, exp error in disp vel
+           data5 = np.column_stack([sprof_r, sprof, sprof_exp_err])
+           datafile_path5 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}-{disk.dc.__class__.__name__}_disp_vel.txt'
+           np.savetxt(datafile_path5 , data5, fmt= ['%10.4f', '%10.4f','%10.4f'])
 
     
 ########################   
@@ -3102,6 +3098,10 @@ def axisym_init_model(galmeta, kin, rctype, dctype=None):
         p0 = np.append(p0, np.array([min(900., vproj), 1., 0.1]))
         rc = oned.PolyEx(lb=np.array([0., min_scale, -1.]),
                          ub=np.array([1000., max(5., kin.max_radius()), 1.]))
+    elif rctype == 'PiecewiseLinear':
+        #print(oned.PiecewiseLinear(np.array([1,2,3,4]), par=np.array([1,2,3,4])))
+        p0 = np.append(p0, np.array([min(900., vproj), 1., 0.1, 1, 1,1,1]))  #CORRECT
+        rc = oned.PiecewiseLinear(edges=np.array([1,2,3,4,5,6,7]))             
     else:
         raise ValueError(f'Unknown RC parameterization: {rctype}')
 
