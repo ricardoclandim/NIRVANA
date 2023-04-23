@@ -3,6 +3,7 @@ Script that runs the axisymmetric, least-squares fit for MaNGA data.
 """
 import os
 import argparse
+import copy
 
 from IPython import embed
 
@@ -10,7 +11,7 @@ import numpy as np
 from matplotlib import pyplot
 
 from ..data import manga
-from ..models import axisym_error
+from ..models import axisym_error, oned
  
 
 
@@ -129,6 +130,11 @@ def parse_args(options=None):
                              'matplotlib backend).')
     parser.add_argument('--skip_plots', default=False, action='store_true',
                         help='Skip the QA plots and just produce the main output file.')
+    parser.add_argument('--save_vrot', default=False, action='store_true',
+                        help='Save projected rotation velocity and uncertainties')
+    parser.add_argument('--fisher', default=None, action='store_true',
+                        help='Save projected rotation velocity and uncertainties')
+                                            
 
     # TODO: Other options:
     #   - Fit with least-squares vs. dynesty
@@ -230,36 +236,30 @@ def main(args):
     
     
     fit_plot_err = os.path.join(args.odir, f'{oroot}-fit_err.png')
-    #axisym_error.axisym_fit_plot_exp_err(galmeta, kin, disk, fix=fix, ofile=fit_plot_err)
+    
     
     
     #--------------------------------------------------------------------------------------------------
+    # copy 'disk', because fisher_matrix changes the atributes
+    disk_new = copy.deepcopy(disk)
     # calculate the covariance matrix (inverse of fisher matrix)
-    fisher = disk.fisher_matrix(disk.par, kin, sb_wgt=True, scatter=disk.scatter, ignore_covar=True, fix=np.logical_not(disk.free), inverse = True)
+    if args.fisher == True: 
+       fisher = disk.fisher_matrix(disk.par, kin, sb_wgt=True, scatter=disk.scatter, ignore_covar=True, fix=np.logical_not(disk.free), inverse = True)
+    else:
+       fisher = None
     
-    ### had to run axisym_iter_fit again because there is a bug in nirvana that changes 'disk' attributes when I run fisher.
-    disk, p0, lb, ub, fix, vel_mask, sig_mask \
-            = axisym_error.axisym_iter_fit(galmeta, kin, rctype=args.rc, dctype=args.dc,
-                                     fitdisp=args.disp, ignore_covar=not args.covar,
-                                     max_vel_err=args.max_vel_err, max_sig_err=args.max_sig_err,
-                                     min_vel_snr=args.min_vel_snr, min_sig_snr=args.min_sig_snr,
-                                     vel_sigma_rej=args.vel_rej, sig_sigma_rej=args.sig_rej,
-                                     fix_cen=args.fix_cen, fix_inc=args.fix_inc,
-                                     low_inc=args.low_inc, min_unmasked=args.min_unmasked,
-                                     select_coherent=args.coherent, fit_scatter=args.fit_scatter,
-                                     verbose=args.verbose)
-    print(disk.par_names())
-    print(np.sqrt(fisher[0,0])*np.sqrt(fisher[1,1]) -np.absolute(fisher[0,1]), np.sqrt(fisher[0,0])*np.sqrt(fisher[2,2]) -np.absolute(fisher[0,2]), np.sqrt(fisher[0,0])*np.sqrt(fisher[3,3]) -np.absolute(fisher[0,3])\
-    	,np.sqrt(fisher[0,0])*np.sqrt(fisher[4,4]) -np.absolute(fisher[0,4]) )
+    
+#    print(np.sqrt(fisher[0,0])*np.sqrt(fisher[1,1]) -np.absolute(fisher[0,1]), np.sqrt(fisher[0,0])*np.sqrt(fisher[2,2]) -np.absolute(fisher[0,2]), np.sqrt(fisher[0,0])*np.sqrt(fisher[3,3]) -np.absolute(fisher[0,3])\
+#    	,np.sqrt(fisher[0,0])*np.sqrt(fisher[4,4]) -np.absolute(fisher[0,4]) )
     	
-    print(np.sqrt(fisher[1,1])*np.sqrt(fisher[2,2]) -np.absolute(fisher[1,2]), np.sqrt(fisher[1,1])*np.sqrt(fisher[3,3]) -np.absolute(fisher[1,3]), np.sqrt(fisher[1,1])*np.sqrt(fisher[4,4]) -np.absolute(fisher[1,4]) )
-    print(np.sqrt(fisher[2,2])*np.sqrt(fisher[3,3]) -np.absolute(fisher[2,3]), np.sqrt(fisher[2,2])*np.sqrt(fisher[4,4]) -np.absolute(fisher[2,4]) )
-    print(np.sqrt(fisher[3,3])*np.sqrt(fisher[4,4]) -np.absolute(fisher[3,4]) )
+#    print(np.sqrt(fisher[1,1])*np.sqrt(fisher[2,2]) -np.absolute(fisher[1,2]), np.sqrt(fisher[1,1])*np.sqrt(fisher[3,3]) -np.absolute(fisher[1,3]), np.sqrt(fisher[1,1])*np.sqrt(fisher[4,4]) -np.absolute(fisher[1,4]) )
+ #   print(np.sqrt(fisher[2,2])*np.sqrt(fisher[3,3]) -np.absolute(fisher[2,3]), np.sqrt(fisher[2,2])*np.sqrt(fisher[4,4]) -np.absolute(fisher[2,4]) )
+ #   print(np.sqrt(fisher[3,3])*np.sqrt(fisher[4,4]) -np.absolute(fisher[3,4]) )
     
-    axisym_error.axisym_fit_plot_exp_err(galmeta, kin, disk, fix=fix, fisher=None, ofile=fit_plot_err)
-   
-   # print(fisher)
+    # copy back 'disk' 
+    disk = copy.deepcopy(disk_new)
     
-    #vel1 = os.path.join(args.odir, f'{oroot}-vel1.txt')
-    #vel2 = os.path.join(args.odir, f'{oroot}-vel2.txt')
-    #axisym_error.save_vel(vel1,vel2)
+    
+    axisym_error.axisym_fit_plot_exp_err(galmeta, kin, disk, fix=fix, fisher=fisher, ofile=fit_plot_err,save_vrot=args.save_vrot)
+    
+    
