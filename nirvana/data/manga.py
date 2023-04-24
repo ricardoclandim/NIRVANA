@@ -184,15 +184,17 @@ def manga_paths(plate, ifu, daptype='HYB10-MILESHC-MASTARHC2', dr='DR17', redux_
     versions = manga_versions()
     if dr not in versions.keys():
         raise ValueError(f'{dr} is not an available DR; see nirvana.data.manga.manga_versions.')
-    drpall_path = versions[dr]['DRP'] if raw else dr
-    cube_path = os.path.join(drpall_path, str(plate), 'stack')
-    image_path = os.path.join(drpall_path, str(plate), 'images')
-    dapall_path = os.path.join(versions[dr]['DRP'], versions[dr]['DAP']) if raw else dr
-    maps_path = os.path.join(dapall_path, daptype, str(plate), str(ifu))
-    #cube_path = os.path.join(str(plate), 'stack')
-   # image_path = os.path.join( str(plate), 'images')
+    drpall_path = versions[dr]['DRP'] if raw else ''
+    # changed paths to not have e.g. /DR17/ in the directories
+    #drpall_path = versions[dr]['DRP'] if raw else dr
+    #cube_path = os.path.join(drpall_path, str(plate), 'stack')
+    #image_path = os.path.join(drpall_path, str(plate), 'images')
     #dapall_path = os.path.join(versions[dr]['DRP'], versions[dr]['DAP']) if raw else dr
-   # maps_path = os.path.join(daptype, str(plate), str(ifu))
+    #maps_path = os.path.join(dapall_path, daptype, str(plate), str(ifu))
+    cube_path = os.path.join(str(plate), 'stack')
+    image_path = os.path.join( str(plate), 'images')
+    dapall_path = os.path.join(versions[dr]['DRP'], versions[dr]['DAP']) if raw else ''
+    maps_path = os.path.join(daptype, str(plate), str(ifu))
     if relative:
         # Return only the relative paths
         return drpall_path, cube_path, image_path, dapall_path, maps_path
