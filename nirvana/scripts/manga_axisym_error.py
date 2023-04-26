@@ -131,9 +131,9 @@ def parse_args(options=None):
     parser.add_argument('--skip_plots', default=False, action='store_true',
                         help='Skip the QA plots and just produce the main output file.')
     parser.add_argument('--save_vrot', default=False, action='store_true',
-                        help='Save projected rotation velocity and uncertainties')
+                        help='Save projected rotation velocity, dispersion velocity and uncertainties from data and parameters')
     parser.add_argument('--fisher', default=None, action='store_true',
-                        help='Save projected rotation velocity and uncertainties')
+                        help='Calculate covariance matrix of the estimated parameters')
                                             
 
     # TODO: Other options:
