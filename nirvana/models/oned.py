@@ -259,7 +259,7 @@ class PiecewiseLinear(Func1D):
         Returns:
             `numpy.ndarray`_: Guess parameters.
         """
-        return np.ones(7, dtype=float)  
+        return np.ones(4, dtype=float)  
 
     def par_names(self, short=False):
         """
@@ -332,7 +332,9 @@ class PiecewiseLinear(Func1D):
         f = np.full(len(x), self.par[0], dtype=float)
         i2 = self._sort(x, check)
         indx = (i2 > 0) & (i2 < self.np)
-        f[indx] = lin_interp(x[indx], self.edges[i2[indx]-1], self.par[i2[indx]-1],
+        
+       
+        f[indx] = lin_interp(x[i2[indx]], self.edges[i2[indx]-1], self.par[i2[indx]-1],
                              self.edges[i2[indx]], self.par[i2[indx]])
         f[i2 == self.np] = self.par[-1]
         return f
@@ -473,6 +475,7 @@ class HyperbolicTangent(Func1D):
         """
         if par is not None:
             self._set_par(par)
+          
         return self.par[0]*np.tanh(np.atleast_1d(x)/self.par[1])
 
     def deriv_sample(self, x, par=None, check=False):
