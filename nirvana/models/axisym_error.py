@@ -3097,21 +3097,34 @@ def axisym_fit_plot_exp_err(galmeta, kin, disk, par=None, par_err=None, fix=None
                     
     if save_vrot == True:                
   #  Save the results
-  # Columns in the output are r,   rotation velocity, error in r, error in rot vel, experimental error in rot_vel, total error = sqrt(vrot_err^2 + verot_exp_err^2), 
-  # sigma v r, sqrt(sigma v r) and  sigma v r)
-       data1 = np.column_stack([vrot_r[app_indx],  vrot[app_indx]/np.sin(np.radians(disk.par[3])), vrot_rerr[app_indx],  vrot_err_inc[app_indx], \
-    		vrot_exp_err[app_indx]/np.sin(np.radians(disk.par[3])),vrot_tot_err_inc[app_indx], vrot_err_inc_cross[app_indx],\
-    		 np.sqrt(np.absolute(vrot_err_inc_cross[app_indx])), v_test[app_indx]-vrot_err_inc_cross[app_indx].reshape(len(vrot_err_inc_cross[app_indx]),)])
+  # Columns in the output are r,   rotation velocity, error in r, error in rot vel, 
+  # experimental error in rot_vel, total error = sqrt(vrot_err^2 + verot_exp_err^2), sigma v r
+       data1 = np.column_stack([vrot_r[app_indx],  vrot[app_indx]/np.sin(np.radians(disk.par[3])), \
+                vrot_rerr[app_indx],  vrot_err_inc[app_indx], \
+    		vrot_exp_err[app_indx]/np.sin(np.radians(disk.par[3])),vrot_tot_err_inc[app_indx], vrot_err_inc_cross[app_indx]])
                    
-       data2 = np.column_stack([vrot_r[rec_indx],  vrot[rec_indx]/np.sin(np.radians(disk.par[3])),vrot_rerr[rec_indx], vrot_err_inc[rec_indx], \
-    		vrot_exp_err[rec_indx]/np.sin(np.radians(disk.par[3])),vrot_tot_err_inc[rec_indx], vrot_err_inc_cross[rec_indx],\
-    		 np.sqrt(np.absolute(vrot_err_inc_cross[rec_indx])), v_test[rec_indx]-vrot_err_inc_cross[rec_indx].reshape(len(vrot_err_inc_cross[rec_indx]),)])
+       data2 = np.column_stack([vrot_r[rec_indx],  vrot[rec_indx]/np.sin(np.radians(disk.par[3])),\
+                vrot_rerr[rec_indx], vrot_err_inc[rec_indx], \
+    		vrot_exp_err[rec_indx]/np.sin(np.radians(disk.par[3])),vrot_tot_err_inc[rec_indx], vrot_err_inc_cross[rec_indx]])
+       
+       data3 = np.column_stack([\
+               np.concatenate((vrot_r[app_indx],vrot_r[rec_indx])),  \
+               np.concatenate((vrot[app_indx]/np.sin(np.radians(disk.par[3])), vrot[rec_indx]/np.sin(np.radians(disk.par[3])))),\
+               np.concatenate((vrot_rerr[app_indx],   vrot_rerr[rec_indx])), \
+               np.concatenate((vrot_err_inc[app_indx],   vrot_err_inc[rec_indx])), \
+    	       np.concatenate((vrot_exp_err[app_indx]/np.sin(np.radians(disk.par[3])), \
+    	                      vrot_exp_err[rec_indx]/np.sin(np.radians(disk.par[3])))),\
+    	       np.concatenate((vrot_tot_err_inc[app_indx], vrot_tot_err_inc[rec_indx])), \
+    	       np.concatenate((vrot_err_inc_cross[app_indx], vrot_err_inc_cross[rec_indx]))])
+       
        
        datafile_path1 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}-{disk.rc.__class__.__name__}_vel1.txt'
        datafile_path2 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}-{disk.rc.__class__.__name__}_vel2.txt'
-       np.savetxt(datafile_path1 , data1,  fmt = ['%10.4f', '%10.4f','%10.4f', '%10.4f','%10.4f','%10.4f','%10.4f','%10.4f','%10.4f'])
-       np.savetxt(datafile_path2 , data2, fmt= ['%10.4f', '%10.4f','%10.4f', '%10.4f','%10.4f','%10.4f','%10.4f','%10.4f','%10.4f'])
-
+       datafile_path3 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}-{disk.rc.__class__.__name__}_vel1vel2.txt'
+       np.savetxt(datafile_path1 , data1,  fmt = ['%10.4f', '%10.4f','%10.4f', '%10.4f','%10.4f','%10.4f','%10.4f'])
+       np.savetxt(datafile_path2 , data2, fmt= ['%10.4f', '%10.4f','%10.4f', '%10.4f','%10.4f','%10.4f','%10.4f'])
+       np.savetxt(datafile_path3 , data3, fmt= \
+                    ['%10.4f', '%10.4f','%10.4f', '%10.4f','%10.4f','%10.4f','%10.4f'])
 ########################                        
                                    
                     
