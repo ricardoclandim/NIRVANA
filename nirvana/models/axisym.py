@@ -11,11 +11,12 @@ import warnings
 from IPython import embed
 
 import numpy as np
+import pandas as pd  # added by RL
 from matplotlib import pyplot, rc, patches, ticker, colors
 
 from astropy.io import fits
 
-from .geometry import projected_polar, deriv_projected_polar, disk_ellipse
+from .geometry import projected_polar, deriv_projected_polar, disk_ellipse, deriv_projected_polar_err, deriv_projected_polar_err_covar, dthetady, dthetadx
 from .beam import smear, deriv_smear
 from . import oned 
 from . import asymmetry
@@ -28,15 +29,15 @@ from ..util import fileio
 
 from .thindisk import ThinDisk
 
+
+
 #warnings.simplefilter('error', RuntimeWarning)
 
 class AxisymmetricDisk(ThinDisk):
     r"""
     Simple model for an axisymmetric disk.
-
     The model assumes the disk is infinitely thin and has a single set of
     geometric parameters:
-
         - :math:`x_c, y_c`: The coordinates of the galaxy dynamical center.
         - :math:`\phi`: The position angle of the galaxy (the angle from N
           through E)
@@ -45,25 +46,20 @@ class AxisymmetricDisk(ThinDisk):
           face-on disk.
         - :math:`V_{\rm sys}`: The systemic (bulk) velocity of the galaxy
           taken as the line-of-sight velocity at the dynamical center.
-
     In addition to these parameters, the model instantiation requires class
     instances that define the rotation curve and velocity dispersion profile.
     These classes must have:
-
         - an ``np`` attribute that provides the number of parameters in the
           model
         - a ``guess_par`` method that provide initial guess parameters for
           the model, and
         - ``lb`` and ``ub`` attributes that provide the lower and upper
           bounds for the model parameters.
-
     Importantly, note that the model fits the parameters for the *projected*
     rotation curve. I.e., that amplitude of the fitted function is actually
     :math:`V_\theta\ \sin i`.
-
     .. todo::
         Describe the attributes
-
     Args:
         rc (:class:`~nirvana.models.oned.Func1D`, optional):
             The parameterization to use for the disk rotation curve.  If None,
@@ -71,7 +67,6 @@ class AxisymmetricDisk(ThinDisk):
         dc (:class:`~nirvana.models.oned.Func1D`, optional):
             The parameterization to use for the disk dispersion profile.  If
             None, the dispersion profile is not included in the fit!
-
     """
     def __init__(self, rc=None, dc=None):
         # Rotation curve
@@ -97,25 +92,26 @@ class AxisymmetricDisk(ThinDisk):
     def guess_par(self):
         """
         Return a list of generic guess parameters.
-
         .. todo::
             Could enable this to base the guess on the data to be fit, but at
             the moment these are hard-coded numbers.
-
         Returns:
             `numpy.ndarray`_: Vector of guess parameters
         """
+        #if rc == 'PiecewiseLinear':
+        print(self.rc.guess_par())
         gp = np.concatenate((super().guess_par(), self.rc.guess_par()))
+       # else:
+       #     gp = np.concatenate((super().guess_par(), self.rc.guess_par())) 
+            
         return gp if self.dc is None else np.append(gp, self.dc.guess_par())
 
     def par_names(self, short=False):
         """
         Return a list of strings with the parameter names.
-
         Args:
             short (:obj:`bool`, optional):
                 Return truncated nomenclature for the parameter names.
-
         Returns:
             :obj:`list`: List of parameter name strings.
         """
@@ -140,11 +136,9 @@ class AxisymmetricDisk(ThinDisk):
         """
         Return the rotation curve parameters. Returns None if parameters are
         not defined yet.
-
         Args:
             err (:obj:`bool`, optional):
                 Return the parameter errors instead of the parameter values.
-
         Returns:
             `numpy.ndarray`_: Vector with parameters or parameter errors for the
             rotation curve.
@@ -156,11 +150,9 @@ class AxisymmetricDisk(ThinDisk):
         """
         Return the dispersion profile parameters. Returns None if parameters
         are not defined yet or if no dispersion profile has been defined.
-
         Args:
             err (:obj:`bool`, optional):
                 Return the parameter errors instead of the parameter values.
-
         Returns:
             `numpy.ndarray`_: Vector with parameters or parameter errors for the
             dispersion profile.
@@ -171,16 +163,13 @@ class AxisymmetricDisk(ThinDisk):
     def par_bounds(self, base_lb=None, base_ub=None):
         """
         Return the lower and upper boundaries on the model parameters.
-
         The default geometric bounds (see ``base_lb``, ``base_ub``) are set
         by the minimum and maximum available x and y coordinates, -350 to 350
         for the position angle, 1 to 89 for the inclination, and -300 to 300
         for the systemic velocity.
-
         .. todo::
             Could enable this to base the bounds on the data to be fit, but
             at the moment these are hard-coded numbers.
-
         Args:
             base_lb (`numpy.ndarray`_, optional):
                 The lower bounds for the "base" parameters: x0, y0, pa, inc,
@@ -188,7 +177,6 @@ class AxisymmetricDisk(ThinDisk):
             base_ub (`numpy.ndarray`_, optional):
                 The upper bounds for the "base" parameters: x0, y0, pa, inc,
                 vsys. If None, the defaults are used (see above).
-
         Returns:
             :obj:`tuple`: A two-tuple providing, respectively, the lower and
             upper boundaries for all model parameters.
@@ -204,7 +192,6 @@ class AxisymmetricDisk(ThinDisk):
               ignore_beam=False):
         """
         Evaluate the model.
-
         Note that arguments passed to this function overwrite any existing
         attributes of the object, and subsequent calls to this function will
         continue to use existing attributes, unless they are overwritten.  For
@@ -213,14 +200,12 @@ class AxisymmetricDisk(ThinDisk):
         provide a new** ``beam`` will use the existing :attr:`beam_fft`.  To
         remove all internal attributes to get a "clean" instantiation, either
         define a new :class:`AxisymmetricDisk` instance or use :func:`reinit`.
-
         .. warning::
             
             Input coordinates and surface-brightness data types are all
             converted to `numpy.float64`_.  This is always true, even though
             this is only needed when using
             :class:`~nirvana.models.beam.ConvolveFFTW`.
-
         Args:
             par (`numpy.ndarray`_, optional):
                 The list of parameters to use. If None, the internal
@@ -255,7 +240,6 @@ class AxisymmetricDisk(ThinDisk):
             ignore_beam (:obj:`bool`, optional):
                 Ignore the beam-smearing when constructing the model. I.e.,
                 construct the *intrinsic* model.
-
         Returns:
             `numpy.ndarray`_, :obj:`tuple`: The velocity field model, and the
             velocity dispersion field model, if the latter is included
@@ -287,7 +271,6 @@ class AxisymmetricDisk(ThinDisk):
                     ignore_beam=False):
         """
         Evaluate the derivative of the model w.r.t all input parameters.
-
         Note that arguments passed to this function overwrite any existing
         attributes of the object, and subsequent calls to this function will
         continue to use existing attributes, unless they are overwritten.  For
@@ -296,14 +279,12 @@ class AxisymmetricDisk(ThinDisk):
         provide a new** ``beam`` will use the existing :attr:`beam_fft`.  To
         remove all internal attributes to get a "clean" instantiation, either
         define a new :class:`AxisymmetricDisk` instance or use :func:`reinit`.
-
         .. warning::
             
             Input coordinates and surface-brightness data types are all
             converted to `numpy.float64`_.  This is always true, even though
             this is only needed when using
             :class:`~nirvana.models.beam.ConvolveFFTW`.
-
         Args:
             par (`numpy.ndarray`_, optional):
                 The list of parameters to use. If None, the internal
@@ -338,7 +319,6 @@ class AxisymmetricDisk(ThinDisk):
             ignore_beam (:obj:`bool`, optional):
                 Ignore the beam-smearing when constructing the model. I.e.,
                 construct the *intrinsic* model.
-
         Returns:
             `numpy.ndarray`_, :obj:`tuple`: The velocity field model, and the
             velocity dispersion field model, if the latter is included
@@ -407,7 +387,6 @@ class AxisymmetricDisk(ThinDisk):
     def report(self, fit_message=None, component=False):
         """
         Report the current parameters of the model to the screen.
-
         Args:
             fit_message (:obj:`str`, optional):
                 The status message returned by the fit optimization.
@@ -501,6 +480,8 @@ class AxisymmetricDisk(ThinDisk):
         if not component:
             print(f'Reduced chi-square: {(vchisqr + schisqr)/(len(vfom) + len(sfom) - self.nfree)}')
             print('-'*70)
+          
+           
 
 # TODO:
 #   - This is MaNGA-specific and needs to be abstracted
@@ -509,13 +490,11 @@ def _fit_meta_dtype(par_names, nr, parbitmask):
     """
     Set the data type for a `numpy.recarray`_ used to hold metadata of the
     best-fit model.
-
     Args:
         par_names (array-like):
             Array of strings with the short names for the model parameters.
         nr (:obj:`int`):
             Number radial bins for azimuthally averaged profiles
-
     Returns:
         :obj:`list`: The list of tuples providing the name, data type, and shape
         of each `numpy.recarray`_ column.
@@ -531,8 +510,8 @@ def _fit_meta_dtype(par_names, nr, parbitmask):
             ('PLATEIFU', '<U12'),
             ('PLATE', np.int16),
             ('IFU', np.int16),
-            ('DRPALLINDX', np.int),
-            ('DAPALLINDX', np.int),
+            ('DRPALLINDX', int),
+            ('DAPALLINDX', int),
             ('MNGTARG1', np.int32),
             ('MNGTARG3', np.int32),
             ('DRP3QUAL', np.int32),
@@ -558,18 +537,18 @@ def _fit_meta_dtype(par_names, nr, parbitmask):
             ('Q0', np.float),
             # VNFIT is the total number of velocity measurements included in the
             # fit.
-            ('VNFIT', np.int),
+            ('VNFIT', int),
             # VNMSK is the number of velocity measurements masked for any
             # reason, including those measurements that were already masked by
             # the DAP.
-            ('VNMSK', np.int),
+            ('VNMSK', int),
             # VNFLAG is the number of velocity measurements masked by the fit for
             # any reason, meaning it does *not* include data already masked by
             # the DAP.
-            ('VNFLAG', np.int),
+            ('VNFLAG', int),
             # VNREJ is the number of velocity measurements masked by the fit
             # only due to outlier rejection.
-            ('VNREJ', np.int),
+            ('VNREJ', int),
             # VMEDE is the median observed error in the data included in the
             # fit.
             ('VMEDE', np.float),
@@ -601,18 +580,18 @@ def _fit_meta_dtype(par_names, nr, parbitmask):
             ('VASYM_ELL', np.float, (3,4)),
             # SNFIT is the total number of dispersion measurements included in
             # the fit.
-            ('SNFIT', np.int),
+            ('SNFIT', int),
             # SNMSK is the number of dispersion measurements masked for any
             # reason, including those measurements that were already masked by
             # the DAP.
-            ('SNMSK', np.int),
+            ('SNMSK', int),
             # SNFLAG is the number of dispersion measurements masked by the fit
             # for any reason, meaning it does *not* include data already masked
             # by the DAP.
-            ('SNFLAG', np.int),
+            ('SNFLAG', int),
             # SNREJ is the number of dispersion measurements masked by the fit
             # only due to outlier rejection.
-            ('SNREJ', np.int),
+            ('SNREJ', int),
             # Same as VMEDE, but for the velocity dispersion instead of the
             # velocity.
             ('SMEDE', np.float),
@@ -650,9 +629,9 @@ def _fit_meta_dtype(par_names, nr, parbitmask):
             # Reduced chi-square
             ('RCHI2', np.float),
             # Status index of the fit returned by scipy.optimize.least_squares
-            ('STATUS', np.int),
+            ('STATUS', int),
             # Flag that the fit (scipy.optimize) reported a successful fit
-            ('SUCCESS', np.int),
+            ('SUCCESS', int),
             # Azimuthally binned radial profiles
             ('BINR', float, (nr,)),
             ('V_MAJ', float, (nr,)),
@@ -723,7 +702,6 @@ def _fit_meta_dtype(par_names, nr, parbitmask):
 def axisym_fit_data(galmeta, kin, p0, lb, ub, disk, vmask, smask, ofile=None):
     """
     Construct a fits file with the best-fit results.
-
     Args:
         galmeta (:class:`~nirvana.data.meta.GlobalPar`):
             Object with metadata for the galaxy to be fit.
@@ -746,7 +724,6 @@ def axisym_fit_data(galmeta, kin, p0, lb, ub, disk, vmask, smask, ofile=None):
         ofile (:obj:`str`, optional):
             Output filename.  File names ending in '.gz' will be compressed.  If
             None, no file is written.
-
     Returns:
         `astropy.io.fits.HDUList`_: The list of HDUs with the fit results.
     """
@@ -887,7 +864,7 @@ def axisym_fit_data(galmeta, kin, p0, lb, ub, disk, vmask, smask, ofile=None):
 
     # Get the radially binned data both with and without the beam-smearing corrections
     fwhm = galmeta.psf_fwhm[1]  # Selects r band!
-    oversample = 1.5
+    oversample = 1.5 
     maj_wedge = 30.
     min_wedge = 10.
     binr, vrot_ewmean, vrot_ewsdev, vrot_ntot, vrot_nbin, vrotm_ewmean, vrotm_ewsdev, \
@@ -1238,11 +1215,10 @@ def axisym_fit_data(galmeta, kin, p0, lb, ub, disk, vmask, smask, ofile=None):
 #   - This is MaNGA-specific and needs to be abstracted
 #   - Allow the plot to be constructed from the fits file written by
 #     axisym_fit_data
-def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=None):
+def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, fisher=None, ofile=None, save_vrot=False):
     """
     Construct the QA plot for the result of fitting an
     :class:`~nirvana.model.axisym.AxisymmetricDisk` model to a galaxy.
-
     Args:
         galmeta (:class:`~nirvana.data.meta.GlobalPar`):
             Object with metadata for the galaxy to be fit.
@@ -1262,6 +1238,10 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
         ofile (:obj:`str`, optional):
             Output filename for the plot.  If None, the plot is shown to the
             screen.
+        fisher (`numpy.ndarray`_, optional):
+            Uncertainties from cov mat of the estimated parameter using fisher_matrix function.
+       save_vrot  (str, optional): 
+            'Save projected rotation velocity and uncertainties')  
     """
     logformatter = plot.get_logformatter()
 
@@ -1372,26 +1352,162 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
     else:
         de_x, de_y = disk_ellipse(np.amax(binr[vrot_indx]), *np.radians(disk.par[2:4]),
                                   xc=disk.par[0], yc=disk.par[1])
-
-    # Get the projected rotational velocity
-    #   - Disk-plane coordinates
-    r, th = projected_polar(kin.x - disk.par[0], kin.y - disk.par[1], *np.radians(disk.par[2:4]))
-    #   - Mask for data along the major axis
-    major_gpm = select_kinematic_axis(r, th, which='major', r_range='all', wedge=maj_wedge)
-    minor_gpm = select_kinematic_axis(r, th, which='minor', r_range='all', wedge=min_wedge)
-    #   - Projected rotation velocities
-    indx = major_gpm & np.logical_not(kin.vel_mask)
-    vrot_r = r[indx]
-    vrot_th = th[indx]
-    vrot = (kin.vel[indx] - disk.par[4])/np.cos(th[indx])
+    	
+    # Get the projected rotational velocity 
+    #   - Disk-plane coordinates  and derivatives
+    if fisher is not None:
+        r, th, dr, dth, xd, yd, dxrdx, dxrdy, dyrdx, dyrdy, dxrdrot, dyrdrot, dthetadx, dthetady, drdt, drdx, drdy  = \
+        deriv_projected_polar_err_covar(kin.x - disk.par[0], kin.y - disk.par[1],\
+             np.radians(disk.par[2]),  np.radians(disk.par[3]), dxdp= disk.par_err[0], dydp=disk.par_err[1], dpadp= np.radians(disk.par_err[2]),\
+    			     dincdp= np.radians(disk.par_err[3]), dxdydp = (fisher[0,1]), dpadxdp = (fisher[0,2])*np.pi/180, \
+    			     dpadydp = (fisher[1,2])*np.pi/180, dincdxdp = (fisher[0,3])*np.pi/180, \
+    			     dincdydp = (fisher[1,3])*np.pi/180, dpadincdp = (fisher[2,3])*(np.pi/180)**2)
+       
+                
+        
+        #   - Mask for data along the major axis
+        major_gpm = select_kinematic_axis(r, th, which='major', r_range='all', wedge=maj_wedge)
+        minor_gpm = select_kinematic_axis(r, th, which='minor', r_range='all', wedge=min_wedge)
+        #   - Projected rotation velocities
+        indx = major_gpm & np.logical_not(kin.vel_mask)
+        vrot_r = r[indx]
+        vrot_th = th[indx]
+        vrot = (kin.vel[indx] - disk.par[4])/np.cos(th[indx])
+    
+        # Uncertainty on galaxy parameters, propagated to rotation velocity, radius and theta. 
+        # Reshape used to reduce the size of the array
+        vrot_rerr = np.sqrt(dr[indx]) 
+        vrot_therr =  np.sqrt(dth[indx]) 
+        
+        # transform covariance from degrees to radians 
+        dxdvsysdp = (fisher[0,4])*np.pi/180
+        dydvsysdp = (fisher[1,4])*np.pi/180
+        drotdvsysdp = (fisher[2,4])*(np.pi/180)
+        dvsysdidp = (fisher[3,4])*(np.pi/180)
+        dxdidp = (fisher[0,3])*np.pi/180
+        dydidp = (fisher[1,3])*np.pi/180
+        drotdidp = (fisher[2,3])*(np.pi/180)**2
+        
+        cosi = np.cos(np.radians(disk.par[3]))
+        sini = np.sin(np.radians(disk.par[3]))
+    
+        hi = -vrot*cosi/sini**2
+        dvdtheta = vrot*np.sin(th[indx])/(np.cos(th[indx])*sini)
+        
+        vrot_err = np.sqrt(1/(np.cos(th[indx]))**2*(disk.par_err[4])**2 + (vrot*np.sin(th[indx])/np.cos(th[indx]))**2\
+    	*(dth[indx].reshape(len(dth[indx]),))\
+    	+2*(-1)/(np.cos(th[indx]))*vrot*np.sin(th[indx])/np.cos(th[indx])*\
+    	(((dthetadx[indx]).reshape(len(dthetadx[indx],)))*\
+    	(dxrdx*dxdvsysdp + dxrdy*dydvsysdp +  dxrdrot[indx].reshape(len(dxrdrot[indx]),)*drotdvsysdp) + \
+    	 dthetady[indx].reshape(len(dthetady[indx],))/cosi*\
+    	 (dyrdx*dxdvsysdp + dyrdy*dydvsysdp +dyrdrot[indx].reshape(len(dyrdrot[indx]),)*drotdvsysdp) + \
+    	 dthetady[indx].reshape(len(dthetadx[indx],))*yd[indx]*sini/cosi*dvsysdidp))
+    	
+        
+    
+        # Experimental uncertainty on the velocity - projected
+        vrot_exp_err = np.abs((np.sqrt(inverse(kin.vel_ivar[indx])))/np.cos(th[indx]))
+    
+        # Total uncertainty on velocity - projected
+        vrot_err_inc = np.sqrt(np.square(vrot_err/ sini) +  np.square( hi*np.radians(disk.par_err[3])) \
+              +2*hi*dvdtheta*(dthetady[indx].reshape(len(dthetady[indx],)))*yd[indx]*sini/cosi*np.radians(disk.par_err[3])**2\
+               +2*hi*dvdtheta*\
+               (  ((dthetadx[indx].reshape(len(dthetadx[indx],)))*(dxrdx*dxdidp +  dxrdy*dydidp  + (dxrdrot[indx].reshape(len(dxrdrot[indx]),))*drotdidp))  + \
+                (dthetady[indx].reshape(len(dthetadx[indx],)))/cosi*\
+                (dyrdx*dxdidp +  dyrdy*dydidp  + (dyrdrot[indx].reshape(len(dyrdrot[indx]),))*drotdidp)  ) -2*hi*dvsysdidp/(np.cos(th[indx])*sini)   )
+    
+        vrot_tot_err = np.sqrt(np.square(vrot_err)+np.square(vrot_exp_err))
+        vrot_tot_err_inc = np.sqrt(np.square(vrot_err_inc )+np.square(vrot_exp_err/ sini))
+        
+        # check to see if sigma_ab <= sigma_a*sigma_b
+        v_test = vrot_err_inc*vrot_rerr.reshape(len(vrot_rerr,))
+        
+        
+        # covariance of rotation velocity and radius
+        vrot_err_inc_cross = vrot*np.sin(th[indx])/(np.cos(th[indx])*sini)*\
+        			(drdt[indx].reshape(len(drdt[indx],))  \
+                              +dthetady[indx].reshape(len(dthetadx[indx],))*drdy[indx].reshape(len(drdy[indx],))*\
+                              (  (yd[indx]*sini/(cosi))**2*np.radians(disk.par_err[3])**2 \
+                              + 2*yd[indx]*sini/(cosi)*(dyrdx*dxdidp/cosi +dyrdy*dydidp/cosi +\
+                               dyrdrot[indx].reshape(len(dyrdrot[indx]),)/cosi*drotdidp) ) \
+                              + (dthetady[indx].reshape(len(dthetady[indx],))*drdx[indx].reshape(len(drdx[indx],))+\
+                              dthetadx[indx].reshape(len(dthetadx[indx],))*drdy[indx].reshape(len(drdy[indx],)))\
+                              *(yd[indx]*sini/(cosi)\
+                              *(dxrdx*dxdidp +dxrdy*dydidp + dxrdrot[indx].reshape(len(dxrdrot[indx]),)*drotdidp))  \
+                              )\
+        			+ drdy[indx].reshape(len(drdy[indx],))*(dyrdx*dxdidp/cosi +dyrdy*dydidp/cosi + dyrdrot[indx].reshape(len(dyrdrot[indx]),)*drotdidp/cosi + \
+        			yd[indx]*sini/(cosi)*(np.radians(disk.par_err[3]))**2)\
+        			*(-vrot/(sini)**2*cosi) \
+        			+ drdy[indx].reshape(len(drdy[indx],))*(dyrdx*dxdvsysdp/cosi +dyrdy*dydvsysdp/cosi + dyrdrot[indx].reshape(len(dyrdrot[indx]),)*drotdvsysdp/cosi)\
+        			*(-1/(np.cos(th[indx])*sini))\
+       			+ drdx[indx].reshape(len(drdx[indx],))*(dxrdx*dxdidp +dxrdy*dydidp + dxrdrot[indx].reshape(len(dxrdrot[indx]),)*drotdidp)\
+       			*(-vrot/(sini)**2*cosi) \
+       			+ drdx[indx].reshape(len(drdx[indx],))*(dxrdx*dxdvsysdp +dxrdy*dydvsysdp + dxrdrot[indx].reshape(len(dxrdrot[indx]),)*drotdvsysdp)\
+       			*(-1/(np.cos(th[indx])*sini))
+        			
+    
+    #------------------------------    
+    else:
+        r, th, dr, dth, xd, yd, dthetadx, dthetady, drdt, drdx, drdy = deriv_projected_polar_err(kin.x - disk.par[0], kin.y - disk.par[1], np.radians(disk.par[2]), \
+    			 np.radians(disk.par[3]), dxdp= disk.par_err[0], dydp=disk.par_err[1], dpadp= np.radians(disk.par_err[2]),\
+    			     dincdp= np.radians(disk.par_err[3]))                     
+    
+        #   - Mask for data along the major axis
+        major_gpm = select_kinematic_axis(r, th, which='major', r_range='all', wedge=maj_wedge)
+        minor_gpm = select_kinematic_axis(r, th, which='minor', r_range='all', wedge=min_wedge)
+        #   - Projected rotation velocities
+        indx = major_gpm & np.logical_not(kin.vel_mask)
+        vrot_r = r[indx]
+        vrot_th = th[indx]
+        vrot = (kin.vel[indx] - disk.par[4])/np.cos(th[indx])
+    
+        # Uncertainty on galaxy parameters, propagated to rotation velocity, radius and theta. Reshape used to reduce the size of the array
+        vrot_rerr = np.sqrt(dr[indx]) 
+        vrot_therr =  np.sqrt(dth[indx]) 
+    
+        vrot_err = np.sqrt(1/(np.cos(th[indx]))**2*(disk.par_err[4])**2 + (vrot*np.sin(th[indx])/np.cos(th[indx]))**2\
+    	          *(dth[indx].reshape(len(dth[indx]),))\
+    	           )
+    	    
+        # Experimental uncertainty on the velocity - projected
+        vrot_exp_err = np.abs((np.sqrt(inverse(kin.vel_ivar[indx])))/np.cos(th[indx]))
+    
+        # Total uncertainty on velocity - projected
+        vrot_err_inc = np.sqrt(np.square(vrot_err/ np.sin(np.radians(disk.par[3]))) +  np.square( vrot/(np.square(np.sin(np.radians(disk.par[3]))))\
+               *np.cos(np.radians(disk.par[3])) *np.radians(disk.par_err[3])) \
+              -2*vrot**2*(dthetady[indx].reshape(len(dthetady[indx],)))*yd[indx]*np.sin(th[indx])/((np.sin(np.radians(disk.par[3])))**2\
+              *np.cos(th[indx]))*(np.radians(disk.par_err[3]))**2\
+               )
+            
+        vrot_tot_err = np.sqrt(np.square(vrot_err)+np.square(vrot_exp_err))
+        vrot_tot_err_inc = np.sqrt(np.square(vrot_err_inc )+np.square(vrot_exp_err/ np.sin(np.radians(disk.par[3]))))
+        
+        # check to see if sigma_ab <= sigma_a*sigma_b
+        v_test = vrot_err_inc*vrot_rerr.reshape(len(vrot_rerr,))
+        
+        
+        # covariance of rotation velocity and radius
+        vrot_err_inc_cross = vrot*np.sin(th[indx])/(np.cos(th[indx])*np.sin(np.radians(disk.par[3])))*(drdt[indx].reshape(len(drdt[indx],))  \
+                              +(dthetady[indx].reshape(len(dthetadx[indx],)))*(drdy[indx].reshape(len(drdy[indx],)))*\
+                              (yd[indx]*np.sin(np.radians(disk.par[3]))/(np.cos(np.radians(disk.par[3]))))**2*(np.radians(disk.par_err[3]))**2) +\
+                               drdy[indx].reshape(len(drdy[indx],))*( \
+        			yd[indx]*np.sin(np.radians(disk.par[3]))/(np.cos(np.radians(disk.par[3])))*np.radians(disk.par_err[3])**2)\
+        			*(-vrot/(np.sin(np.radians(disk.par[3])))**2*np.cos(np.radians(disk.par[3]))) 
+        			    			
+       			
+    #----------------------------------------------------------------    
+    
     #   - Projected radial velocities
     indx = minor_gpm & np.logical_not(kin.vel_mask)
     vrad_r = r[indx]
     vrad = (kin.vel[indx] - disk.par[4])/np.sin(th[indx])
+    
     if smod is not None:
         indx = np.logical_not(kin.sig_mask) & (kin.sig_phys2 > 0)
         sprof_r = r[indx]
         sprof = np.sqrt(kin.sig_phys2[indx])
+        # sig_phys2  was defined  with /s/sig_phys2
+        sprof_exp_err = np.sqrt(inverse(kin.sig_phys2_ivar[indx]))/2/np.sqrt(kin.sig_phys2[indx]) 
 
     # Get the 1D model profiles
     maxr = np.amax(r)
@@ -1408,14 +1524,15 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
 
     # Create the plot
     w,h = pyplot.figaspect(1)
-    fig = pyplot.figure(figsize=(2*w,2*h))
+    fig = pyplot.figure(figsize=(2*w,3*h))
 
+    
     #-------------------------------------------------------------------
     # Surface-brightness
     sb_lim = np.power(10.0, growth_lim(np.ma.log10(sb_map), 0.90, 1.05))
     sb_lim = atleast_one_decade(sb_lim)
     
-    ax = plot.init_ax(fig, [0.02, 0.775, 0.19, 0.19])
+    ax = plot.init_ax(fig, [0.02, 0.805, 0.19, 0.19])
     cax = fig.add_axes([0.05, 0.97, 0.15, 0.005])
     cax.tick_params(which='both', direction='in')
     ax.set_xlim(skylim[::-1])
@@ -1445,8 +1562,8 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
     snr_lim = np.power(10.0, growth_lim(np.ma.log10(snr_map), 0.90, 1.05))
     snr_lim = atleast_one_decade(snr_lim)
 
-    ax = plot.init_ax(fig, [0.02, 0.580, 0.19, 0.19])
-    cax = fig.add_axes([0.05, 0.57, 0.15, 0.005])
+    ax = plot.init_ax(fig, [0.02, 0.674, 0.19, 0.19])
+    cax = fig.add_axes([0.05, 0.694, 0.15, 0.005])
     cax.tick_params(which='both', direction='in')
     ax.set_xlim(skylim[::-1])
     ax.set_ylim(skylim)
@@ -1467,7 +1584,7 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
     #-------------------------------------------------------------------
     # Velocity
     vel_lim = growth_lim(np.ma.append(v_map, vmod_map), 0.90, 1.05, midpoint=disk.par[4])
-    ax = plot.init_ax(fig, [0.215, 0.775, 0.19, 0.19])
+    ax = plot.init_ax(fig, [0.215, 0.805, 0.19, 0.19])
     cax = fig.add_axes([0.245, 0.97, 0.15, 0.005])
     cax.tick_params(which='both', direction='in')
     ax.set_xlim(skylim[::-1])
@@ -1494,8 +1611,8 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
     sig_lim = np.power(10.0, growth_lim(np.ma.log10(_smaps), 0.80, 1.05))
     sig_lim = atleast_one_decade(sig_lim)
 
-    ax = plot.init_ax(fig, [0.215, 0.580, 0.19, 0.19])
-    cax = fig.add_axes([0.245, 0.57, 0.15, 0.005])
+    ax = plot.init_ax(fig, [0.215, 0.674, 0.19, 0.19])
+    cax = fig.add_axes([0.245, 0.694, 0.15, 0.005])
     cax.tick_params(which='both', direction='in')
     ax.set_xlim(skylim[::-1])
     ax.set_ylim(skylim)
@@ -1515,7 +1632,7 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
 
     #-------------------------------------------------------------------
     # Velocity Model
-    ax = plot.init_ax(fig, [0.410, 0.775, 0.19, 0.19])
+    ax = plot.init_ax(fig, [0.410, 0.805, 0.19, 0.19])
     cax = fig.add_axes([0.440, 0.97, 0.15, 0.005])
     cax.tick_params(which='both', direction='in')
     ax.set_xlim(skylim[::-1])
@@ -1538,7 +1655,7 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
 
     #-------------------------------------------------------------------
     # Velocity Dispersion Model
-    ax = plot.init_ax(fig, [0.410, 0.580, 0.19, 0.19])
+    ax = plot.init_ax(fig, [0.410, 0.674, 0.19, 0.19])
     ax.set_xlim(skylim[::-1])
     ax.set_ylim(skylim)
     ax.xaxis.set_major_formatter(ticker.NullFormatter())
@@ -1557,7 +1674,7 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
         im = ax.imshow(smod_map, origin='lower', interpolation='nearest', cmap='viridis',
                        extent=extent, norm=colors.LogNorm(vmin=sig_lim[0], vmax=sig_lim[1]),
                        zorder=4)
-        cax = fig.add_axes([0.440, 0.57, 0.15, 0.005])
+        cax = fig.add_axes([0.440, 0.694, 0.15, 0.005])
         cax.tick_params(which='both', direction='in')
         cb = fig.colorbar(im, cax=cax, orientation='horizontal', format=logformatter)
         cax.text(-0.05, 0.1, r'$\sigma_m$', ha='right', va='center', transform=cax.transAxes)
@@ -1567,7 +1684,7 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
     v_resid = v_map - vmod_map
     v_res_lim = growth_lim(v_resid, 0.80, 1.15, midpoint=0.0)
 
-    ax = plot.init_ax(fig, [0.605, 0.775, 0.19, 0.19])
+    ax = plot.init_ax(fig, [0.605, 0.805, 0.19, 0.19])
     cax = fig.add_axes([0.635, 0.97, 0.15, 0.005])
     cax.tick_params(which='both', direction='in')
     ax.set_xlim(skylim[::-1])
@@ -1588,7 +1705,7 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
 
     #-------------------------------------------------------------------
     # Velocity Dispersion Residuals
-    ax = plot.init_ax(fig, [0.605, 0.580, 0.19, 0.19])
+    ax = plot.init_ax(fig, [0.605, 0.674, 0.19, 0.19])
     ax.set_xlim(skylim[::-1])
     ax.set_ylim(skylim)
     ax.xaxis.set_major_formatter(ticker.NullFormatter())
@@ -1606,7 +1723,7 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
         s_res_lim = growth_lim(s_resid, 0.80, 1.15, midpoint=0.0)
         im = ax.imshow(s_resid, origin='lower', interpolation='nearest', cmap='RdBu_r',
                     extent=extent, vmin=s_res_lim[0], vmax=s_res_lim[1], zorder=4)
-        cax = fig.add_axes([0.635, 0.57, 0.15, 0.005])
+        cax = fig.add_axes([0.635, 0.694, 0.15, 0.005])
         cax.tick_params(which='both', direction='in')
         cb = fig.colorbar(im, cax=cax, orientation='horizontal') #, format=logformatter)
         cax.text(-0.05, 0.1, r'$\Delta\sigma$', ha='right', va='center', transform=cax.transAxes)
@@ -1617,7 +1734,7 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
     v_chi_lim = np.power(10.0, growth_lim(np.ma.log10(v_chi), 0.90, 1.15))
     v_chi_lim = atleast_one_decade(v_chi_lim)
 
-    ax = plot.init_ax(fig, [0.800, 0.775, 0.19, 0.19])
+    ax = plot.init_ax(fig, [0.800, 0.805, 0.19, 0.19])
     cax = fig.add_axes([0.830, 0.97, 0.15, 0.005])
     cax.tick_params(which='both', direction='in')
     ax.set_xlim(skylim[::-1])
@@ -1640,7 +1757,7 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
 
     #-------------------------------------------------------------------
     # Velocity Dispersion Model Chi-square
-    ax = plot.init_ax(fig, [0.800, 0.580, 0.19, 0.19])
+    ax = plot.init_ax(fig, [0.800, 0.674, 0.19, 0.19])
     ax.set_xlim(skylim[::-1])
     ax.set_ylim(skylim)
     ax.xaxis.set_major_formatter(ticker.NullFormatter())
@@ -1658,7 +1775,7 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
         s_chi_lim = np.power(10.0, growth_lim(np.ma.log10(s_chi), 0.90, 1.15))
         s_chi_lim = atleast_one_decade(s_chi_lim)
 
-        cax = fig.add_axes([0.830, 0.57, 0.15, 0.005])
+        cax = fig.add_axes([0.830, 0.694, 0.15, 0.005])
         cax.tick_params(which='both', direction='in')
         im = ax.imshow(s_chi, origin='lower', interpolation='nearest', cmap='viridis',
                     extent=extent, norm=colors.LogNorm(vmin=s_chi_lim[0], vmax=s_chi_lim[1]),
@@ -1666,12 +1783,12 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
         cb = fig.colorbar(im, cax=cax, orientation='horizontal', format=logformatter)
         cax.text(-0.02, 0.4, r'$|\Delta \sigma|/\epsilon$', ha='right', va='center',
                 transform=cax.transAxes)
-
+                
     #-------------------------------------------------------------------
     # Velocity Beam-Smearing Corrections
     vel_beam_lim = growth_lim(vel_beam_corr, 0.95, 1.05, midpoint=0.0)
-    ax = plot.init_ax(fig, [0.800, 0.305, 0.19, 0.19])
-    cax = fig.add_axes([0.830, 0.50, 0.15, 0.005])
+    ax = plot.init_ax(fig, [0.800, 0.465, 0.19, 0.19])
+    cax = fig.add_axes([0.830, 0.627, 0.15, 0.005])
     cax.tick_params(which='both', direction='in')
     ax.set_xlim(skylim[::-1])
     ax.set_ylim(skylim)
@@ -1689,12 +1806,12 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
     cb.ax.xaxis.set_label_position('top')
     cax.text(-0.05, 1.1, r'$V_{\rm b}$', ha='right', va='center', transform=cax.transAxes)
 
-    ax.text(0.5, 1.2, 'Beam-smearing', ha='center', va='center',
+    ax.text(0.5, 1.25, 'Beam-smearing', ha='center', va='center',
             transform=ax.transAxes, fontsize=10)
 
     #-------------------------------------------------------------------
     # Velocity Dispersion Beam-Smearing Corrections
-    ax = plot.init_ax(fig, [0.800, 0.110, 0.19, 0.19])
+    ax = plot.init_ax(fig, [0.800, 0.335, 0.19, 0.19])
     ax.set_xlim(skylim[::-1])
     ax.set_ylim(skylim)
     ax.xaxis.set_major_formatter(ticker.NullFormatter())
@@ -1713,12 +1830,66 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
         im = ax.imshow(np.ma.sqrt(sig_beam_corr_map), origin='lower', interpolation='nearest',
                        cmap='viridis', extent=extent, zorder=4,
                        norm=colors.LogNorm(vmin=sig_beam_lim[0], vmax=sig_beam_lim[1]))
-        cax = fig.add_axes([0.830, 0.10, 0.15, 0.005])
+        cax = fig.add_axes([0.830, 0.358, 0.15, 0.005])
         cax.tick_params(which='both', direction='in')
         cb = fig.colorbar(im, cax=cax, orientation='horizontal', format=logformatter)
         cax.text(-0.05, 0.1, r'$\sigma_{\rm b}$', ha='right', va='center', transform=cax.transAxes)
 
-#    #-------------------------------------------------------------------
+    #-------------------------------------------------------------------
+    # Velocity Error
+    ax = plot.init_ax(fig, [0.800, 0.167, 0.19, 0.19])
+    cax = fig.add_axes([0.830, 0.330, 0.15, 0.005])
+    cax.tick_params(which='both', direction='in')
+    ax.set_xlim(skylim[::-1])
+    ax.set_ylim(skylim)
+    #v_err_lim = growth_lim(v_err_map, 0.80, 1.15, midpoint=0.0)
+    v_err_lim = np.power(10.0, growth_lim(np.ma.log10(v_err_map), 0.90, 1.15))
+    v_err_lim = atleast_one_decade(v_err_lim)
+    ax.xaxis.set_major_formatter(ticker.NullFormatter())
+    ax.yaxis.set_major_formatter(ticker.NullFormatter())
+    #ax.add_patch(patches.Circle((0.1, 0.1), fwhm/np.diff(skylim)[0]/2, transform=ax.transAxes,
+     #                           facecolor='0.7', edgecolor='k', zorder=4))
+    im = ax.imshow(v_err_map, origin='lower', interpolation='nearest', cmap='RdBu_r',
+                   extent=extent, norm=colors.LogNorm(vmin=v_err_lim[0], vmax=v_err_lim[1]), zorder=4)
+    # Mark the fitted dynamical center
+    ax.scatter(disk.par[0], disk.par[1], marker='+', color='k', s=40, lw=1, zorder=5)
+    # Plot the ellipse with constant disk radius
+    if de_x is not None:
+        ax.plot(de_x, de_y, color='w', lw=2, zorder=6, alpha=0.5)
+    cb = fig.colorbar(im, cax=cax, orientation='horizontal', format=logformatter)
+    cb.ax.xaxis.set_ticks_position('top')
+    cb.ax.xaxis.set_label_position('top')
+    cax.text(-0.05, 1.1, r'$\epsilon_{V}$', ha='right', va='center', transform=cax.transAxes)
+
+    #-------------------------------------------------------------------
+    # Velocity Dispersion Error
+    ax = plot.init_ax(fig, [0.800, 0.037, 0.19, 0.19])
+    ax.set_xlim(skylim[::-1])
+    ax.set_ylim(skylim)
+    ax.xaxis.set_major_formatter(ticker.NullFormatter())
+    ax.yaxis.set_major_formatter(ticker.NullFormatter())
+    ax.add_patch(patches.Circle((0.1, 0.1), fwhm/np.diff(skylim)[0]/2, transform=ax.transAxes,
+                                facecolor='0.7', edgecolor='k', zorder=4))
+    # Mark the fitted dynamical center
+    ax.scatter(disk.par[0], disk.par[1], marker='+', color='k', s=40, lw=1, zorder=5)
+    # Plot the ellipse with constant disk radius
+    if de_x is not None:
+        ax.plot(de_x, de_y, color='w', lw=2, zorder=6, alpha=0.5)
+    if disk.dc is None:
+        ax.text(0.5, 0.3, 'No velocity dispersion model', ha='center', va='center',
+                transform=ax.transAxes)
+    else:
+        s_err_lim = np.power(10.0, growth_lim(np.ma.log10(s_err_map), 0.90, 1.15))
+        s_err_lim = atleast_one_decade(s_err_lim)
+        im = ax.imshow(s_err_map, origin='lower', interpolation='nearest', cmap='viridis',
+                       extent=extent, norm=colors.LogNorm(vmin=s_err_lim[0], vmax=s_err_lim[1]),
+                       zorder=4)
+        cax = fig.add_axes([0.830, 0.060, 0.15, 0.005])
+        cax.tick_params(which='both', direction='in')
+        cb = fig.colorbar(im, cax=cax, orientation='horizontal', format=logformatter)
+        cax.text(-0.05, 0.1, r'$\epsilon_{\sigma}$', ha='right', va='center', transform=cax.transAxes)
+#   
+ #-------------------------------------------------------------------
 #    # Intrinsic Velocity Model
 #    ax = plot.init_ax(fig, [0.800, 0.305, 0.19, 0.19])
 #    cax = fig.add_axes([0.830, 0.50, 0.15, 0.005])
@@ -1924,9 +2095,9 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
 
     # Set the radius limits for the radial plots
     r_lim = [0.0, np.amax(concat_r)*1.1]
-
-    #-------------------------------------------------------------------
-    # Rotation curve
+    
+    #--------------------------------------------------------------------------------------------------
+       # Rotation curve
 #    maxrc = np.amax(np.append(vrot_ewmean[vrot_indx], vrotm_ewmean[vrot_indx])) \
 #                if np.any(vrot_indx) else np.amax(vrot_intr_model)
 #    rc_lim = [0.0, maxrc*1.1]
@@ -1937,7 +2108,7 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
 
     reff_lines = np.arange(galmeta.reff, r_lim[1], galmeta.reff) if galmeta.reff > 1 else None
 
-    ax = plot.init_ax(fig, [0.27, 0.27, 0.51, 0.23], facecolor='0.9', top=False, right=False)
+    ax = plot.init_ax(fig, [0.27, 0.5, 0.51, 0.16], facecolor='0.9', top=False, right=False)
     ax.set_xlim(r_lim)
     ax.set_ylim(rc_lim)
     plot.rotate_y_ticks(ax, 90, 'center')
@@ -1950,9 +2121,14 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
     indx = vrot_nbin > 0
 #    ax.scatter(vrot_r, vrot, marker='.', color='k', s=30, lw=0, alpha=0.6, zorder=1)
     app_indx = (vrot_th > np.pi/2) & (vrot_th < 3*np.pi/2)
+    
     ax.scatter(vrot_r[app_indx], vrot[app_indx], marker='.', color='C0', s=30, lw=0, alpha=0.6, zorder=2)
+    
     rec_indx = (vrot_th < np.pi/2) | (vrot_th > 3*np.pi/2)
+    
     ax.scatter(vrot_r[rec_indx], vrot[rec_indx], marker='.', color='C3', s=30, lw=0, alpha=0.6, zorder=2)
+    
+
     if np.any(indx):
         ax.scatter(binr[indx], vrot_ewmean[indx], marker='o', edgecolors='none', s=100,
                    alpha=1.0, facecolors='0.5', zorder=4)
@@ -1979,10 +2155,10 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
         axt = plot.get_twin(ax, 'x')
         axt.set_xlim(np.array(r_lim) * galmeta.kpc_per_arcsec())
         axt.set_ylim(rc_lim)
-        ax.text(0.5, 1.14, r'$R$ [$h^{-1}$ kpc]', ha='center', va='center', transform=ax.transAxes,
+        ax.text(0.5, 1.1, r'$R$ [$h^{-1}$ kpc]', ha='center', va='center', transform=ax.transAxes,
                 fontsize=10)
     else:
-        ax.text(0.5, 1.05, 'kpc conversion unavailable', ha='center', va='center',
+        ax.text(0.5, 1.07, 'kpc conversion unavailable', ha='center', va='center',
                 transform=ax.transAxes, fontsize=10)
 
     kin_inc = disk.par[3]
@@ -2009,7 +2185,7 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
         sprof_lim = np.power(10.0, growth_lim(np.ma.log10(concat_s), 0.9, 1.5))
         sprof_lim = atleast_one_decade(sprof_lim)
 
-        ax = plot.init_ax(fig, [0.27, 0.04, 0.51, 0.23], facecolor='0.9')
+        ax = plot.init_ax(fig, [0.27, 0.34, 0.51, 0.16], facecolor='0.9')
         ax.set_xlim(r_lim)
         ax.set_ylim(sprof_lim)#[10,275])
         ax.set_yscale('log')
@@ -2018,6 +2194,8 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
 
         indx = sprof_nbin > 0
         ax.scatter(sprof_r, sprof, marker='.', color='k', s=30, lw=0, alpha=0.6, zorder=2)
+#        ax.errorbar(sprof_r,sprof, yerr=sprof_exp_err, color='k', capsize=0,
+ #                   linestyle='', linewidth=1, alpha=1.0, zorder=3)
         if np.any(indx):
             ax.scatter(binr[indx], sprof_ewmean[indx], marker='o', edgecolors='none', s=100,
                        alpha=1.0, facecolors='0.5', zorder=4)
@@ -2025,6 +2203,164 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
                        marker='o', lw=3, s=100, alpha=1.0, facecolors='none', zorder=5)
             ax.errorbar(binr[indx], sprof_ewmean[indx], yerr=sprof_ewsdev[indx], color='0.6',
                         capsize=0, linestyle='', linewidth=1, alpha=1.0, zorder=3)
+        ax.plot(modelr, sprof_intr_model, color='blueviolet', zorder=6, lw=0.5)
+        if reff_lines is not None:
+            for l in reff_lines:
+                ax.axvline(x=l, linestyle='--', lw=0.5, zorder=3, color='k')
+
+        #ax.text(0.5, -0.13, r'$R$ [arcsec]', ha='center', va='center', transform=ax.transAxes,
+        #        fontsize=10)
+
+        ax.add_patch(patches.Rectangle((0.81,0.86), 0.17, 0.09, facecolor='w', lw=0,
+                                       edgecolor='none', zorder=7, alpha=0.7,
+                                       transform=ax.transAxes))
+        ax.text(0.97, 0.87, r'$\sigma_{\rm los}$ [km/s]', ha='right', va='bottom',
+                transform=ax.transAxes, fontsize=10, zorder=8)
+    
+    #-------------------------------------------------------------------
+    # Rotation curve
+#    maxrc = np.amax(np.append(vrot_ewmean[vrot_indx], vrotm_ewmean[vrot_indx])) \
+#                if np.any(vrot_indx) else np.amax(vrot_intr_model)
+#    rc_lim = [0.0, maxrc*1.1]
+
+    rc_lim = growth_lim(np.concatenate((vrot_ewmean[vrot_indx], vrotm_ewmean[vrot_indx],
+                                        vrad_ewmean[vrad_indx], vradm_ewmean[vrad_indx])),
+                        0.99, 1.3)
+
+    reff_lines = np.arange(galmeta.reff, r_lim[1], galmeta.reff) if galmeta.reff > 1 else None
+
+    ax = plot.init_ax(fig, [0.27, 0.165, 0.51, 0.16], facecolor='0.9', top=False, right=False)
+    ax.set_xlim(r_lim)
+    ax.set_ylim(rc_lim)
+    plot.rotate_y_ticks(ax, 90, 'center')
+    if smod is None:
+        ax.text(0.5, -0.13, r'$R$ [arcsec]', ha='center', va='center', transform=ax.transAxes,
+                fontsize=10)
+    else:
+        ax.xaxis.set_major_formatter(ticker.NullFormatter())
+
+    indx = vrot_nbin > 0
+    
+#    ax.scatter(vrot_r, vrot, marker='.', color='k', s=30, lw=0, alpha=0.6, zorder=1)
+    app_indx = (vrot_th > np.pi/2) & (vrot_th < 3*np.pi/2)
+    
+    ax.scatter(vrot_r[app_indx], vrot[app_indx], marker='.', color='C0', s=30, lw=0, alpha=0.6, zorder=2)
+    ax.errorbar(vrot_r[app_indx],vrot[app_indx], yerr=vrot_tot_err_inc[app_indx], color='C0', capsize=0,
+                    linestyle='', linewidth=1, alpha=1.0, zorder=3)
+    rec_indx = (vrot_th < np.pi/2) | (vrot_th > 3*np.pi/2)
+    
+    ax.scatter(vrot_r[rec_indx], vrot[rec_indx], marker='.', color='C3', s=30, lw=0, alpha=0.6, zorder=2)
+    ax.errorbar(vrot_r[rec_indx],vrot[rec_indx], yerr=vrot_tot_err_inc[rec_indx], color='C3', capsize=0,
+                    linestyle='', linewidth=1, alpha=1.0, zorder=3)
+                    
+    if save_vrot == True:                
+  #  Save the results
+  # Columns in the output are r,   rotation velocity, error in r, error in rot vel, 
+  # experimental error in rot_vel, total error = sqrt(vrot_err^2 + verot_exp_err^2), sigma v r
+       data1 = np.column_stack([vrot_r[app_indx],  vrot[app_indx]/np.sin(np.radians(disk.par[3])), \
+                vrot_rerr[app_indx],  vrot_err_inc[app_indx], \
+    		vrot_exp_err[app_indx]/np.sin(np.radians(disk.par[3])),vrot_tot_err_inc[app_indx], vrot_err_inc_cross[app_indx]])
+                   
+       data2 = np.column_stack([vrot_r[rec_indx],  vrot[rec_indx]/np.sin(np.radians(disk.par[3])),\
+                vrot_rerr[rec_indx], vrot_err_inc[rec_indx], \
+    		vrot_exp_err[rec_indx]/np.sin(np.radians(disk.par[3])),vrot_tot_err_inc[rec_indx], vrot_err_inc_cross[rec_indx]])
+       
+       data3 = np.column_stack([\
+               np.concatenate((vrot_r[app_indx],vrot_r[rec_indx])),  \
+               np.concatenate((vrot[app_indx]/np.sin(np.radians(disk.par[3])), vrot[rec_indx]/np.sin(np.radians(disk.par[3])))),\
+               np.concatenate((vrot_rerr[app_indx],   vrot_rerr[rec_indx])), \
+               np.concatenate((vrot_err_inc[app_indx],   vrot_err_inc[rec_indx])), \
+    	       np.concatenate((vrot_exp_err[app_indx]/np.sin(np.radians(disk.par[3])), \
+    	                      vrot_exp_err[rec_indx]/np.sin(np.radians(disk.par[3])))),\
+    	       np.concatenate((vrot_tot_err_inc[app_indx], vrot_tot_err_inc[rec_indx])), \
+    	       np.concatenate((vrot_err_inc_cross[app_indx], vrot_err_inc_cross[rec_indx]))])
+       
+       
+       datafile_path1 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}-{disk.rc.__class__.__name__}_vel1.txt'
+       datafile_path2 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}-{disk.rc.__class__.__name__}_vel2.txt'
+       datafile_path3 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}-{disk.rc.__class__.__name__}_vel1vel2.txt'
+       np.savetxt(datafile_path1 , data1,  fmt = ['%10.4f', '%10.4f','%10.4f', '%10.4f','%10.4f','%10.4f','%10.4f'])
+       np.savetxt(datafile_path2 , data2, fmt= ['%10.4f', '%10.4f','%10.4f', '%10.4f','%10.4f','%10.4f','%10.4f'])
+       np.savetxt(datafile_path3 , data3, fmt= \
+                    ['%10.4f', '%10.4f','%10.4f', '%10.4f','%10.4f','%10.4f','%10.4f'])
+########################                        
+                                   
+                    
+
+#    if np.any(indx):
+#       ax.scatter(binr[indx], vrot_ewmean[indx], marker='o', edgecolors='none', s=100,
+#                   alpha=1.0, facecolors='0.5', zorder=4)
+#       ax.scatter(binr[indx], vrotm_ewmean[indx], edgecolors='blueviolet', marker='o', lw=3, s=100,
+#                   alpha=1.0, facecolors='none', zorder=5)
+#        ax.errorbar(binr[indx], vrot_ewmean[indx], yerr=vrot_ewsdev[indx], color='0.5', capsize=0,
+#                    linestyle='', linewidth=1, alpha=1.0, zorder=3)
+    indx = vrad_nbin > 0
+    ax.scatter(vrad_r, vrad, marker='.', color='0.6', s=30, lw=0, alpha=0.6, zorder=2)
+#    if np.any(indx):
+#        ax.scatter(binr[indx], vrad_ewmean[indx], marker='o', edgecolors='none', s=100,
+#                   alpha=1.0, facecolors='0.7', zorder=4)
+#        ax.scatter(binr[indx], vradm_ewmean[indx], edgecolors='C1', marker='o', lw=3, s=100,
+#                   alpha=1.0, facecolors='none', zorder=5)
+#        ax.errorbar(binr[indx], vrad_ewmean[indx], yerr=vrad_ewsdev[indx], color='0.7', capsize=0,
+#                    linestyle='', linewidth=1, alpha=1.0, zorder=3)
+    ax.plot(modelr, vrot_intr_model, color='blueviolet', zorder=6, lw=0.5)
+    if reff_lines is not None:
+        for l in reff_lines:
+            ax.axvline(x=l, linestyle='--', lw=0.5, zorder=3, color='k')
+
+ #   asec2kpc = galmeta.kpc_per_arcsec()
+ #   if asec2kpc > 0:
+ #       axt = plot.get_twin(ax, 'x')
+ #       axt.set_xlim(np.array(r_lim) * galmeta.kpc_per_arcsec())
+ #       axt.set_ylim(rc_lim)
+ #       ax.text(0.5, 1.14, r'$R$ [$h^{-1}$ kpc]', ha='center', va='center', transform=ax.transAxes,
+ #               fontsize=10)
+ #   else:
+ #       ax.text(0.5, 1.05, 'kpc conversion unavailable', ha='center', va='center',
+ #               transform=ax.transAxes, fontsize=10)
+
+    kin_inc = disk.par[3]
+    axt = plot.get_twin(ax, 'y')
+    axt.set_xlim(r_lim)
+    axt.set_ylim(np.array(rc_lim)/np.sin(np.radians(kin_inc)))
+    plot.rotate_y_ticks(axt, 90, 'center')
+    axt.spines['right'].set_color('0.4')
+    axt.tick_params(which='both', axis='y', colors='0.4')
+    axt.yaxis.label.set_color('0.4')
+
+    ax.add_patch(patches.Rectangle((0.66,0.55), 0.32, 0.19, facecolor='w', lw=0, edgecolor='none',
+                                   zorder=7, alpha=0.7, transform=ax.transAxes))
+    ax.text(0.97, 0.65, r'$V\ \sin i$ [km/s; left axis]', ha='right', va='bottom',
+            transform=ax.transAxes, fontsize=10, zorder=8)
+    ax.text(0.97, 0.56, r'$V$ [km/s; right axis]', ha='right', va='bottom', color='0.4',
+            transform=ax.transAxes, fontsize=10, zorder=8)
+
+    #-------------------------------------------------------------------
+    # Velocity Dispersion profile
+    if smod is not None:
+        concat_s = np.append(sprof_ewmean[sprof_indx], sprofm_ewmean[sprof_indx]) \
+                        if np.any(sprof_indx) else sprof_intr_model
+        sprof_lim = np.power(10.0, growth_lim(np.ma.log10(concat_s), 0.9, 1.5))
+        sprof_lim = atleast_one_decade(sprof_lim)
+
+        ax = plot.init_ax(fig, [0.27, 0.01, 0.51, 0.16], facecolor='0.9')
+        ax.set_xlim(r_lim)
+        ax.set_ylim(sprof_lim)#[10,275])
+        ax.set_yscale('log')
+        ax.yaxis.set_major_formatter(logformatter)
+        plot.rotate_y_ticks(ax, 90, 'center')
+
+        indx = sprof_nbin > 0
+        ax.scatter(sprof_r, sprof, marker='.', color='k', s=30, lw=0, alpha=0.6, zorder=2)
+        ax.errorbar(sprof_r,sprof, yerr=sprof_exp_err, color='k', capsize=0,
+                    linestyle='', linewidth=1, alpha=1.0, zorder=3)
+#        if np.any(indx):
+#            ax.scatter(binr[indx], sprof_ewmean[indx], marker='o', edgecolors='none', s=100,
+#                       alpha=1.0, facecolors='0.5', zorder=4)
+#            ax.scatter(binr[indx], sprofm_ewmean[indx], edgecolors='blueviolet',
+#                       marker='o', lw=3, s=100, alpha=1.0, facecolors='none', zorder=5)
+#            ax.errorbar(binr[indx], sprof_ewmean[indx], yerr=sprof_ewsdev[indx], color='0.6',
+#                        capsize=0, linestyle='', linewidth=1, alpha=1.0, zorder=3)
         ax.plot(modelr, sprof_intr_model, color='blueviolet', zorder=6, lw=0.5)
         if reff_lines is not None:
             for l in reff_lines:
@@ -2038,6 +2374,16 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
                                        transform=ax.transAxes))
         ax.text(0.97, 0.87, r'$\sigma_{\rm los}$ [km/s]', ha='right', va='bottom',
                 transform=ax.transAxes, fontsize=10, zorder=8)
+        
+        if save_vrot == True:          
+        # Save the results
+        # Columns in the output are r, dispersion velocity, exp error in disp vel
+           data5 = np.column_stack([sprof_r, sprof, sprof_exp_err])
+           datafile_path5 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}-{disk.dc.__class__.__name__}_disp_vel.txt'
+           np.savetxt(datafile_path5 , data5, fmt= ['%10.4f', '%10.4f','%10.4f'])
+
+    
+########################   
 
     # TODO:
     #   - Add errors (if available)?
@@ -2052,7 +2398,7 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, ofile=
 
     # Reset to default style
     pyplot.rcdefaults()
-
+    
 
 def axisym_init_model(galmeta, kin, rctype, dctype=None):
 
@@ -2077,6 +2423,10 @@ def axisym_init_model(galmeta, kin, rctype, dctype=None):
         p0 = np.append(p0, np.array([min(900., vproj), 1., 0.1]))
         rc = oned.PolyEx(lb=np.array([0., min_scale, -1.]),
                          ub=np.array([1000., max(5., kin.max_radius()), 1.]))
+    elif rctype == 'PiecewiseLinear':
+        #print(oned.PiecewiseLinear(np.array([1,2,3,4]), par=np.array([1,2,3,4])))
+        p0 = np.append(p0, np.array([min(900., vproj), 1., 0.1, 1, 1,1,1]))  #CORRECT
+        rc = oned.PiecewiseLinear(edges=np.array([1,2,3,4,5,6,7]))             
     else:
         raise ValueError(f'Unknown RC parameterization: {rctype}')
 
@@ -2110,7 +2460,6 @@ def axisym_fit_plot_masks(galmeta, kin, disk, vel_mask, sig_mask, ofile=None):
     """
     Construct the QA plot for the result of fitting an
     :class:`~nirvana.model.axisym.AxisymmetricDisk` model to a galaxy.
-
     Args:
         galmeta (:class:`~nirvana.data.meta.GlobalPar`):
             Object with metadata for the galaxy to be fit.
@@ -2511,19 +2860,14 @@ def axisym_iter_fit(galmeta, kin, rctype='HyperbolicTangent', dctype='Exponentia
                     analytic_jac=True, fit_scatter=True, verbose=0):
     r"""
     Iteratively fit kinematic data with an axisymmetric disk model.
-
     Constraints are as follows:
-
         #. The center is constrained to be in the middle third of the available
            range in x and y.
-
     The iterations are as follows:
-
         #. Fit all data but fix the inclination to the value returned by
            :func:`~nirvana.data.meta.GlobalPar.guess_inclination` and fix the
            center to be :math:`(x,y) = (0,0)`.  If available, covariance is
            ignored.
-
         #. Reject outliers in both velocity and velocity dispersion (if the
            latter is being fit) using
            :func:`~nirvana.models.thindisk.ThinDisk.reject`.  The rejection
@@ -2532,7 +2876,6 @@ def axisym_iter_fit(galmeta, kin, rctype='HyperbolicTangent', dctype='Exponentia
            intrinsic scatter estimates provided by
            :func:`~nirvana.models.thindisk.ThinDisk.reject` are
            *not* included in the fit and, if available, covariance is ignored.
-
         #. Reject outliers in both velocity and velocity dispersion (if the
            latter is being fit) using
            :func:`~nirvana.models.thindisk.ThinDisk.reject`.  The rejection
@@ -2541,7 +2884,6 @@ def axisym_iter_fit(galmeta, kin, rctype='HyperbolicTangent', dctype='Exponentia
            point. This iteration also uses the intrinsic scatter estimates
            provided by :func:`~nirvana.models.thindisk.ThinDisk.reject`;
            however, covariance is still ignored.
-
         #. Recover all fit rejections (i.e., keep any masks in place that are
            tied to the data quality, but remove any masks associated with fit
            quality).  Then use :func:`~nirvana.models.thindisk.ThinDisk.reject`
@@ -2555,7 +2897,6 @@ def axisym_iter_fit(galmeta, kin, rctype='HyperbolicTangent', dctype='Exponentia
            scatter estimates provided by
            :func:`~nirvana.models.thindisk.ThinDisk.reject`.  Covariance is
            still ignored.
-
         #. Reject outliers in both velocity and velocity dispersion (if the
            latter is being fit) using
            :func:`~nirvana.models.thindisk.ThinDisk.reject`.  The rejection
@@ -2566,12 +2907,10 @@ def axisym_iter_fit(galmeta, kin, rctype='HyperbolicTangent', dctype='Exponentia
            rejection and intrinsic scatter determination; however, the
            covariance *is* used by the fit, as available and if ``ignore_covar``
            is False.
-
         #. Redo the previous iteration in exactly the same way, except outlier
            rejection and intrinsic-scatter determination now use the covariance,
            as available and if ``ignore_covar`` is False.  The rejection sigma
            used is the *fourth* element in the provided list.
-
         #. If a lower inclination threshold is set (see ``low_inc``) and the
            best-fitting inclination is below this value (assuming the
            inclination is freely fit), a final iteration refits the data by
@@ -2585,7 +2924,6 @@ def axisym_iter_fit(galmeta, kin, rctype='HyperbolicTangent', dctype='Exponentia
         - Allow guess RC and DC parameters and bounds to be input, or switch to
           requiring the 1D model class instances to be provided, like in
           :class:`~nirvana.models.axisym.AxisymmetricDisk`.
-
     Args:
         galmeta (:class:`~nirvana.data.meta.GlobalPar`):
             Object with metadata for the galaxy to be fit.
@@ -2665,7 +3003,6 @@ def axisym_iter_fit(galmeta, kin, rctype='HyperbolicTangent', dctype='Exponentia
         verbose (:obj:`int`, optional):
             Verbosity level: 0=only status output written to terminal; 1=show 
             fit result QA plot; 2=full output
-
     Returns:
         :obj:`tuple`: Returns 7 objects: (1) the
         :class:`~nirvana.models.axisym.AxisymmetricDisk` instance used during
@@ -2951,7 +3288,7 @@ def axisym_iter_fit(galmeta, kin, rctype='HyperbolicTangent', dctype='Exponentia
     # Show
     if verbose > 0:
         axisym_fit_plot(galmeta, kin, disk, fix=fix)
-
+        
     return disk, p0, lb, ub, fix, vel_mask, sig_mask
 
 
