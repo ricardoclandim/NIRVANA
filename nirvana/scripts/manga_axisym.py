@@ -3,6 +3,7 @@ Script that runs the axisymmetric, least-squares fit for MaNGA data.
 """
 import os
 import argparse
+import copy
 
 from IPython import embed
 
@@ -10,7 +11,9 @@ import numpy as np
 from matplotlib import pyplot
 
 from ..data import manga
-from ..models import axisym
+from ..models import axisym, oned
+ 
+
 
 # TODO: Setup a logger
 
@@ -127,6 +130,11 @@ def parse_args(options=None):
                              'matplotlib backend).')
     parser.add_argument('--skip_plots', default=False, action='store_true',
                         help='Skip the QA plots and just produce the main output file.')
+    parser.add_argument('--save_vrot', default=False, action='store_true',
+                        help='Save projected rotation velocity, dispersion velocity and uncertainties from data and parameters')
+    parser.add_argument('--fisher', default=None, action='store_true',
+                        help='Calculate covariance matrix of the estimated parameters')
+                                            
 
     # TODO: Other options:
     #   - Fit with least-squares vs. dynesty
@@ -152,7 +160,7 @@ def main(args):
     if not os.path.isdir(args.odir):
         os.makedirs(args.odir)
     #  - Set the output root name
-    oroot = f'nirvana-manga-axisym-{args.plate}-{args.ifu}-{args.tracer}'
+    oroot = f'nirvana-manga-axisym-{args.plate}-{args.ifu}-{args.tracer}-{args.rc}-{args.dc}'
 
     flux_bound = (None, args.max_flux)
 
@@ -223,7 +231,31 @@ def main(args):
                        ofile=asym_plot)
 
     # Create the final fit plot
-    fit_plot = os.path.join(args.odir, f'{oroot}-fit.png')
-    axisym.axisym_fit_plot(galmeta, kin, disk, fix=fix, ofile=fit_plot)
-
-
+    fit_plot_err = os.path.join(args.odir, f'{oroot}-fit_err.png')
+    
+    
+    
+    #--------------------------------------------------------------------------------------------------
+    # copy 'disk', because fisher_matrix changes the atributes
+    disk_new = copy.deepcopy(disk)
+    # calculate the covariance matrix (inverse of fisher matrix)
+    if args.fisher == True: 
+       fisher = disk.fisher_matrix(disk.par, kin, sb_wgt=True, scatter=disk.scatter, ignore_covar=True, fix=np.logical_not(disk.free), inverse = True)
+    else:
+       fisher = None
+    
+    
+#    print(np.sqrt(fisher[0,0])*np.sqrt(fisher[1,1]) -np.absolute(fisher[0,1]), np.sqrt(fisher[0,0])*np.sqrt(fisher[2,2]) -np.absolute(fisher[0,2]), np.sqrt(fisher[0,0])*np.sqrt(fisher[3,3]) -np.absolute(fisher[0,3])\
+#    	,np.sqrt(fisher[0,0])*np.sqrt(fisher[4,4]) -np.absolute(fisher[0,4]) )
+    	
+#    print(np.sqrt(fisher[1,1])*np.sqrt(fisher[2,2]) -np.absolute(fisher[1,2]), np.sqrt(fisher[1,1])*np.sqrt(fisher[3,3]) -np.absolute(fisher[1,3]), np.sqrt(fisher[1,1])*np.sqrt(fisher[4,4]) -np.absolute(fisher[1,4]) )
+ #   print(np.sqrt(fisher[2,2])*np.sqrt(fisher[3,3]) -np.absolute(fisher[2,3]), np.sqrt(fisher[2,2])*np.sqrt(fisher[4,4]) -np.absolute(fisher[2,4]) )
+ #   print(np.sqrt(fisher[3,3])*np.sqrt(fisher[4,4]) -np.absolute(fisher[3,4]) )
+    
+    # copy back 'disk' 
+    disk = copy.deepcopy(disk_new)
+    
+    
+    axisym.axisym_fit_plot(galmeta, kin, disk, fix=fix, fisher=fisher, ofile=fit_plot_err,save_vrot=args.save_vrot)
+    
+    
