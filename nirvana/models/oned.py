@@ -259,7 +259,7 @@ class PiecewiseLinear(Func1D):
         Returns:
             `numpy.ndarray`_: Guess parameters.
         """
-        return np.ones(4, dtype=float)  
+        return np.ones(7, dtype=float)  ### correct here
 
     def par_names(self, short=False):
         """
@@ -329,15 +329,24 @@ class PiecewiseLinear(Func1D):
         """
         if par is not None:
             self._set_par(par)
-        f = np.full(len(x), self.par[0], dtype=float)
-        i2 = self._sort(x, check)
+        _x = np.asarray(x)
+        f = np.full(_x.size, self.par[0], dtype=float)
+        i2 = self._sort(_x.flat, check)
         indx = (i2 > 0) & (i2 < self.np)
+        f[indx] = lin_interp(_x.flat[indx], self.edges[i2[indx]-1], self.par[i2[indx]-1],
+                                      self.edges[i2[indx]], self.par[i2[indx]])
+        f[i2 == self.np] = self.par[-1]
+        
+        return f.reshape(_x.shape)   
+#        f = np.full(len(x), self.par[0], dtype=float)
+#        i2 = self._sort(x, check)
+#        indx = (i2 > 0) & (i2 < self.np)
         
        
-        f[indx] = lin_interp(x[i2[indx]], self.edges[i2[indx]-1], self.par[i2[indx]-1],
-                             self.edges[i2[indx]], self.par[i2[indx]])
-        f[i2 == self.np] = self.par[-1]
-        return f
+#        f[indx] = lin_interp(x[i2[indx]], self.edges[i2[indx]-1], self.par[i2[indx]-1],
+ #                            self.edges[i2[indx]], self.par[i2[indx]])
+#        f[i2 == self.np] = self.par[-1]
+#        return f
 
     def deriv_sample(self, x, par=None, check=False):
         """
@@ -367,20 +376,36 @@ class PiecewiseLinear(Func1D):
         """
         if par is not None:
             self._set_par(par)
-        f = np.full(len(x), self.par[0], dtype=float)
-        df = np.zeros((len(x), self.np), dtype=float)
-        i2 = self._sort(x, check)
+        _x = np.asarray(x)
+        f = np.full(_x.size, self.par[0], dtype=float)
+        df = np.zeros((_x.size, self.np), dtype=float)
+        i2 = self._sort(_x.flat, check)
         indx = (i2 > 0) & (i2 < self.np)
-        f[indx], _df = deriv_lin_interp(x[indx], self.edges[i2[indx]-1], self.par[i2[indx]-1],
-                                        self.edges[i2[indx]], self.par[i2[indx]])
+        f[indx], _df = deriv_lin_interp(_x.flat[indx], self.edges[i2[indx]-1], self.par[i2[indx]-1],
+                                      self.edges[i2[indx]], self.par[i2[indx]])
         df[indx,i2[indx]-1] = _df[:,0]
         df[indx,i2[indx]] = _df[:,1]
         indx = i2 == self.np
-        df[np.where(indx)[0],np.array([self.np-1]*np.sum(indx))] = 1.
-        f[indx] = self.par[-1]
+        df[np.where(indx)[0],np.array([self.np-1]*np.sum(indx))] = 1.                              
+        f[i2 == self.np] = self.par[-1]
         indx = i2 == 0
         df[np.where(indx)[0],np.array([0]*np.sum(indx))] = 1.
-        return f, df
+        return f.reshape(_x.shape), df      
+            
+        #f = np.full(len(x), self.par[0], dtype=float)
+        #df = np.zeros((len(x), self.np), dtype=float)
+        #i2 = self._sort(x, check)
+        #indx = (i2 > 0) & (i2 < self.np)
+        #f[indx], _df = deriv_lin_interp(x[indx], self.edges[i2[indx]-1], self.par[i2[indx]-1],
+        #                                self.edges[i2[indx]], self.par[i2[indx]])
+        #df[indx,i2[indx]-1] = _df[:,0]
+        #df[indx,i2[indx]] = _df[:,1]
+        #indx = i2 == self.np
+        #df[np.where(indx)[0],np.array([self.np-1]*np.sum(indx))] = 1.
+        #f[indx] = self.par[-1]
+        #indx = i2 == 0
+        #df[np.where(indx)[0],np.array([0]*np.sum(indx))] = 1.
+        #return f, df
 
     def ddx(self, x, par=None, check=False):
         """
@@ -389,12 +414,13 @@ class PiecewiseLinear(Func1D):
         """
         if par is not None:
             self._set_par(par)
-        f = np.zeros(len(x), dtype=float)
-        i2 = self._sort(x, check)
+        _x = np.asarray(x)    
+        f = np.zeros(_x.size, dtype=float)
+        i2 = self._sort(_x.flat, check)
         indx = (i2 > 0) & (i2 < self.np)
         m = np.diff(self.par)/np.diff(self.edges)
         f[indx] = m[i2[indx]-1]
-        return f
+        return f.reshape(_x.shape)
 
     def d2dx2(self, x, par=None, check=False):
         """

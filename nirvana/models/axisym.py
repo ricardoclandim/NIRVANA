@@ -2424,9 +2424,9 @@ def axisym_init_model(galmeta, kin, rctype, dctype=None):
         rc = oned.PolyEx(lb=np.array([0., min_scale, -1.]),
                          ub=np.array([1000., max(5., kin.max_radius()), 1.]))
     elif rctype == 'PiecewiseLinear':
-        #print(oned.PiecewiseLinear(np.array([1,2,3,4]), par=np.array([1,2,3,4])))
-        p0 = np.append(p0, np.array([min(900., vproj), 1., 0.1, 1, 1,1,1]))  #CORRECT
-        rc = oned.PiecewiseLinear(edges=np.array([1,2,3,4,5,6,7]))             
+        radius_samples = np.array([1,2,3,4,5,6,7])
+        p0 = np.concatenate((p0, [0.], np.full(radius_samples.size-1, min(900., vproj), dtype=float)))
+        rc = oned.PiecewiseLinear(edges=radius_samples)               
     else:
         raise ValueError(f'Unknown RC parameterization: {rctype}')
 
