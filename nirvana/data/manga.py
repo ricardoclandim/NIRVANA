@@ -536,9 +536,11 @@ def download_plateifu(plate, ifu, daptype='HYB10-MILESHC-MASTARHC2', dr='DR17', 
         maps_path = cube_path
 
     # Fix the SAS urls to include the top-level redux and analysis
-    sas_cube_path = f'redux/{sas_cube_path}'
-    sas_image_path = f'redux/{sas_image_path}'
-    sas_maps_path = f'analysis/{sas_maps_path}'
+    drp_fix = versions[dr]['DRP']
+    dap_fix = versions[dr]['DAP']
+    sas_cube_path = f'redux/{drp_fix}/{sas_cube_path}'
+    sas_image_path = f'redux/{drp_fix}/{sas_image_path}'
+    sas_maps_path = f'analysis/{drp_fix}/{dap_fix}/{sas_maps_path}'
 
     # Make the paths if they don't already exist
     for p in [cube_path, image_path, maps_path]:
