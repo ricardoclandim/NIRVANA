@@ -98,11 +98,11 @@ class AxisymmetricDisk(ThinDisk):
         Returns:
             `numpy.ndarray`_: Vector of guess parameters
         """
-        #if rc == 'PiecewiseLinear':
-        print(self.rc.guess_par())
-        gp = np.concatenate((super().guess_par(), self.rc.guess_par()))
+       # if rc is 'PiecewiseLinear':
+        
+        #   gp = np.concatenate((super().guess_par(len(edges)), self.rc.guess_par(len(edges))))
        # else:
-       #     gp = np.concatenate((super().guess_par(), self.rc.guess_par())) 
+        gp = np.concatenate((super().guess_par(), self.rc.guess_par())) 
             
         return gp if self.dc is None else np.append(gp, self.dc.guess_par())
 
@@ -2424,7 +2424,8 @@ def axisym_init_model(galmeta, kin, rctype, dctype=None):
         rc = oned.PolyEx(lb=np.array([0., min_scale, -1.]),
                          ub=np.array([1000., max(5., kin.max_radius()), 1.]))
     elif rctype == 'PiecewiseLinear':
-        radius_samples = np.array([1,2,3,4,5,6,7])
+        n=20
+        radius_samples = np.arange(n, step=1, dtype=float)      
         p0 = np.concatenate((p0, [0.], np.full(radius_samples.size-1, min(900., vproj), dtype=float)))
         rc = oned.PiecewiseLinear(edges=radius_samples)               
     else:
