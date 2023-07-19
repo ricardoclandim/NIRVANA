@@ -160,7 +160,7 @@ def main(args):
     if not os.path.isdir(args.odir):
         os.makedirs(args.odir)
     #  - Set the output root name
-    oroot = f'nirvana-manga-axisym-{args.plate}-{args.ifu}-{args.tracer}-{args.rc}-{args.dc}'
+    oroot = f'nirvana-manga-axisym-{args.plate}-{args.ifu}-{args.tracer}-{args.rc}-{args.dc}-{args.daptype}'
 
     flux_bound = (None, args.max_flux)
 
