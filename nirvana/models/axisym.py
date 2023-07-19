@@ -2151,6 +2151,7 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, fisher
             ax.axvline(x=l, linestyle='--', lw=0.5, zorder=3, color='k')
 
     asec2kpc = galmeta.kpc_per_arcsec()
+    
     if asec2kpc > 0:
         axt = plot.get_twin(ax, 'x')
         axt.set_xlim(np.array(r_lim) * galmeta.kpc_per_arcsec())
@@ -2274,11 +2275,11 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, fisher
     	                      vrot_exp_err[rec_indx]/np.sin(np.radians(disk.par[3])))),\
     	       np.concatenate((vrot_tot_err_inc[app_indx], vrot_tot_err_inc[rec_indx])), \
     	       np.concatenate((vrot_err_inc_cross[app_indx], vrot_err_inc_cross[rec_indx]))])
-       
-       
-       datafile_path1 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}-{disk.rc.__class__.__name__}_vel1.txt'
-       datafile_path2 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}-{disk.rc.__class__.__name__}_vel2.txt'
-       datafile_path3 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}-{disk.rc.__class__.__name__}_vel1vel2.txt'
+      
+       ofile_new = ofile.replace('.png', '')
+       datafile_path1 = f'{ofile_new}-vel1.txt'
+       datafile_path2 = f'{ofile_new}-vel2.txt'
+       datafile_path3 = f'{ofile_new}-vel1vel2.txt'
        np.savetxt(datafile_path1 , data1,  fmt = ['%10.4f', '%10.4f','%10.4f', '%10.4f','%10.4f','%10.4f','%10.4f'])
        np.savetxt(datafile_path2 , data2, fmt= ['%10.4f', '%10.4f','%10.4f', '%10.4f','%10.4f','%10.4f','%10.4f'])
        np.savetxt(datafile_path3 , data3, fmt= \
@@ -2379,7 +2380,8 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, fisher
         # Save the results
         # Columns in the output are r, dispersion velocity, exp error in disp vel
            data5 = np.column_stack([sprof_r, sprof, sprof_exp_err])
-           datafile_path5 = f'nirvana-manga-axisym-{galmeta.plate}-{galmeta.ifu}-{kin.tracer}-{disk.dc.__class__.__name__}_disp_vel.txt'
+           ofile_new = ofile.replace('.png', '')
+           datafile_path5 = f'{ofile_new}-disp_vel.txt'
            np.savetxt(datafile_path5 , data5, fmt= ['%10.4f', '%10.4f','%10.4f'])
 
     
