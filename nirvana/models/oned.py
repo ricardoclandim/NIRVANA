@@ -12,6 +12,8 @@ from scipy import special
 
 from .util import lin_interp, deriv_lin_interp, sech2
 
+import copy
+
 
 class Func1D:
     """
@@ -259,7 +261,7 @@ class PiecewiseLinear(Func1D):
         Returns:
             `numpy.ndarray`_: Guess parameters.
         """
-        return np.ones(20, dtype=float)  ### correct here
+        return np.ones(15, dtype=float)  ### correct here
 
     def par_names(self, short=False):
         """
@@ -330,14 +332,98 @@ class PiecewiseLinear(Func1D):
         if par is not None:
             self._set_par(par)
         _x = np.asarray(x)
+        
         f = np.full(_x.size, self.par[0], dtype=float)
         i2 = self._sort(_x.flat, check)
         indx = (i2 > 0) & (i2 < self.np)
-        f[indx] = lin_interp(_x.flat[indx], self.edges[i2[indx]-1], self.par[i2[indx]-1],
-                                      self.edges[i2[indx]], self.par[i2[indx]])
-        f[i2 == self.np] = self.par[-1]
         
-        return f.reshape(_x.shape)   
+       # if self.edges[i2[indx]] == 0:
+        #    f[indx][self.edges[i2[indx]] ==0] = 0
+        #else: 
+        
+        
+              
+        f[indx] = lin_interp(_x.flat[indx], self.edges[i2[indx]-1], self.par[i2[indx]-1],
+                                      self.edges[i2[indx]], self.par[i2[indx]])                           
+                                      
+    #    f[i2 == self.np] = self.par[-1]
+        
+    #    f_0 = lin_interp(0, 0, 0, 1, 1)   
+        
+  #      print(len(f[indx]))
+  #      
+   #     f_new = copy.deepcopy(f)
+        
+    #    for i in range(len(f_new)):
+     #       if f_new[i]<0:
+    #        	f_new[i] = 0
+            	
+     #       else:
+      #         pass
+     #          
+     #   f  = copy.deepcopy(f_new)
+        
+        
+        
+        return f.reshape(_x.shape) 
+        
+        
+    def sample_deriv(self, x, par=None, check=False):
+        """
+        Sample the piecewise linear function.
+
+        Args:
+            x (array-like):
+                Locations at which to sample the function.
+            par (array-like, optional):
+                The function parameters. If None, the current values
+                of :attr:`par` are used. Must have a length of
+                :attr:`np`.
+            check (:obj:`bool`, optional):
+                Check that at least one ``x`` value falls in each
+                step.
+
+        Returns:
+            `numpy.ndarray`_: Values of the piecewise function at each
+            ``x`` value.
+        """
+        if par is not None:
+            self._set_par(par)
+        _x = np.asarray(x)
+        
+        f = np.full(_x.size, self.par[0], dtype=float)
+        i2 = self._sort(_x.flat, check)
+        indx = (i2 > 0) & (i2 < self.np)
+        
+       # if self.edges[i2[indx]] == 0:
+        #    f[indx][self.edges[i2[indx]] ==0] = 0
+        #else: 
+        
+        
+              
+        f[indx] = lin_interp_deriv(_x.flat[indx], self.edges[i2[indx]-1], self.par[i2[indx]-1],
+                                      self.edges[i2[indx]], self.par[i2[indx]])                           
+                                      
+    #    f[i2 == self.np] = self.par[-1]
+        
+    #    f_0 = lin_interp(0, 0, 0, 1, 1)   
+        
+  #      print(len(f[indx]))
+  #      
+   #     f_new = copy.deepcopy(f)
+        
+    #    for i in range(len(f_new)):
+     #       if f_new[i]<0:
+    #        	f_new[i] = 0
+            	
+     #       else:
+      #         pass
+     #          
+     #   f  = copy.deepcopy(f_new)
+        
+        
+        
+        return f.reshape(_x.shape)    
 
 
     def deriv_sample(self, x, par=None, check=False):
@@ -384,6 +470,7 @@ class PiecewiseLinear(Func1D):
         indx = i2 == 0
         if any(indx):
             df[np.where(indx)[0],np.array([0]*np.sum(indx))] = 1.
+        
         return f.reshape(_x.shape), df.reshape(*_x.shape, -1)
         
 
