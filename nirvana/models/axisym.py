@@ -1483,7 +1483,7 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, fisher
                )
             
         vrot_tot_err = np.sqrt(np.square(vrot_err)+np.square(vrot_exp_err))
-        vrot_tot_err_inc = np.sqrt(np.square(vrot_err_inc )+np.square(vrot_exp_err/ np.sin(np.radians(disk.par[3]))))
+        vrot_tot_err_inc = np.sqrt(np.square(vrot_err_inc )+np.square(vrot_exp_errvrot_exp_err/ np.sin(np.radians(disk.par[3]))))
         
         # check to see if sigma_ab <= sigma_a*sigma_b
         v_test = vrot_err_inc*vrot_rerr.reshape(len(vrot_rerr,))
@@ -1509,9 +1509,9 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, fisher
         indx = np.logical_not(kin.sig_mask) & (kin.sig_phys2 > 0)
         sprof_r = r[indx]
         sprof = np.sqrt(kin.sig_phys2[indx])
-        # sig_phys2  was defined  with /s/sig_phys2  #/2/np.sqrt(kin.sig_phys2[indx]) 
-        sprof_exp_err = np.sqrt(inverse(kin.sig_phys2_ivar[indx])) if disk.scatter is None else \
-			np.sqrt(np.abs(inverse(kin.sig_phys2_ivar[indx])) + disk.scatter[1]**2)		
+        # error of sqrt sig_phys2  is  err sigma2/2/sigma #/2/np.sqrt(kin.sig_phys2[indx]) 
+        sprof_exp_err = np.sqrt(inverse(kin.sig_phys2_ivar[indx]) )/(2*np.sqrt(kin.sig_phys2[indx])) if disk.scatter is None else \
+			np.sqrt(np.abs(inverse(kin.sig_phys2_ivar[indx])) + disk.scatter[1]**2)/(2*np.sqrt(kin.sig_phys2[indx]))		
     # Get the 1D model profiles
     maxr = np.amax(r)
     modelr = np.arange(0, maxr, 0.1)
@@ -2263,19 +2263,19 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, fisher
   # experimental error in rot_vel, total error = sqrt(vrot_err^2 + verot_exp_err^2), sigma v r
        data1 = np.column_stack([vrot_r[app_indx],  vrot[app_indx]/np.sin(np.radians(disk.par[3])), \
                 vrot_rerr[app_indx],  vrot_err_inc[app_indx], \
-    		vrot_exp_err[app_indx]/np.sin(np.radians(disk.par[3])),vrot_tot_err_inc[app_indx], vrot_err_inc_cross[app_indx]])
+    		np.abs(vrot_exp_err[app_indx]/np.sin(np.radians(disk.par[3]))),vrot_tot_err_inc[app_indx], vrot_err_inc_cross[app_indx]])
                    
        data2 = np.column_stack([vrot_r[rec_indx],  vrot[rec_indx]/np.sin(np.radians(disk.par[3])),\
                 vrot_rerr[rec_indx], vrot_err_inc[rec_indx], \
-    		vrot_exp_err[rec_indx]/np.sin(np.radians(disk.par[3])),vrot_tot_err_inc[rec_indx], vrot_err_inc_cross[rec_indx]])
+    		np.abs(vrot_exp_err[rec_indx]/np.sin(np.radians(disk.par[3]))),vrot_tot_err_inc[rec_indx], vrot_err_inc_cross[rec_indx]])
        
        data3 = np.column_stack([\
                np.concatenate((vrot_r[app_indx],vrot_r[rec_indx])),  \
                np.concatenate((vrot[app_indx]/np.sin(np.radians(disk.par[3])), vrot[rec_indx]/np.sin(np.radians(disk.par[3])))),\
                np.concatenate((vrot_rerr[app_indx],   vrot_rerr[rec_indx])), \
                np.concatenate((vrot_err_inc[app_indx],   vrot_err_inc[rec_indx])), \
-    	       np.concatenate((vrot_exp_err[app_indx]/np.sin(np.radians(disk.par[3])), \
-    	                      vrot_exp_err[rec_indx]/np.sin(np.radians(disk.par[3])))),\
+    	       np.concatenate((np.abs(vrot_exp_err[app_indx]/np.sin(np.radians(disk.par[3]))), \
+    	                      np.abs(vrot_exp_err[rec_indx]/np.sin(np.radians(disk.par[3]))))),\
     	       np.concatenate((vrot_tot_err_inc[app_indx], vrot_tot_err_inc[rec_indx])), \
     	       np.concatenate((vrot_err_inc_cross[app_indx], vrot_err_inc_cross[rec_indx]))])
       
