@@ -1407,8 +1407,8 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, fisher
         
     
         # Experimental uncertainty on the velocity - projected
-        vrot_exp_err = (np.sqrt(np.abs(inverse(kin.vel_ivar[indx])))/np.cos(th[indx]))  if disk.scatter is None else \
-        								np.sqrt(np.abs(inverse(kin.vel_ivar[indx]))+  disk.scatter[0]**2)/np.cos(th[indx])
+        vrot_exp_err = np.abs(np.sqrt(np.abs(inverse(kin.vel_ivar[indx])))/np.cos(th[indx]))  if disk.scatter is None else \
+        								np.abs(np.sqrt(np.abs(inverse(kin.vel_ivar[indx]))+  disk.scatter[0]**2)/np.cos(th[indx]))
     
         # Total uncertainty on velocity - projected
         vrot_err_inc = np.sqrt(np.square(vrot_err/ sini) +  np.square( hi*np.radians(disk.par_err[3])) \
@@ -1472,8 +1472,8 @@ def axisym_fit_plot(galmeta, kin, disk, par=None, par_err=None, fix=None, fisher
     	           )
     	    
         # Experimental uncertainty on the velocity - projected
-        vrot_exp_err = (np.sqrt(np.abs(inverse(kin.vel_ivar[indx])))/np.cos(th[indx]))  if disk.scatter is None else \
-        								np.sqrt(np.abs(inverse(kin.vel_ivar[indx]))+  disk.scatter[0]**2)/np.cos(th[indx])
+        vrot_exp_err = np.abs(np.sqrt(np.abs(inverse(kin.vel_ivar[indx])))/np.cos(th[indx]))  if disk.scatter is None else \
+        								np.abs(np.sqrt(np.abs(inverse(kin.vel_ivar[indx]))+  disk.scatter[0]**2)/np.cos(th[indx]))
     
         # Total uncertainty on velocity - projected
         vrot_err_inc = np.sqrt(np.square(vrot_err/ np.sin(np.radians(disk.par[3]))) +  np.square( vrot/(np.square(np.sin(np.radians(disk.par[3]))))\
